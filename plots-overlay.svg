@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="2133" viewBox="0 0 1200 2133">
+  <title>Tiyansh final aligned plot-only overlay</title>
+  <g id="plots">
+    <polygon id="A-20" data-plot-id="A-20" points="648,646 780,646 780,724 648,724" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-19" data-plot-id="A-19" points="648,724 780,724 780,800 648,800" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-18" data-plot-id="A-18" points="650,800 758,800 758,851 650,851" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-17" data-plot-id="A-17" points="650,858 758,858 758,904 650,904" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-16" data-plot-id="A-16" points="650,909 758,909 758,957 650,957" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-15" data-plot-id="A-15" points="650,964 758,964 758,1013 650,1013" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-14" data-plot-id="A-14" points="650,1017 758,1017 758,1067 650,1067" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-13" data-plot-id="A-13" points="650,1072 758,1072 758,1130 656,1130 650,1124" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <path id="C-03" data-plot-id="C-03" d="M 511 942 H 582 Q 593 942 593 953 V 1007 Q 593 1013 587 1013 H 511 Z" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <path id="C-02" data-plot-id="C-02" d="M 511 1013 H 587 Q 593 1013 593 1019 V 1060 Q 593 1066 587 1066 H 511 Z" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <path id="C-01" data-plot-id="C-01" d="M 511 1066 H 587 Q 593 1066 593 1072 V 1110 Q 593 1116 587 1116 H 511 Z" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-10" data-plot-id="A-10" points="596,1176 652,1176 652,1287 574,1287 574,1200 582,1182" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-11" data-plot-id="A-11" points="652,1176 709,1176 709,1287 652,1287" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-12" data-plot-id="A-12" points="709,1176 759,1176 759,1287 709,1287" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="B-05" data-plot-id="B-05" points="493,1323 515,1323 515,1361 483,1361" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="B-04" data-plot-id="B-04" points="481,1366 515,1366 515,1400 465,1400" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="B-03" data-plot-id="B-03" points="465,1403 514,1403 514,1440 451,1440" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="B-02" data-plot-id="B-02" points="451,1443 514,1443 514,1484 436,1484" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="B-01" data-plot-id="B-01" points="436,1483 514,1483 514,1565 356,1565 344,1522" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-09" data-plot-id="A-09" points="572,1287 685,1287 685,1337 572,1337" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-08" data-plot-id="A-08" points="572,1344 685,1344 685,1394 572,1394" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-07" data-plot-id="A-07" points="572,1396 685,1396 685,1448 572,1448" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-06" data-plot-id="A-06" points="572,1450 685,1450 685,1499 572,1499" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-05" data-plot-id="A-05" points="572,1504 685,1504 685,1552 572,1552" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-04" data-plot-id="A-04" points="572,1560 685,1560 685,1609 572,1609" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-03" data-plot-id="A-03" points="572,1612 685,1612 685,1662 572,1662" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-02" data-plot-id="A-02" points="572,1665 685,1665 685,1714 572,1714" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+    <polygon id="A-01" data-plot-id="A-01" points="572,1719 685,1719 685,1802 572,1802" fill="transparent" stroke="transparent" vector-effect="non-scaling-stroke"/>
+  </g>
+</svg>
