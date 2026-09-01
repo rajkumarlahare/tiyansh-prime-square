@@ -3,39 +3,144 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes" />
-<meta name="theme-color" content="#11140d" />
-<title>Tiyansh — The Prime Square</title>
+<meta name="theme-color" content="#050814" />
+<title>Tiyansh Business Hub — Interactive Masterplan</title>
 <style>
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#11140d;color:#f5f0d8;font-family:Arial,Helvetica,sans-serif;overflow:hidden}
-header{height:74px;background:#11140d;border-bottom:1px solid #2f3428;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px 12px;position:relative;z-index:10}
-header strong{display:block;color:#e8c96b;letter-spacing:.08em;font-size:20px;line-height:1.2}header span{display:block;color:#d6d2c7;font-size:14px;margin-top:4px}
-.viewer{position:absolute;inset:74px 0 0 0;background:#11140d;overflow:hidden;touch-action:none;display:flex;align-items:center;justify-content:center}
-.world{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(1);transform-origin:center center;will-change:transform}
-.world img{display:block;max-height:calc(100vh - 86px);max-width:100vw;width:auto;height:auto;user-select:none;-webkit-user-drag:none;pointer-events:none}
-.controls{position:absolute;right:14px;bottom:14px;display:flex;gap:8px;z-index:20}.controls button{width:44px;height:44px;border-radius:50%;border:1px solid #4b5342;background:rgba(17,20,13,.92);color:#fff;font-size:22px;font-weight:700}
-.hint{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:#050705dd;border:1px solid #353b30;color:#fff;padding:9px 13px;border-radius:999px;font-size:13px;z-index:15;pointer-events:none}
-@media(max-width:700px){header{height:88px}header strong{font-size:17px}.viewer{inset:88px 0 0 0}.world img{max-height:calc(100vh - 96px)}.controls{bottom:60px}}
+:root{
+  --bg:#050814;--panel:#0d1629;--panel2:#111c32;--line:#24314a;--text:#f7f9ff;--muted:#7786a4;
+  --accent:#5fa6ff;--green:#19ae5a;--green2:#0e713b;--amber:#f5b51b;--red:#e93b45;
+}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+button,input{font:inherit}.app{min-height:100vh;background:radial-gradient(circle at 40% 12%,#0b1427 0,#050814 40%)}
+.topbar{position:sticky;top:0;z-index:50;background:rgba(5,8,20,.98);border-bottom:1px solid #202a3d;padding:12px 16px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}.logo{width:52px;height:52px;border-radius:50%;border:2px solid #b8c2d8;background:radial-gradient(circle,#fff 0 52%,#ded7df 53% 60%,#111 61%);color:#7e255f;display:grid;place-items:center;font-weight:900;font-size:13px;box-shadow:0 0 0 4px #111827}.brandtext{min-width:0}.brandname{font-size:20px;line-height:1.05;font-weight:900;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.brandmeta{margin-top:4px;color:#91a0bf;letter-spacing:.24em;font-size:12px;font-weight:700}.header-actions{display:flex;gap:10px}.iconbtn{width:52px;height:52px;border-radius:15px;border:1px solid #25314a;background:#091021;color:#eaf0ff;display:grid;place-items:center;cursor:pointer}.iconbtn svg{width:23px;height:23px}.searchrow{grid-column:1/-1;display:flex;gap:8px}.searchbox{position:relative;flex:1;min-width:0}.searchbox svg{position:absolute;left:18px;top:50%;transform:translateY(-50%);width:21px;height:21px;color:#607092}.searchbox input{width:100%;height:58px;border:1px solid #28344a;border-radius:16px;background:#0c1221;color:#fff;padding:0 105px 0 52px;font-size:17px;outline:none}.searchbox input:focus{border-color:#5f84bf;box-shadow:0 0 0 3px rgba(95,132,191,.15)}.gobtn{position:absolute;right:8px;top:8px;height:42px;padding:0 18px;border:0;border-radius:11px;background:transparent;color:#73adff;font-weight:900;cursor:pointer}
+.workspace{position:relative;min-height:calc(100vh - 144px);overflow:hidden;background:#030611}.mapview{position:relative;height:calc(100vh - 144px);min-height:620px;overflow:hidden;touch-action:none;cursor:grab}.mapview.dragging{cursor:grabbing}.world{position:absolute;left:50%;top:50%;width:min(92vw,880px);aspect-ratio:9/16;transform-origin:center center;will-change:transform;transition:filter .2s ease}.world.is3d{filter:saturate(1.03) contrast(1.03)}.map-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;user-select:none;-webkit-user-drag:none;pointer-events:none}.overlay{position:absolute;inset:0;width:100%;height:100%;overflow:visible}.plot{fill:rgba(25,174,90,.01);stroke:rgba(255,255,255,0);stroke-width:2.2;vector-effect:non-scaling-stroke;cursor:pointer;transition:fill .15s,stroke .15s,filter .15s}.plot:hover{fill:rgba(25,174,90,.18);stroke:#54ef99;filter:drop-shadow(0 0 4px rgba(25,174,90,.7))}.plot.selected{fill:rgba(25,174,90,.22);stroke:#44f190;stroke-width:3.2;filter:drop-shadow(0 0 6px rgba(25,174,90,.8))}.plot-label{font:700 18px/1 Arial,sans-serif;fill:#fff;paint-order:stroke;stroke:#0b1222;stroke-width:4px;pointer-events:none;opacity:0}.show-hotspots .plot-label{opacity:.95}.world.show-hotspots .plot{stroke:rgba(255,255,255,.28);fill:rgba(25,174,90,.06)}
+.floating-left{position:absolute;left:22px;top:24px;z-index:20;display:flex;flex-direction:column;gap:18px}.roundctl{width:64px;height:64px;border-radius:50%;border:1px solid #202b42;background:rgba(9,16,33,.91);color:#fff;display:grid;place-items:center;box-shadow:0 8px 26px rgba(0,0,0,.28);cursor:pointer;font-weight:900}.compass{font-size:10px;position:relative}.compass:before{content:'N';color:#ff4b55;position:absolute;top:8px}.compass:after{content:'S';position:absolute;bottom:8px}.compass .ew{font-size:10px;letter-spacing:22px;margin-left:22px;color:#d6dcea}.needle{position:absolute;width:3px;height:34px;background:linear-gradient(#f43b4b 0 50%,#dfe6f5 50%);transform:rotate(18deg);border-radius:9px}.roundctl.tilt.active{color:#75b0ff;border-color:#5182cf;box-shadow:0 0 0 3px rgba(81,130,207,.15),0 8px 26px rgba(0,0,0,.28)}
+.statuscard{position:absolute;left:12px;bottom:12px;z-index:20;width:168px;border:1px solid #22304a;border-radius:15px;background:rgba(8,16,31,.94);padding:12px}.statushead{display:flex;align-items:center;justify-content:space-between;gap:8px}.statushead strong{font-size:12px;letter-spacing:.24em;color:#79abef}.switch{width:43px;height:24px;border-radius:999px;border:0;background:#283246;padding:3px;cursor:pointer}.switch i{display:block;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .2s}.switch.on{background:#176f48}.switch.on i{transform:translateX(19px)}.statusline{display:flex;align-items:center;justify-content:space-between;padding:9px 2px;border-bottom:1px solid #1f2a40;font-size:13px}.statusline:last-child{border-bottom:0}.dot{width:11px;height:11px;border-radius:50%;border:2px solid currentColor;display:inline-block;margin-right:7px}.statusline b{color:#aab6cf}.green{color:#22c76c}.muted{color:#8f9ab2}.total{font-weight:800;color:#f7d33d;font-size:15px}
+.bottom-actions{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:20;display:flex;flex-direction:column;gap:10px;align-items:center}.pill{height:43px;border-radius:999px;border:1px solid #283650;background:rgba(9,16,33,.94);color:#e7edf9;padding:0 17px;font-weight:800;letter-spacing:.08em;cursor:pointer;white-space:nowrap}.pill:hover{border-color:#4b6795}.location{display:flex;gap:7px;align-items:center}.location svg{width:16px;height:16px;color:#ff4050}
+.zoomstack{position:absolute;right:12px;bottom:12px;z-index:20;display:flex;flex-direction:column;gap:8px}.zoomstack button{width:52px;height:52px;border-radius:12px;border:1px solid #243550;background:rgba(8,17,33,.95);color:#9dc3ff;font-size:20px;font-weight:900;cursor:pointer}.zoomstack .pct{font-size:13px;color:#8e9dbb}
+.toast{position:absolute;left:50%;top:18px;z-index:60;transform:translateX(-50%) translateY(-12px);opacity:0;pointer-events:none;background:#0b1222;border:1px solid #34425e;border-radius:999px;padding:10px 16px;color:#fff;font-weight:700;transition:.2s}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.drawer-scrim{position:fixed;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(7px);z-index:80;opacity:0;pointer-events:none;transition:opacity .22s}.drawer-scrim.open{opacity:1;pointer-events:auto}.drawer{position:fixed;top:0;bottom:0;left:0;z-index:90;width:min(87vw,600px);background:#0c172b;border-right:1px solid #283650;transform:translateX(-102%);transition:transform .24s ease;display:flex;flex-direction:column;overflow:auto;box-shadow:18px 0 50px rgba(0,0,0,.35)}.drawer.open{transform:translateX(0)}.drawer.available{border-top:4px solid var(--green)}.drawer-head{padding:30px 36px 24px;border-bottom:1px solid #26314a;position:relative}.badge{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(25,174,90,.45);border-radius:12px;padding:7px 14px;color:#20bb63;background:rgba(12,105,57,.14);font-size:14px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.badge:before{content:'';width:9px;height:9px;background:#18a957;border-radius:50%}.drawer h2{font-size:44px;line-height:1;margin:16px 0 10px}.drawer-sub{font-size:15px;color:#5f6d87;letter-spacing:.12em;font-weight:800}.close{position:absolute;right:36px;top:30px;width:49px;height:49px;border-radius:50%;border:1px solid #34425b;background:#1a2438;color:#9aa7be;font-size:22px;cursor:pointer}.shape-card{margin:25px 36px 0;border:1px solid #2a3650;border-radius:17px;background:#111b30;min-height:228px;display:grid;place-items:center;padding:20px}.shape-svg{width:100%;height:190px}.shape-outline{fill:rgba(25,174,90,.03);stroke:#17ad59;stroke-width:3}.shape-no{fill:#19ae5a;font-size:23px;font-weight:900;text-anchor:middle}.shape-facing{fill:#95a0b5;font-size:13px;text-anchor:middle}.dim{stroke:#52617b;stroke-width:1}.dim-text{fill:#77849f;font-size:10px}.specs{padding:24px 36px 160px}.spec{display:grid;grid-template-columns:1fr auto;gap:16px;padding:19px 0;border-bottom:1px solid #22304a;align-items:center}.spec span{color:#6e7d9b;font-weight:800;letter-spacing:.04em}.spec strong{font-size:18px;text-align:right}.spec .sqft{color:#8ea3ff}.spec .avail{color:#20be63}.note{margin-top:18px;padding:13px 15px;background:#0a1324;border:1px solid #273550;border-radius:12px;color:#8e9db7;font-size:13px;line-height:1.45}.drawer-actions{position:sticky;bottom:0;margin-top:auto;padding:20px 36px 34px;border-top:1px solid #26314a;background:#0c172bf7;display:grid;grid-template-columns:1fr 1fr;gap:14px}.action{height:66px;border-radius:16px;font-size:18px;font-weight:900;cursor:pointer}.whatsapp{border:0;background:#18b358;color:#fff}.call{border:1px solid #4b5297;background:#182250;color:#909cff}.action svg{vertical-align:-5px;margin-right:8px;width:22px;height:22px}
+@media(max-width:760px){.topbar{padding:12px 16px}.brandname{font-size:17px}.brandmeta{font-size:10px}.logo{width:47px;height:47px}.iconbtn{width:48px;height:48px}.searchbox input{height:60px}.workspace{min-height:calc(100vh - 151px)}.mapview{height:calc(100vh - 151px);min-height:580px}.world{width:min(96vw,720px)}.floating-left{left:22px;top:22px}.roundctl{width:61px;height:61px}.statuscard{width:168px}.bottom-actions{left:55%;bottom:14px}.zoomstack{bottom:14px}.drawer-head{padding:34px 36px 26px}.drawer h2{font-size:42px}.shape-card{margin:25px 36px 0}.specs{padding-left:36px;padding-right:36px}.drawer-actions{padding:18px 36px 28px}.action{height:66px}}
+@media(max-width:480px){.brandmeta{letter-spacing:.14em}.header-actions{gap:7px}.iconbtn{width:46px;height:46px;border-radius:13px}.topbar{grid-template-columns:minmax(0,1fr) auto}.statuscard{left:8px;bottom:8px;width:157px;padding:10px}.bottom-actions{bottom:9px;left:57%}.zoomstack{right:8px;bottom:8px}.zoomstack button{width:48px;height:48px}.pill{padding:0 14px;font-size:12px}.drawer{width:87vw}.drawer-head,.specs,.drawer-actions{padding-left:26px;padding-right:26px}.shape-card{margin-left:26px;margin-right:26px}.close{right:26px}.drawer h2{font-size:40px}.spec{padding:17px 0}.spec strong{font-size:16px}.action{font-size:16px}.world{width:100vw}}
 </style>
 </head>
 <body>
-<header><div><strong>TIYANSH — THE PRIME SQUARE</strong><span>Commercial Plots · Raigarh</span></div></header>
-<div class="viewer" id="viewer">
-  <div class="world" id="world"><img src="masterplan.jpg" alt="Tiyansh The Prime Square Master Plan" /></div>
-  <div class="controls"><button id="minus">−</button><button id="reset">↺</button><button id="plus">+</button></div>
-  <div class="hint">Pinch / drag to explore</div>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">TBS</div>
+      <div class="brandtext"><div class="brandname">TIYANSH BUSINESS HUB</div><div class="brandmeta">RAIGARH, CHHATTISGARH</div></div>
+    </div>
+    <div class="header-actions">
+      <button class="iconbtn" id="callTop" aria-label="Call sales"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92z"/></svg></button>
+      <button class="iconbtn" id="hotspotTop" aria-label="Show plot boundaries"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+    </div>
+    <form class="searchrow" id="searchForm">
+      <div class="searchbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input id="searchInput" type="text" placeholder="Search plot number — A-12, B-03, C-02" autocomplete="off"/><button class="gobtn" type="submit">GO</button></div>
+    </form>
+  </header>
+
+  <section class="workspace">
+    <div class="mapview" id="mapview" aria-label="Interactive Tiyansh masterplan">
+      <div class="world" id="world">
+        <img class="map-img" src="masterplan.jpg" alt="Tiyansh Business Hub masterplan" draggable="false"/>
+        <svg class="overlay" id="overlay" viewBox="0 0 900 1600" preserveAspectRatio="none"></svg>
+      </div>
+
+      <div class="floating-left">
+        <div class="roundctl compass" aria-label="North compass"><span class="needle"></span><span class="ew">W E</span></div>
+        <button class="roundctl tilt" id="tiltBtn" type="button" aria-pressed="false">3D</button>
+      </div>
+
+      <div class="statuscard">
+        <div class="statushead"><strong>STATUS</strong><button class="switch" id="hotspotSwitch" type="button" aria-label="Toggle plot outlines" aria-pressed="false"><i></i></button></div>
+        <div class="statusline green"><span><i class="dot"></i>Plots</span><b>28</b></div>
+        <div class="statusline muted"><span>Availability</span><b>Enquire</b></div>
+        <div class="statusline"><span>Total</span><b class="total">28</b></div>
+      </div>
+
+      <div class="bottom-actions">
+        <button class="pill" id="galleryBtn" type="button">▣ GALLERY</button>
+        <button class="pill location" id="locationBtn" type="button"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5Z"/></svg>LOCATION</button>
+      </div>
+
+      <div class="zoomstack"><button id="zoomIn" type="button">+</button><button id="zoomOut" type="button">−</button><button id="resetBtn" type="button">RST</button><button id="pct" class="pct" type="button" disabled>100%</button></div>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+  </section>
 </div>
+
+<div class="drawer-scrim" id="scrim"></div>
+<aside class="drawer available" id="drawer" aria-hidden="true" aria-label="Plot details">
+  <div class="drawer-head"><span class="badge">Available on enquiry</span><button class="close" id="closeDrawer" type="button" aria-label="Close">×</button><h2 id="plotTitle">Plot A-01</h2><div class="drawer-sub">TIYANSH BUSINESS HUB · RAIGARH</div></div>
+  <div class="shape-card"><svg class="shape-svg" viewBox="0 0 320 190"><line class="dim" x1="70" y1="152" x2="250" y2="152"/><line class="dim" x1="70" y1="145" x2="70" y2="160"/><line class="dim" x1="250" y1="145" x2="250" y2="160"/><text class="dim-text" id="dimBottom" x="160" y="174" text-anchor="middle">—</text><line class="dim" x1="45" y1="40" x2="45" y2="132"/><line class="dim" x1="38" y1="40" x2="53" y2="40"/><line class="dim" x1="38" y1="132" x2="53" y2="132"/><text class="dim-text" id="dimSide" x="22" y="89" text-anchor="middle" transform="rotate(-90 22 89)">—</text><path class="shape-outline" id="shapePath" d="M82 55 L246 55 L246 132 L82 132 Z"/><text class="shape-no" id="shapeNo" x="164" y="90">A-01</text><text class="shape-facing" id="shapeFacing" x="164" y="116">Facing — confirm</text></svg></div>
+  <div class="specs">
+    <div class="spec"><span>SQ. FEET</span><strong class="sqft" id="sqft">—</strong></div>
+    <div class="spec"><span>SQ. METERS</span><strong id="sqm">—</strong></div>
+    <div class="spec"><span>SQ. YARDS</span><strong id="sqyd">—</strong></div>
+    <div class="spec"><span>DIMENSIONS</span><strong id="dimensions">—</strong></div>
+    <div class="spec"><span>ROAD</span><strong id="road">40' wide CC Road</strong></div>
+    <div class="spec"><span>STATUS</span><strong class="avail">Confirm with Sales</strong></div>
+    <div class="note">Plot areas and dimensions are taken from the supplied Tiyansh layout where readable. Live availability, rate and facing should be confirmed with the sales team before booking.</div>
+  </div>
+  <div class="drawer-actions"><button class="action whatsapp" id="whatsappBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6A8.38 8.38 0 0 1 12.5 3h.5a8.48 8.48 0 0 1 8 8v.5Z"/></svg>WhatsApp</button><button class="action call" id="callBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92z"/></svg>Call Now</button></div>
+</aside>
+
 <script>
-const viewer=document.getElementById('viewer'),world=document.getElementById('world');let scale=1,ox=0,oy=0,drag=false,sx=0,sy=0,sox=0,soy=0,pinch=null;
-function render(){world.style.transform=`translate(calc(-50% + ${ox}px),calc(-50% + ${oy}px)) scale(${scale})`}
-function zoom(delta){scale=Math.max(.7,Math.min(5,scale+delta));render()}
-viewer.addEventListener('wheel',e=>{e.preventDefault();zoom(e.deltaY<0?.15:-.15)},{passive:false});
-viewer.addEventListener('pointerdown',e=>{drag=true;sx=e.clientX;sy=e.clientY;sox=ox;soy=oy;viewer.setPointerCapture?.(e.pointerId)});
-viewer.addEventListener('pointermove',e=>{if(!drag)return;ox=sox+(e.clientX-sx);oy=soy+(e.clientY-sy);render()});
-viewer.addEventListener('pointerup',()=>drag=false);viewer.addEventListener('pointercancel',()=>drag=false);
-viewer.addEventListener('touchstart',e=>{if(e.touches.length===2){const a=e.touches[0],b=e.touches[1];pinch={d:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),s:scale}}},{passive:false});
-viewer.addEventListener('touchmove',e=>{if(e.touches.length===2&&pinch){e.preventDefault();const a=e.touches[0],b=e.touches[1];scale=Math.max(.7,Math.min(5,pinch.s*Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY)/pinch.d));render()}},{passive:false});
-viewer.addEventListener('touchend',()=>pinch=null);
-document.getElementById('plus').onclick=()=>zoom(.2);document.getElementById('minus').onclick=()=>zoom(-.2);document.getElementById('reset').onclick=()=>{scale=1;ox=0;oy=0;render()};render();
+(()=>{
+const SALES='919009995582';
+const plots=[
+{id:'A-20',path:'M486 483H594V544H486Z',c:[540,513.5],sqft:5600,dim:"56' × 100'",road:"40' wide CC Road"},
+{id:'A-19',path:'M486 544H594V600H486Z',c:[540,572],sqft:5600,dim:"56' × 100'",road:"40' wide CC Road"},
+{id:'A-18',path:'M486 600H559V641H486Z',c:[522.5,620.5],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-17',path:'M486 641H559V681H486Z',c:[522.5,661],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-16',path:'M486 681H559V721H486Z',c:[522.5,701],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-15',path:'M486 721H559V761H486Z',c:[522.5,741],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-14',path:'M486 761H559V800H486Z',c:[522.5,780.5],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-13',path:'M486 800H559V855H486Z',c:[522.5,827.5],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'C-03',path:'M383 707H447V750H383Z',c:[415,728.5],sqft:3224,dim:"52' × 62'",road:"40' wide CC Road"},
+{id:'C-02',path:'M383 750H447V792H383Z',c:[415,771],sqft:2480,dim:"40' × 62'",road:"40' wide CC Road"},
+{id:'C-01',path:'M383 792H447V838H383Z',c:[415,815],sqft:2457,dim:'See approved layout',road:"40' wide CC Road"},
+{id:'A-10',path:'M428 878H489V950H428Z',c:[458.5,914],sqft:4951,dim:'See approved layout',road:"30' / 40' CC Road"},
+{id:'A-11',path:'M489 878H532V950H489Z',c:[510.5,914],sqft:3400,dim:"40' × 85'",road:"30' / 40' CC Road"},
+{id:'A-12',path:'M532 878H571L585 938L571 950H532Z',c:[553,914],sqft:3400,dim:"40' × 85'",road:"30' / 40' CC Road"},
+{id:'B-05',path:'M368 965 L386 978 L378 1000 L358 990 Z',c:[372,983],sqft:667,dim:'See approved layout',road:"40' wide CC Road"},
+{id:'B-04',path:'M349 993H382V1031H337Z',c:[360,1013],sqft:990,dim:'See approved layout',road:"40' wide CC Road"},
+{id:'B-03',path:'M337 1031H382V1069H327Z',c:[354,1050],sqft:1292,dim:'See approved layout',road:"40' wide CC Road"},
+{id:'B-02',path:'M327 1069H382V1107H317Z',c:[348,1088],sqft:1608,dim:'See approved layout',road:"40' wide CC Road"},
+{id:'B-01',path:'M317 1107H382V1161H263L246 1122Z',c:[327,1136],sqft:6070,dim:'See approved layout',road:"40' wide CC Road"},
+{id:'A-09',path:'M428 950H522V1001H428Z',c:[475,975.5],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-08',path:'M428 1001H522V1046H428Z',c:[475,1023.5],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-07',path:'M428 1046H522V1092H428Z',c:[475,1069],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-06',path:'M428 1092H522V1138H428Z',c:[475,1115],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-05',path:'M428 1138H522V1184H428Z',c:[475,1161],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-04',path:'M428 1184H522V1229H428Z',c:[475,1206.5],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-03',path:'M428 1229H522V1274H428Z',c:[475,1251.5],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-02',path:'M428 1274H522V1319H428Z',c:[475,1296.5],sqft:3400,dim:"40' × 85'",road:"40' wide CC Road"},
+{id:'A-01',path:'M428 1319H522V1365H428Z',c:[475,1342],sqft:5440,dim:"64' × 85'",road:"40' wide CC Road"}
+];
+const q=s=>document.querySelector(s), overlay=q('#overlay'),world=q('#world'),view=q('#mapview'),drawer=q('#drawer'),scrim=q('#scrim');let scale=1,ox=0,oy=0,drag=null,tilt=false,selected=null,toastTimer=null;
+plots.forEach(p=>{const a=document.createElementNS('http://www.w3.org/2000/svg','g');const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',p.path);path.setAttribute('class','plot');path.dataset.id=p.id;path.setAttribute('tabindex','0');path.setAttribute('role','button');path.setAttribute('aria-label','View details for plot '+p.id);const label=document.createElementNS('http://www.w3.org/2000/svg','text');label.setAttribute('x',p.c[0]);label.setAttribute('y',p.c[1]+5);label.setAttribute('text-anchor','middle');label.setAttribute('class','plot-label');label.textContent=p.id;path.addEventListener('click',e=>{e.stopPropagation();openPlot(p,true)});path.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openPlot(p,true)}});a.append(path,label);overlay.appendChild(a)});
+function render(){const rot=tilt?' rotateX(12deg)':'';world.style.transform=`translate(calc(-50% + ${ox}px),calc(-50% + ${oy}px)) scale(${scale})${rot}`;q('#pct').textContent=Math.round(scale*100)+'%'}
+function zoom(d){scale=Math.max(.68,Math.min(5,scale+d));render()}
+function reset(){scale=1;ox=0;oy=0;render()}
+function notice(t){const el=q('#toast');el.textContent=t;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2400)}
+function norm(v){let s=v.trim().toUpperCase().replace(/\s+/g,'').replace('_','-');if(/^\d{1,2}$/.test(s))s='A-'+s;if(/^A-?\d{1,2}$/.test(s))return 'A-'+String(Number(s.replace(/\D/g,''))).padStart(2,'0');if(/^B-?\d{1,2}$/.test(s))return 'B-'+String(Number(s.replace(/\D/g,''))).padStart(2,'0');if(/^C-?\d{1,2}$/.test(s))return 'C-'+String(Number(s.replace(/\D/g,''))).padStart(2,'0');return s}
+function focusPlot(p){const r=view.getBoundingClientRect(),h=Math.max(520,r.height-12),w=h*9/16,next=window.innerWidth<760?2.65:2.3;scale=next;ox=(.5-p.c[0]/900)*w*next;oy=(.5-p.c[1]/1600)*h*next;render()}
+function openPlot(p,focus=false){selected=p;document.querySelectorAll('.plot').forEach(el=>el.classList.toggle('selected',el.dataset.id===p.id));if(focus)focusPlot(p);q('#plotTitle').textContent='Plot '+p.id;q('#shapeNo').textContent=p.id;q('#sqft').textContent=p.sqft.toLocaleString('en-IN')+' Sq.Ft';q('#sqm').textContent=(p.sqft*0.092903).toFixed(1)+' Sq.M';q('#sqyd').textContent=(p.sqft/9).toFixed(1)+' Sq.Yd';q('#dimensions').textContent=p.dim;q('#road').textContent=p.road;const m=p.dim.match(/([\d.]+)'\s*×\s*([\d.]+)'/);q('#dimSide').textContent=m?m[1]+' ft':'—';q('#dimBottom').textContent=m?m[2]+' ft':'—';q('#shapeFacing').textContent='Facing — confirm with sales';drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');scrim.classList.add('open');}
+function close(){drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.classList.remove('open')}
+q('#searchForm').addEventListener('submit',e=>{e.preventDefault();const id=norm(q('#searchInput').value),p=plots.find(x=>x.id===id);if(!p){notice('Plot not found — try A-12, B-03 or C-02');return}openPlot(p,true)});
+q('#zoomIn').onclick=()=>zoom(.18);q('#zoomOut').onclick=()=>zoom(-.18);q('#resetBtn').onclick=reset;
+view.addEventListener('wheel',e=>{e.preventDefault();zoom(e.deltaY<0?.12:-.12)},{passive:false});
+view.addEventListener('pointerdown',e=>{if(e.target.closest?.('.plot'))return;drag={x:e.clientX,y:e.clientY,ox,oy};view.classList.add('dragging');view.setPointerCapture?.(e.pointerId)});view.addEventListener('pointermove',e=>{if(!drag)return;ox=drag.ox+e.clientX-drag.x;oy=drag.oy+e.clientY-drag.y;render()});const end=()=>{drag=null;view.classList.remove('dragging')};view.addEventListener('pointerup',end);view.addEventListener('pointercancel',end);
+q('#tiltBtn').onclick=()=>{tilt=!tilt;q('#tiltBtn').classList.toggle('active',tilt);q('#tiltBtn').setAttribute('aria-pressed',String(tilt));world.classList.toggle('is3d',tilt);render()};
+function toggleHotspots(){const on=!world.classList.contains('show-hotspots');world.classList.toggle('show-hotspots',on);q('#hotspotSwitch').classList.toggle('on',on);q('#hotspotSwitch').setAttribute('aria-pressed',String(on));notice(on?'Plot boundaries ON':'Plot boundaries OFF')}
+q('#hotspotSwitch').onclick=toggleHotspots;q('#hotspotTop').onclick=toggleHotspots;
+q('#galleryBtn').onclick=()=>window.open('masterplan.jpg','_blank','noopener,noreferrer');q('#locationBtn').onclick=()=>window.open('https://www.google.com/maps/search/?api=1&query=Behind+NH-49+Kena+Pali+Road+Amlibhouna+Raigarh+Chhattisgarh','_blank','noopener,noreferrer');
+function call(){window.location.href='tel:+'+SALES}q('#callTop').onclick=call;q('#callBtn').onclick=call;q('#whatsappBtn').onclick=()=>{const msg=selected?`Hello, I am interested in Plot ${selected.id} at Tiyansh Business Hub, Raigarh. Please share current availability, price and booking details.`:'Hello, I would like details about plots at Tiyansh Business Hub, Raigarh.';window.open('https://wa.me/'+SALES+'?text='+encodeURIComponent(msg),'_blank','noopener,noreferrer')};
+q('#closeDrawer').onclick=close;scrim.onclick=close;document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});render();
+})();
 </script>
 </body>
 </html>
