@@ -69,24 +69,24 @@ window.TIYANSH_PLOTS = [
         800
       ],
       [
-        758,
+        760,
         800
       ],
       [
-        758,
-        851
+        760,
+        852
       ],
       [
         650,
-        851
+        852
       ]
     ],
     "sqft": 3400,
     "dimensions": "40' × 85'",
     "road": "40' wide CC Road",
     "center": [
-      704.0,
-      825.5
+      705.0,
+      826.0
     ],
     "sqm": 315.9,
     "sqyd": 377.8,
@@ -100,11 +100,11 @@ window.TIYANSH_PLOTS = [
         858
       ],
       [
-        758,
+        760,
         858
       ],
       [
-        758,
+        760,
         904
       ],
       [
@@ -116,7 +116,7 @@ window.TIYANSH_PLOTS = [
     "dimensions": "40' × 85'",
     "road": "40' wide CC Road",
     "center": [
-      704.0,
+      705.0,
       881.0
     ],
     "sqm": 315.9,
@@ -131,24 +131,24 @@ window.TIYANSH_PLOTS = [
         909
       ],
       [
-        758,
+        760,
         909
       ],
       [
-        758,
-        957
+        760,
+        958
       ],
       [
         650,
-        957
+        958
       ]
     ],
     "sqft": 3400,
     "dimensions": "40' × 85'",
     "road": "40' wide CC Road",
     "center": [
-      704.0,
-      933.0
+      705.0,
+      933.5
     ],
     "sqm": 315.9,
     "sqyd": 377.8,
@@ -162,11 +162,11 @@ window.TIYANSH_PLOTS = [
         964
       ],
       [
-        758,
+        759,
         964
       ],
       [
-        758,
+        759,
         1013
       ],
       [
@@ -178,7 +178,7 @@ window.TIYANSH_PLOTS = [
     "dimensions": "40' × 85'",
     "road": "40' wide CC Road",
     "center": [
-      704.0,
+      704.5,
       988.5
     ],
     "sqm": 315.9,
@@ -193,11 +193,11 @@ window.TIYANSH_PLOTS = [
         1017
       ],
       [
-        758,
+        759,
         1017
       ],
       [
-        758,
+        759,
         1067
       ],
       [
@@ -209,7 +209,7 @@ window.TIYANSH_PLOTS = [
     "dimensions": "40' × 85'",
     "road": "40' wide CC Road",
     "center": [
-      704.0,
+      704.5,
       1042.0
     ],
     "sqm": 315.9,
@@ -224,11 +224,11 @@ window.TIYANSH_PLOTS = [
         1072
       ],
       [
-        758,
+        759,
         1072
       ],
       [
-        758,
+        759,
         1130
       ],
       [
@@ -244,7 +244,7 @@ window.TIYANSH_PLOTS = [
     "dimensions": "40' × 85'",
     "road": "40' wide CC Road",
     "center": [
-      694.4,
+      694.8,
       1105.6
     ],
     "sqm": 315.9,
@@ -256,11 +256,11 @@ window.TIYANSH_PLOTS = [
     "points": [
       [
         511,
-        942
+        943
       ],
       [
         593,
-        942
+        943
       ],
       [
         593,
@@ -276,23 +276,23 @@ window.TIYANSH_PLOTS = [
     "road": "40' wide CC Road",
     "center": [
       552.0,
-      977.5
+      978.0
     ],
     "sqm": 299.5,
     "sqyd": 358.2,
     "status": "enquire",
-    "path": "M 511 942 H 582 Q 593 942 593 953 V 1007 Q 593 1013 587 1013 H 511 Z"
+    "path": "M 511 943 H 582 Q 593 943 593 954 V 1007 Q 593 1013 587 1013 H 511 Z"
   },
   {
     "id": "C-02",
     "points": [
       [
         511,
-        1013
+        1014
       ],
       [
         593,
-        1013
+        1014
       ],
       [
         593,
@@ -308,23 +308,23 @@ window.TIYANSH_PLOTS = [
     "road": "40' wide CC Road",
     "center": [
       552.0,
-      1039.5
+      1040.0
     ],
     "sqm": 230.4,
     "sqyd": 275.6,
     "status": "enquire",
-    "path": "M 511 1013 H 587 Q 593 1013 593 1019 V 1060 Q 593 1066 587 1066 H 511 Z"
+    "path": "M 511 1014 H 587 Q 593 1014 593 1020 V 1060 Q 593 1066 587 1066 H 511 Z"
   },
   {
     "id": "C-01",
     "points": [
       [
         511,
-        1066
+        1067
       ],
       [
         593,
-        1066
+        1067
       ],
       [
         593,
@@ -340,12 +340,12 @@ window.TIYANSH_PLOTS = [
     "road": "40' wide CC Road",
     "center": [
       552.0,
-      1091.0
+      1091.5
     ],
     "sqm": 228.3,
     "sqyd": 273.0,
     "status": "enquire",
-    "path": "M 511 1066 H 587 Q 593 1066 593 1072 V 1110 Q 593 1116 587 1116 H 511 Z"
+    "path": "M 511 1067 H 587 Q 593 1067 593 1073 V 1110 Q 593 1116 587 1116 H 511 Z"
   },
   {
     "id": "A-10",
@@ -394,11 +394,11 @@ window.TIYANSH_PLOTS = [
         1176
       ],
       [
-        709,
+        707,
         1176
       ],
       [
-        709,
+        707,
         1287
       ],
       [
@@ -410,7 +410,7 @@ window.TIYANSH_PLOTS = [
     "dimensions": "40' × 85'",
     "road": "30' / 40' CC Road",
     "center": [
-      680.5,
+      679.5,
       1231.5
     ],
     "sqm": 315.9,
@@ -492,11 +492,11 @@ window.TIYANSH_PLOTS = [
       ],
       [
         515,
-        1400
+        1406
       ],
       [
         465,
-        1400
+        1406
       ]
     ],
     "sqft": 990,
@@ -504,7 +504,7 @@ window.TIYANSH_PLOTS = [
     "road": "40' wide CC Road",
     "center": [
       494.0,
-      1383.0
+      1386.0
     ],
     "sqm": 92.0,
     "sqyd": 110.0,
@@ -523,11 +523,11 @@ window.TIYANSH_PLOTS = [
       ],
       [
         514,
-        1440
+        1446
       ],
       [
         451,
-        1440
+        1446
       ]
     ],
     "sqft": 1292,
@@ -535,7 +535,7 @@ window.TIYANSH_PLOTS = [
     "road": "40' wide CC Road",
     "center": [
       486.0,
-      1421.5
+      1424.5
     ],
     "sqm": 120.0,
     "sqyd": 143.6,
@@ -620,11 +620,11 @@ window.TIYANSH_PLOTS = [
       ],
       [
         685,
-        1337
+        1341
       ],
       [
         572,
-        1337
+        1341
       ]
     ],
     "sqft": 3400,
@@ -632,7 +632,7 @@ window.TIYANSH_PLOTS = [
     "road": "40' wide CC Road",
     "center": [
       628.5,
-      1312.0
+      1314.0
     ],
     "sqm": 315.9,
     "sqyd": 377.8,
@@ -713,11 +713,11 @@ window.TIYANSH_PLOTS = [
       ],
       [
         685,
-        1499
+        1501
       ],
       [
         572,
-        1499
+        1501
       ]
     ],
     "sqft": 3400,
@@ -725,7 +725,7 @@ window.TIYANSH_PLOTS = [
     "road": "40' wide CC Road",
     "center": [
       628.5,
-      1474.5
+      1475.5
     ],
     "sqm": 315.9,
     "sqyd": 377.8,
@@ -744,11 +744,11 @@ window.TIYANSH_PLOTS = [
       ],
       [
         685,
-        1552
+        1556
       ],
       [
         572,
-        1552
+        1556
       ]
     ],
     "sqft": 3400,
@@ -756,7 +756,7 @@ window.TIYANSH_PLOTS = [
     "road": "40' wide CC Road",
     "center": [
       628.5,
-      1528.0
+      1530.0
     ],
     "sqm": 315.9,
     "sqyd": 377.8,
@@ -767,11 +767,11 @@ window.TIYANSH_PLOTS = [
     "points": [
       [
         572,
-        1560
+        1558
       ],
       [
         685,
-        1560
+        1558
       ],
       [
         685,
@@ -787,7 +787,7 @@ window.TIYANSH_PLOTS = [
     "road": "40' wide CC Road",
     "center": [
       628.5,
-      1584.5
+      1583.5
     ],
     "sqm": 315.9,
     "sqyd": 377.8,
