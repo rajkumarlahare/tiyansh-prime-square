@@ -1,17 +1,13 @@
-TIYANSH — SEA BLISS STYLE UI UPDATE
+TIYANSH — MOBILE UI FIX
 
-Changed:
-- Header / brand layout
-- Search bar
-- Phone and grid buttons
-- Compass, 3D button and mini logo
-- Status card
-- Bottom Gallery / Location pills
-- Zoom / reset controls styling
-- Plot detail drawer redesigned as left slide-in panel
-- WhatsApp / Call action area
+This version keeps the existing masterplan and plot click geometry unchanged.
+Mobile changes:
+- compact header, logo, title, phone/grid buttons
+- compact search bar
+- full-width initial masterplan fit on phones
+- smaller compass / 3D / mini-logo controls
+- compact status card and zoom controls
+- Gallery + Location side-by-side
+- plot details drawer resized for phone screens
 
-Not changed:
-- Masterplan image
-- Latest plot geometry / clickable boundaries
-- Pan, pinch zoom, search and plot selection logic
+Desktop layout remains the same.
