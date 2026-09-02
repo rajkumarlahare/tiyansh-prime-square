@@ -1,13 +1,16 @@
-TIYANSH — MOBILE UI FIX
+TIYANSH REAL WEBGL 3D VIEW
 
-This version keeps the existing masterplan and plot click geometry unchanged.
-Mobile changes:
-- compact header, logo, title, phone/grid buttons
-- compact search bar
-- full-width initial masterplan fit on phones
-- smaller compass / 3D / mini-logo controls
-- compact status card and zoom controls
-- Gallery + Location side-by-side
-- plot details drawer resized for phone screens
+Implemented:
+- Existing 2D UI and exact plot geometry retained.
+- Real WebGL masterplan board; not CSS tilt.
+- One finger orbit/rotate.
+- Two finger pinch zoom and pan.
+- +/- and RST operate in 3D.
+- Compass follows 3D rotation.
+- Existing plot polygons are clickable in 3D.
+- Selected plot extrudes into a raised translucent green prism with vertical walls, top, outline and shadow.
+- Search selects/focuses plots in 3D.
+- 2D button returns to approved 2D view.
+- No external CDN/library required.
 
-Desktop layout remains the same.
+Test URL: index.html?view=3d&plot=A-15&focus=1
