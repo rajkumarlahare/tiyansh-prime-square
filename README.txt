@@ -1,14 +1,12 @@
-TIYANSH — FINAL ALIGNED BUILD
+TIYANSH 3D LEVEL PROOF
 
-Files to upload to the ROOT of the GitHub Pages repository:
-1. index.html
-2. masterplan.jpg
-3. plots-data.js
-4. plots-overlay.svg
+Demo plot: A-15
 
-verification.png is only for checking alignment and is not required by the live site.
+1. Open index.html. It starts in 3D mode.
+2. A15 appears as a black/green marker.
+3. Tap the A-15 plot itself.
+4. The plot rises above the masterplan as a multi-layer green 3D slab.
+5. Tap the round 2D button to return to the confirmed 2D view.
+6. Tap 3D to enter the 3D proof again.
 
-GitHub Pages:
-Settings > Pages > Deploy from a branch > main > /(root)
-
-After upload/commit, wait about 1–3 minutes and hard-refresh the live page.
+This is a separate proof. Your confirmed 2D project is not overwritten.
