@@ -151,6 +151,21 @@ button,input{font:inherit}.app{height:100%;display:grid;grid-template-rows:auto 
   .close{position:sticky;top:0;z-index:3}
   .actions{padding-bottom:max(8px,env(safe-area-inset-bottom,0px))}
 }
+
+
+/* INTERACTION STABILITY PATCH — responsive touch + pointer behavior */
+.hotspots,.plot{touch-action:none;-ms-touch-action:none}
+.plot{pointer-events:all;-webkit-tap-highlight-color:transparent}
+.drawer{visibility:hidden;pointer-events:none}
+.drawer.open{visibility:visible;pointer-events:auto}
+.scrim{visibility:hidden}
+.scrim.open{visibility:visible}
+@media(max-width:700px){
+  .map{overscroll-behavior:none}
+  .drawer{width:100%;max-width:none;height:100dvh;min-height:100svh}
+  .drawer.open{transform:translate3d(0,0,0)}
+}
+
 </style>
 </head>
 <body>
@@ -256,6 +271,221 @@ button,input{font:inherit}.app{height:100%;display:grid;grid-template-rows:auto 
     <button class="action call" id="callBtn" aria-label="Call now"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.8 3.8 3.9 5.7c-.6.6-.8 1.5-.4 2.3 2.1 5.5 6 9.4 11.5 11.5.8.3 1.7.2 2.3-.4l1.9-1.9c.5-.5.5-1.2.1-1.7l-2.6-3.1c-.4-.5-1.1-.6-1.7-.2l-1.7 1.2c-1.9-.9-3.8-2.8-4.7-4.7L9.8 7c.4-.6.3-1.3-.2-1.7L6.5 2.7c-.5-.4-1.2-.4-1.7.1Z"/></svg><span>Call Now</span></button>
   </div>
 </aside>
-<script src="plots-data.js"></script><script src="three-view.js"></script><script>
-(()=>{const W=1200,H=2133,PHONE='919009995582',plots=window.TIYANSH_PLOTS||[],q=s=>document.querySelector(s),viewport=q('#viewport'),world=q('#world'),svg=q('#hotspots'),drawer=q('#drawer'),scrim=q('#scrim');let fit=1,scale=1,pan={x:0,y:0},selected=null,showAll=false,statusExpanded=false,statusFilter=null,toastTimer=null,suppressPlotClickUntil=0,mode3D=false,engine3D=null;const pointers=new Map();let gesture=null;const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));function calcFit(){const mobile=window.matchMedia('(max-width:700px)').matches;fit=mobile?(viewport.clientWidth/W):Math.min(viewport.clientWidth/W,viewport.clientHeight/H);if(!isFinite(fit)||fit<=0)fit=.3}function limits(){return{x:Math.max(0,(W*scale-viewport.clientWidth)/2),y:Math.max(0,(H*scale-viewport.clientHeight)/2)}}function clampPan(){const l=limits();pan.x=clamp(pan.x,-l.x,l.x);pan.y=clamp(pan.y,-l.y,l.y)}function render(){clampPan();world.style.transform=`translate(calc(-50% + ${pan.x}px),calc(-50% + ${pan.y}px)) scale(${scale})`;q('#percent').textContent=Math.round(scale/fit*100)+'%'}function reset(){calcFit();scale=fit;pan={x:0,y:0};render()}function toast(t){const el=q('#toast');el.textContent=t;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),1800)}function norm(v){let s=v.trim().toUpperCase().replace(/\s+/g,'').replace(/_/g,'-');if(/^\d{1,2}$/.test(s))s='A-'+s;const m=s.match(/^([ABC])-?(\d{1,2})$/);return m?m[1]+'-'+String(+m[2]).padStart(2,'0'):s}function plotStatus(p){const s=String(p?.status||'available').toLowerCase();return s==='enquire'?'available':(s==='booked'?'booked':(s==='sold'?'sold':'available'))}function updateStatusCounts(){const c={available:0,booked:0,sold:0};plots.forEach(p=>c[plotStatus(p)]++);q('#countAvailable').textContent=c.available;q('#countBooked').textContent=c.booked;q('#countSold').textContent=c.sold;q('#countTotal').textContent=plots.length}function polyPoints(p){return p.points.map(x=>x.join(',')).join(' ')}plots.forEach(p=>{const poly=document.createElementNS('http://www.w3.org/2000/svg',p.path?'path':'polygon');if(p.path)poly.setAttribute('d',p.path);else poly.setAttribute('points',polyPoints(p));poly.setAttribute('class','plot');poly.dataset.plotId=p.id;poly.dataset.status=plotStatus(p);poly.setAttribute('tabindex','0');poly.setAttribute('role','button');poly.addEventListener('click',e=>{e.stopPropagation();if(e.detail!==0&&window.matchMedia('(pointer:coarse)').matches)return;if(Date.now()<suppressPlotClickUntil)return;openPlot(p,false)});poly.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openPlot(p,false)}});svg.appendChild(poly)});function setSelected(id){svg.querySelectorAll('.plot').forEach(el=>el.classList.toggle('selected',el.dataset.plotId===id))}function diagram(p){const xs=p.points.map(a=>a[0]),ys=p.points.map(a=>a[1]),minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys),bw=maxx-minx||1,bh=maxy-miny||1,s=Math.min(210/bw,85/bh),ox=150-(minx+maxx)/2*s,oy=72-(miny+maxy)/2*s;q('#diagramPoly').setAttribute('points',p.points.map(([x,y])=>`${x*s+ox},${y*s+oy}`).join(' '));q('#diagramLabel').textContent=p.id}function openPlot(p,focus){selected=p;setSelected(p.id);if(focus)focusPlot(p);q('#plotTitle').textContent='Plot '+p.id;q('#sqm').textContent=p.sqm.toLocaleString('en-IN')+' Sq.M';q('#sqft').textContent=p.sqft.toLocaleString('en-IN')+' Sq.Ft';q('#sqyd').textContent=p.sqyd.toLocaleString('en-IN')+' Sq.Yd';q('#dims').textContent=p.dimensions;q('#road').textContent=p.road;diagram(p);drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');scrim.classList.add('open');drawer.scrollTop=0;requestAnimationFrame(()=>drawer.classList.add('open'))}function close(){drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.classList.remove('open')}function focusPlot(p){const target=Math.max(scale,fit*1.85);scale=Math.min(target,fit*4.5);pan.x=(W/2-p.center[0])*scale;pan.y=(H/2-p.center[1])*scale;render()}function zoomAt(newScale,sx,sy){newScale=clamp(newScale,fit,fit*4.5);const r=viewport.getBoundingClientRect(),mx=sx-r.left-r.width/2,my=sy-r.top-r.height/2,cx=(mx-pan.x)/scale,cy=(my-pan.y)/scale;pan.x=mx-cx*newScale;pan.y=my-cy*newScale;scale=newScale;render()}function zoomCenter(factor){const r=viewport.getBoundingClientRect();zoomAt(scale*factor,r.left+r.width/2,r.top+r.height/2)}function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}function midpoint(a,b){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2}}function isCoarsePointer(e){return e?.pointerType==='touch'||window.matchMedia('(pointer:coarse)').matches}function tapSlop(e){return isCoarsePointer(e)?22:7}function pointInPolygon(x,y,pts){let inside=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const xi=pts[i][0],yi=pts[i][1],xj=pts[j][0],yj=pts[j][1];const hit=((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi);if(hit)inside=!inside}return inside}function clientToPlan(x,y){const r=viewport.getBoundingClientRect();return{x:(x-r.left-r.width/2-pan.x)/scale+W/2,y:(y-r.top-r.height/2-pan.y)/scale+H/2}}function distSeg(px,py,ax,ay,bx,by){const vx=bx-ax,vy=by-ay,wx=px-ax,wy=py-ay,c1=vx*wx+vy*wy;if(c1<=0)return Math.hypot(px-ax,py-ay);const c2=vx*vx+vy*vy;if(c2<=c1)return Math.hypot(px-bx,py-by);const t=c1/c2,qx=ax+t*vx,qy=ay+t*vy;return Math.hypot(px-qx,py-qy)}function plotAtClient(x,y,allowNear=false){const pt=clientToPlan(x,y);let found=plots.find(p=>pointInPolygon(pt.x,pt.y,p.points));if(found)return found;if(!allowNear)return null;const maxPlan=Math.min(24/Math.max(scale,.01),42);let best=null,bestD=Infinity;for(const p of plots){for(let i=0;i<p.points.length;i++){const a=p.points[i],b=p.points[(i+1)%p.points.length],d=distSeg(pt.x,pt.y,a[0],a[1],b[0],b[1]);if(d<bestD){bestD=d;best=p}}}return bestD<=maxPlan?best:null}function plotIdAt(x,y,allowNear=false){return plotAtClient(x,y,allowNear)?.id||null}viewport.addEventListener('pointerdown',e=>{if(mode3D)return;if(e.target.closest?.('.status,.controls,.bottom-links,.map-badge,.toast'))return;const plotEl=e.target.closest?.('.plot'),plotId=plotEl?.dataset.plotId||plotIdAt(e.clientX,e.clientY,isCoarsePointer(e))||null;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});viewport.setPointerCapture?.(e.pointerId);if(pointers.size===1){gesture={type:'pan',id:e.pointerId,start:{x:e.clientX,y:e.clientY},pan:{...pan},plotId,moved:false,slop:tapSlop(e)};viewport.classList.add('dragging')}else if(pointers.size===2){const[a,b]=[...pointers.values()];gesture={type:'pinch',dist:distance(a,b),scale,mid:midpoint(a,b),pan:{...pan},moved:true};viewport.classList.remove('dragging')}});viewport.addEventListener('pointermove',e=>{if(mode3D)return;if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2){const[a,b]=[...pointers.values()],m=midpoint(a,b);if(!gesture||gesture.type!=='pinch')gesture={type:'pinch',dist:distance(a,b),scale,mid:m,pan:{...pan},moved:true};const ns=clamp(gesture.scale*distance(a,b)/gesture.dist,fit,fit*4.5),r=viewport.getBoundingClientRect(),oldMx=gesture.mid.x-r.left-r.width/2,oldMy=gesture.mid.y-r.top-r.height/2,cx=(oldMx-gesture.pan.x)/gesture.scale,cy=(oldMy-gesture.pan.y)/gesture.scale,newMx=m.x-r.left-r.width/2,newMy=m.y-r.top-r.height/2;scale=ns;pan.x=newMx-cx*scale;pan.y=newMy-cy*scale;render()}else if(pointers.size===1&&gesture?.type==='pan'&&gesture.id===e.pointerId){const dx=e.clientX-gesture.start.x,dy=e.clientY-gesture.start.y,dist=Math.hypot(dx,dy),slop=gesture.slop||7;if(!gesture.moved&&dist<=slop)return;if(!gesture.moved){gesture.moved=true;suppressPlotClickUntil=Date.now()+250}pan.x=gesture.pan.x+dx;pan.y=gesture.pan.y+dy;render()}});function endPointer(id){pointers.delete(id);if(pointers.size===0){gesture=null;viewport.classList.remove('dragging')}else if(pointers.size===1){const[pid,a]=[...pointers.entries()][0];gesture={type:'pan',id:pid,start:{x:a.x,y:a.y},pan:{...pan},plotId:null,moved:true,slop:16};viewport.classList.add('dragging')}}viewport.addEventListener('pointerup',e=>{if(mode3D)return;const g=gesture;const single=pointers.size===1&&g?.type==='pan'&&g.id===e.pointerId;let plotId=null;if(single&&!g.moved){const upId=plotIdAt(e.clientX,e.clientY,isCoarsePointer(e));plotId=upId||g.plotId||null}endPointer(e.pointerId);if(single&&!g.moved&&plotId){const p=plots.find(x=>x.id===plotId);if(p){suppressPlotClickUntil=Date.now()+180;openPlot(p,false)}}});viewport.addEventListener('pointercancel',e=>{if(mode3D)return;endPointer(e.pointerId)});viewport.addEventListener('wheel',e=>{if(mode3D)return;e.preventDefault();zoomAt(scale*(e.deltaY<0?1.12:.89),e.clientX,e.clientY)},{passive:false});q('#zoomIn').onclick=()=>mode3D?engine3D?.zoom(.88):zoomCenter(1.16);q('#zoomOut').onclick=()=>mode3D?engine3D?.zoom(1.14):zoomCenter(.86);q('#resetBtn').onclick=()=>mode3D?engine3D?.reset():reset;function clearStatusFilter(){statusFilter=null;svg.classList.remove('status-filter-available','status-filter-booked','status-filter-sold');document.querySelectorAll('.status-option').forEach(b=>b.classList.remove('active'));engine3D?.setStatusFilter?.(null)}function setStatusFilter(st){st=st||null;if(statusFilter===st){clearStatusFilter();toast('Status filter cleared');return}statusFilter=st;svg.classList.remove('status-filter-available','status-filter-booked','status-filter-sold');if(st)svg.classList.add('status-filter-'+st);document.querySelectorAll('.status-option').forEach(b=>b.classList.toggle('active',b.dataset.statusFilter===st));engine3D?.setStatusFilter?.(st);toast(st?st.charAt(0).toUpperCase()+st.slice(1)+' plots':'Status filter cleared')}function toggleStatusPanel(){statusExpanded=!statusExpanded;q('#statusCard').classList.toggle('expanded',statusExpanded);q('#outlineToggle').classList.toggle('on',statusExpanded);q('#outlineToggle').setAttribute('aria-expanded',String(statusExpanded));if(!statusExpanded)clearStatusFilter()}function toggleBoundaries(){showAll=!showAll;svg.classList.toggle('show-all',showAll);engine3D?.setShowAll(showAll);toast(showAll?'Plot boundaries ON':'Plot boundaries OFF')}const statusCard=q('#statusCard'),statusBody=q('#statusBody');statusCard.addEventListener('pointerdown',e=>e.stopPropagation());statusCard.addEventListener('pointermove',e=>e.stopPropagation());statusCard.addEventListener('pointerup',e=>e.stopPropagation());let glassOpt=null;function clearGlass(){if(glassOpt){glassOpt.classList.remove('touch-glass');glassOpt=null}}function paintGlass(e){if(e.pointerType!=='touch'&&!window.matchMedia('(pointer:coarse)').matches)return;const el=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('.status-option');if(el!==glassOpt){clearGlass();glassOpt=el||null;if(glassOpt)glassOpt.classList.add('touch-glass')}if(glassOpt){const r=glassOpt.getBoundingClientRect();glassOpt.style.setProperty('--rain-x',(e.clientX-r.left)+'px');glassOpt.style.setProperty('--rain-y',(e.clientY-r.top)+'px')}}statusBody.addEventListener('pointerdown',paintGlass);statusBody.addEventListener('pointermove',paintGlass);statusBody.addEventListener('pointerup',()=>setTimeout(clearGlass,90));statusBody.addEventListener('pointercancel',clearGlass);statusBody.addEventListener('pointerleave',clearGlass);q('#outlineToggle').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();toggleStatusPanel()});q('#outlineTop').onclick=toggleBoundaries;document.querySelectorAll('.status-option').forEach(b=>b.addEventListener('click',()=>setStatusFilter(b.dataset.statusFilter)));updateStatusCounts();q('#searchForm').onsubmit=e=>{e.preventDefault();const id=norm(q('#searchInput').value),p=plots.find(x=>x.id===id);if(!p)return toast('Plot not found');if(mode3D){selected=p;setSelected(p.id);engine3D?.select(p.id,true,false);toast('Plot '+p.id+' selected')}else openPlot(p,true)};q('#closeBtn').onclick=close;scrim.onclick=close;function call(){location.href='tel:+'+PHONE}q('#callTop').onclick=call;q('#callBtn').onclick=call;q('#waBtn').onclick=()=>{const msg=selected?`Hello, I am interested in Plot ${selected.id} at Tiyansh The Prime Square, Raigarh. Please share current availability, price and booking details.`:'Hello, I would like details about Tiyansh The Prime Square, Raigarh.';window.open('https://wa.me/'+PHONE+'?text='+encodeURIComponent(msg),'_blank','noopener,noreferrer')};function hud3D(s){q('#percent').textContent=s.zoomPercent+'%';const n=document.getElementById('compassNeedle');if(n)n.setAttribute('transform',`rotate(${(-s.yaw*180/Math.PI).toFixed(1)} 32 32)`)}function set3D(on){mode3D=!!on;viewport.classList.toggle('mode3d',mode3D);q('#view3d').textContent=mode3D?'2D':'3D';if(mode3D){close();if(!engine3D){try{engine3D=new Tiyansh3D(q('#threeHost'),{plots,onSelect:p=>{selected=p;setSelected(p.id);openPlot(p,false)},onCamera:hud3D})}catch(e){mode3D=false;viewport.classList.remove('mode3d');q('#view3d').textContent='3D';toast('3D is not supported on this device');return}}engine3D.setShowAll(showAll);engine3D.setStatusFilter?.(statusFilter);engine3D.activate();if(selected)engine3D.select(selected.id,false,false);hud3D({yaw:engine3D.cam.yaw,zoomPercent:Math.round(34*engine3D.baseDistance/engine3D.cam.distance)})}else{engine3D?.deactivate();const n=document.getElementById('compassNeedle');if(n)n.removeAttribute('transform');q('#percent').textContent=Math.round(scale/fit*100)+'%';render()}}q('#view3d').onclick=()=>set3D(!mode3D);q('#galleryBtn').onclick=()=>toast('Gallery');q('#locationBtn').onclick=()=>toast('Raigarh, Chhattisgarh');window.addEventListener('resize',()=>{if(mode3D){engine3D?.resize();return}const z=scale/fit;calcFit();scale=clamp(fit*z,fit,fit*4.5);render()});reset();const qp=new URLSearchParams(location.search);if(qp.get('status')==='open'&&!statusExpanded)toggleStatusPanel();if(qp.get('filter')&&['available','booked','sold'].includes(qp.get('filter'))){if(!statusExpanded)toggleStatusPanel();setStatusFilter(qp.get('filter'))}if(qp.get('view')==='3d'){setTimeout(()=>{set3D(true);const id=norm(qp.get('plot')||'');if(id&&plots.some(p=>p.id===id)){selected=plots.find(p=>p.id===id);setSelected(id);engine3D?.select(id,qp.get('focus')==='1',false)}},80)}})();
-</script></body></html>
+<script src="plots-data.js"></script>
+<script src="three-view.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const W = 1200, H = 2133, PHONE = '919009995582';
+  const plots = Array.isArray(window.TIYANSH_PLOTS) ? window.TIYANSH_PLOTS : [];
+  const q = s => document.querySelector(s);
+  const viewport = q('#viewport');
+  const world = q('#world');
+  const svg = q('#hotspots');
+  const drawer = q('#drawer');
+  const scrim = q('#scrim');
+  const statusCard = q('#statusCard');
+  const statusBody = q('#statusBody');
+
+  let fit = 1, scale = 1, pan = {x:0,y:0};
+  let selected = null, showAll = false, statusExpanded = false, statusFilter = null;
+  let toastTimer = null, mode3D = false, engine3D = null;
+  let gesture = null;
+  const pointers = new Map();
+  let lastPlotOpenAt = 0;
+
+  const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
+  const coarseMQ = window.matchMedia('(pointer:coarse)');
+  const isCoarse = e => e?.pointerType === 'touch' || coarseMQ.matches;
+  const TAP_SLOP = e => isCoarse(e) ? 14 : 6;
+  const HIT_PAD = e => isCoarse(e) ? 12 : 3; // CSS px, only for edge forgiveness
+
+  function calcFit(){
+    const mobile = window.matchMedia('(max-width:700px)').matches;
+    const fw = viewport.clientWidth / W;
+    const fh = viewport.clientHeight / H;
+    fit = mobile ? fw : Math.min(fw,fh);
+    if(!Number.isFinite(fit) || fit <= 0) fit = .3;
+  }
+  function limits(){return {x:Math.max(0,(W*scale-viewport.clientWidth)/2),y:Math.max(0,(H*scale-viewport.clientHeight)/2)}}
+  function clampPan(){const l=limits();pan.x=clamp(pan.x,-l.x,l.x);pan.y=clamp(pan.y,-l.y,l.y)}
+  function render(){
+    clampPan();
+    world.style.transform = `translate(calc(-50% + ${pan.x}px),calc(-50% + ${pan.y}px)) scale(${scale})`;
+    q('#percent').textContent = Math.round(scale/fit*100)+'%';
+  }
+  function reset(){calcFit();scale=fit;pan={x:0,y:0};render()}
+  function toast(t){const el=q('#toast');el.textContent=t;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),1800)}
+  function norm(v){let s=v.trim().toUpperCase().replace(/\s+/g,'').replace(/_/g,'-');if(/^\d{1,2}$/.test(s))s='A-'+s;const m=s.match(/^([ABC])-?(\d{1,2})$/);return m?m[1]+'-'+String(+m[2]).padStart(2,'0'):s}
+  function plotStatus(p){const s=String(p?.status||'available').toLowerCase();return s==='enquire'?'available':(s==='booked'?'booked':(s==='sold'?'sold':'available'))}
+  function updateStatusCounts(){const c={available:0,booked:0,sold:0};plots.forEach(p=>c[plotStatus(p)]++);q('#countAvailable').textContent=c.available;q('#countBooked').textContent=c.booked;q('#countSold').textContent=c.sold;q('#countTotal').textContent=plots.length}
+  function polyPoints(p){return p.points.map(x=>x.join(',')).join(' ')}
+
+  // SVG is visual/keyboard hit-area only. Touch selection is resolved from plot geometry below.
+  plots.forEach(p=>{
+    const poly=document.createElementNS('http://www.w3.org/2000/svg',p.path?'path':'polygon');
+    if(p.path) poly.setAttribute('d',p.path); else poly.setAttribute('points',polyPoints(p));
+    poly.setAttribute('class','plot'); poly.dataset.plotId=p.id; poly.dataset.status=plotStatus(p);
+    poly.setAttribute('tabindex','0'); poly.setAttribute('role','button'); poly.setAttribute('aria-label',`Plot ${p.id}`);
+    poly.addEventListener('click',e=>{
+      // Native mouse click fallback. Touch is handled once, centrally, on pointer-up.
+      if(e.detail !== 0 && coarseMQ.matches) return;
+      e.stopPropagation(); openPlot(p,false);
+    });
+    poly.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openPlot(p,false)}});
+    svg.appendChild(poly);
+  });
+
+  function setSelected(id){svg.querySelectorAll('.plot').forEach(el=>el.classList.toggle('selected',el.dataset.plotId===id))}
+  function diagram(p){const xs=p.points.map(a=>a[0]),ys=p.points.map(a=>a[1]),minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys),bw=maxx-minx||1,bh=maxy-miny||1,s=Math.min(210/bw,85/bh),ox=150-(minx+maxx)/2*s,oy=72-(miny+maxy)/2*s;q('#diagramPoly').setAttribute('points',p.points.map(([x,y])=>`${x*s+ox},${y*s+oy}`).join(' '));q('#diagramLabel').textContent=p.id}
+  function openPlot(p,focus=false){
+    if(!p) return;
+    selected=p; setSelected(p.id); if(focus) focusPlot(p);
+    q('#plotTitle').textContent='Plot '+p.id;
+    q('#sqm').textContent=Number(p.sqm).toLocaleString('en-IN')+' Sq.M';
+    q('#sqft').textContent=Number(p.sqft).toLocaleString('en-IN')+' Sq.Ft';
+    q('#sqyd').textContent=Number(p.sqyd).toLocaleString('en-IN')+' Sq.Yd';
+    q('#dims').textContent=p.dimensions||'—'; q('#road').textContent=p.road||'—'; diagram(p);
+    drawer.scrollTop=0; drawer.classList.add('open'); drawer.setAttribute('aria-hidden','false'); scrim.classList.add('open');
+    lastPlotOpenAt=performance.now();
+  }
+  function close(){drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.classList.remove('open')}
+  function focusPlot(p){const target=Math.max(scale,fit*1.85);scale=Math.min(target,fit*4.5);pan.x=(W/2-p.center[0])*scale;pan.y=(H/2-p.center[1])*scale;render()}
+  function zoomAt(newScale,sx,sy){newScale=clamp(newScale,fit,fit*4.5);const r=viewport.getBoundingClientRect(),mx=sx-r.left-r.width/2,my=sy-r.top-r.height/2,cx=(mx-pan.x)/scale,cy=(my-pan.y)/scale;pan.x=mx-cx*newScale;pan.y=my-cy*newScale;scale=newScale;render()}
+  function zoomCenter(factor){const r=viewport.getBoundingClientRect();zoomAt(scale*factor,r.left+r.width/2,r.top+r.height/2)}
+  function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+  function midpoint(a,b){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2}}
+
+  function pointInPolygon(x,y,pts){let inside=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const xi=pts[i][0],yi=pts[i][1],xj=pts[j][0],yj=pts[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi))inside=!inside}return inside}
+  function distSeg(px,py,ax,ay,bx,by){const vx=bx-ax,vy=by-ay,wx=px-ax,wy=py-ay,c1=vx*wx+vy*wy;if(c1<=0)return Math.hypot(px-ax,py-ay);const c2=vx*vx+vy*vy;if(c2<=c1)return Math.hypot(px-bx,py-by);const t=c1/c2,qx=ax+t*vx,qy=ay+t*vy;return Math.hypot(px-qx,py-qy)}
+  function clientToPlan(x,y){const r=viewport.getBoundingClientRect();return{x:(x-r.left-r.width/2-pan.x)/scale+W/2,y:(y-r.top-r.height/2-pan.y)/scale+H/2}}
+  function plotAtClient(x,y,padCss=0){
+    const pt=clientToPlan(x,y);
+    const exact=plots.find(p=>pointInPolygon(pt.x,pt.y,p.points));
+    if(exact) return exact;
+    if(padCss<=0) return null;
+    const maxPlan=padCss/Math.max(scale,.01);
+    let best=null,bestD=Infinity;
+    for(const p of plots){
+      for(let i=0;i<p.points.length;i++){
+        const a=p.points[i],b=p.points[(i+1)%p.points.length],d=distSeg(pt.x,pt.y,a[0],a[1],b[0],b[1]);
+        if(d<bestD){bestD=d;best=p}
+      }
+    }
+    return bestD<=maxPlan?best:null;
+  }
+
+  function isUiTarget(target){return !!target.closest?.('.status,.controls,.bottom-links,.map-badge,.toast,.drawer,.scrim,.header')}
+
+  viewport.addEventListener('pointerdown',e=>{
+    if(mode3D || isUiTarget(e.target)) return;
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
+    if(pointers.size===1){
+      const hit=plotAtClient(e.clientX,e.clientY,HIT_PAD(e));
+      gesture={type:'single',id:e.pointerId,start:{x:e.clientX,y:e.clientY},last:{x:e.clientX,y:e.clientY},pan:{...pan},startPlot:hit?.id||null,moved:false,slop:TAP_SLOP(e),pointerType:e.pointerType};
+    }else if(pointers.size===2){
+      const [a,b]=[...pointers.values()];
+      gesture={type:'pinch',dist:Math.max(8,distance(a,b)),scale,mid:midpoint(a,b),pan:{...pan},moved:true};
+      viewport.classList.add('dragging');
+    }
+  },{passive:true});
+
+  viewport.addEventListener('pointermove',e=>{
+    if(mode3D || !pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
+    if(pointers.size===2){
+      const [a,b]=[...pointers.values()],m=midpoint(a,b);
+      if(!gesture||gesture.type!=='pinch')gesture={type:'pinch',dist:Math.max(8,distance(a,b)),scale,mid:m,pan:{...pan},moved:true};
+      const ns=clamp(gesture.scale*distance(a,b)/gesture.dist,fit,fit*4.5),r=viewport.getBoundingClientRect(),oldMx=gesture.mid.x-r.left-r.width/2,oldMy=gesture.mid.y-r.top-r.height/2,cx=(oldMx-gesture.pan.x)/gesture.scale,cy=(oldMy-gesture.pan.y)/gesture.scale,newMx=m.x-r.left-r.width/2,newMy=m.y-r.top-r.height/2;
+      scale=ns;pan.x=newMx-cx*scale;pan.y=newMy-cy*scale;render();
+      return;
+    }
+    if(pointers.size===1&&gesture?.type==='single'&&gesture.id===e.pointerId){
+      gesture.last={x:e.clientX,y:e.clientY};
+      const dx=e.clientX-gesture.start.x,dy=e.clientY-gesture.start.y,d=Math.hypot(dx,dy);
+      if(!gesture.moved&&d<=gesture.slop) return; // don't move map during finger jitter
+      if(!gesture.moved){
+        gesture.moved=true; viewport.classList.add('dragging');
+        try{viewport.setPointerCapture(e.pointerId)}catch(_){ }
+      }
+      pan.x=gesture.pan.x+dx;pan.y=gesture.pan.y+dy;render();
+    }
+  },{passive:true});
+
+  function finishPointer(e,cancelled=false){
+    const g=gesture;
+    const single=pointers.size===1&&g?.type==='single'&&g.id===e.pointerId;
+    const wasTap=single&&!g.moved&&!cancelled;
+    let hit=null;
+    if(wasTap){
+      // Prefer release point, then press point. This survives SVG retargeting/pointer capture quirks.
+      hit=plotAtClient(e.clientX,e.clientY,HIT_PAD(e)) || (g.startPlot?plots.find(p=>p.id===g.startPlot):null);
+    }
+    pointers.delete(e.pointerId);
+    try{if(viewport.hasPointerCapture?.(e.pointerId))viewport.releasePointerCapture(e.pointerId)}catch(_){ }
+    if(pointers.size===0){gesture=null;viewport.classList.remove('dragging')}
+    else if(pointers.size===1){const [id,p]=[...pointers.entries()][0];gesture={type:'single',id,start:{x:p.x,y:p.y},last:{x:p.x,y:p.y},pan:{...pan},startPlot:null,moved:true,slop:14,pointerType:p.type};}
+    if(hit) openPlot(hit,false);
+  }
+  viewport.addEventListener('pointerup',e=>{if(!mode3D)finishPointer(e,false)},{passive:true});
+  viewport.addEventListener('pointercancel',e=>{if(!mode3D)finishPointer(e,true)},{passive:true});
+  viewport.addEventListener('lostpointercapture',e=>{if(pointers.has(e.pointerId)&&pointers.size===1&&gesture?.moved){pointers.delete(e.pointerId);gesture=null;viewport.classList.remove('dragging')}});
+
+  viewport.addEventListener('wheel',e=>{if(mode3D)return;e.preventDefault();zoomAt(scale*(e.deltaY<0?1.12:.89),e.clientX,e.clientY)},{passive:false});
+  q('#zoomIn').onclick=()=>mode3D?engine3D?.zoom(.88):zoomCenter(1.16);
+  q('#zoomOut').onclick=()=>mode3D?engine3D?.zoom(1.14):zoomCenter(.86);
+  q('#resetBtn').onclick=()=>mode3D?engine3D?.reset():reset();
+
+  function clearStatusFilter(){statusFilter=null;svg.classList.remove('status-filter-available','status-filter-booked','status-filter-sold');document.querySelectorAll('.status-option').forEach(b=>b.classList.remove('active'));engine3D?.setStatusFilter?.(null)}
+  function setStatusFilter(st){st=st||null;if(statusFilter===st){clearStatusFilter();toast('Status filter cleared');return}statusFilter=st;svg.classList.remove('status-filter-available','status-filter-booked','status-filter-sold');if(st)svg.classList.add('status-filter-'+st);document.querySelectorAll('.status-option').forEach(b=>b.classList.toggle('active',b.dataset.statusFilter===st));engine3D?.setStatusFilter?.(st);toast(st?st.charAt(0).toUpperCase()+st.slice(1)+' plots':'Status filter cleared')}
+  function toggleStatusPanel(){statusExpanded=!statusExpanded;statusCard.classList.toggle('expanded',statusExpanded);q('#outlineToggle').classList.toggle('on',statusExpanded);q('#outlineToggle').setAttribute('aria-expanded',String(statusExpanded));if(!statusExpanded)clearStatusFilter()}
+  function toggleBoundaries(){showAll=!showAll;svg.classList.toggle('show-all',showAll);engine3D?.setShowAll(showAll);toast(showAll?'Plot boundaries ON':'Plot boundaries OFF')}
+
+  // Keep status gestures isolated from the map; retain glass finger-follow effect.
+  ['pointerdown','pointermove','pointerup','pointercancel'].forEach(type=>statusCard.addEventListener(type,e=>e.stopPropagation()));
+  let glassOpt=null;
+  function clearGlass(){if(glassOpt){glassOpt.classList.remove('touch-glass');glassOpt=null}}
+  function paintGlass(e){if(!isCoarse(e))return;const el=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('.status-option');if(el!==glassOpt){clearGlass();glassOpt=el||null;if(glassOpt)glassOpt.classList.add('touch-glass')}if(glassOpt){const r=glassOpt.getBoundingClientRect();glassOpt.style.setProperty('--rain-x',(e.clientX-r.left)+'px');glassOpt.style.setProperty('--rain-y',(e.clientY-r.top)+'px')}}
+  statusBody.addEventListener('pointerdown',paintGlass);statusBody.addEventListener('pointermove',paintGlass);statusBody.addEventListener('pointerup',()=>setTimeout(clearGlass,90));statusBody.addEventListener('pointercancel',clearGlass);statusBody.addEventListener('pointerleave',clearGlass);
+  q('#outlineToggle').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();toggleStatusPanel()});
+  q('#outlineTop').onclick=toggleBoundaries;
+  document.querySelectorAll('.status-option').forEach(b=>b.addEventListener('click',()=>setStatusFilter(b.dataset.statusFilter)));
+  updateStatusCounts();
+
+  q('#searchForm').onsubmit=e=>{e.preventDefault();const id=norm(q('#searchInput').value),p=plots.find(x=>x.id===id);if(!p)return toast('Plot not found');if(mode3D){selected=p;setSelected(p.id);engine3D?.select(p.id,true,false);toast('Plot '+p.id+' selected')}else openPlot(p,true)};
+  q('#closeBtn').onclick=close; scrim.onclick=close;
+  function call(){location.href='tel:+'+PHONE}
+  q('#callTop').onclick=call;q('#callBtn').onclick=call;
+  q('#waBtn').onclick=()=>{const msg=selected?`Hello, I am interested in Plot ${selected.id} at Tiyansh The Prime Square, Raigarh. Please share current availability, price and booking details.`:'Hello, I would like details about Tiyansh The Prime Square, Raigarh.';window.open('https://wa.me/'+PHONE+'?text='+encodeURIComponent(msg),'_blank','noopener,noreferrer')};
+
+  function hud3D(s){q('#percent').textContent=s.zoomPercent+'%';const n=document.getElementById('compassNeedle');if(n)n.setAttribute('transform',`rotate(${(-s.yaw*180/Math.PI).toFixed(1)} 32 32)`)}
+  function set3D(on){
+    mode3D=!!on; viewport.classList.toggle('mode3d',mode3D); q('#view3d').textContent=mode3D?'2D':'3D';
+    pointers.clear();gesture=null;viewport.classList.remove('dragging');
+    if(mode3D){
+      close();
+      if(!engine3D){try{engine3D=new Tiyansh3D(q('#threeHost'),{plots,onSelect:p=>{selected=p;setSelected(p.id);openPlot(p,false)},onCamera:hud3D})}catch(e){mode3D=false;viewport.classList.remove('mode3d');q('#view3d').textContent='3D';toast('3D is not supported on this device');return}}
+      engine3D.setShowAll(showAll);engine3D.setStatusFilter?.(statusFilter);engine3D.activate();if(selected)engine3D.select(selected.id,false,false);hud3D({yaw:engine3D.cam.yaw,zoomPercent:Math.round(34*engine3D.baseDistance/engine3D.cam.distance)});
+    }else{
+      engine3D?.deactivate();const n=document.getElementById('compassNeedle');if(n)n.removeAttribute('transform');q('#percent').textContent=Math.round(scale/fit*100)+'%';render();
+    }
+  }
+  q('#view3d').onclick=()=>set3D(!mode3D);
+  q('#galleryBtn').onclick=()=>toast('Gallery');q('#locationBtn').onclick=()=>toast('Raigarh, Chhattisgarh');
+
+  function onResize(){
+    if(mode3D){engine3D?.resize();return}
+    const oldFit=fit||1,z=scale/oldFit;calcFit();scale=clamp(fit*z,fit,fit*4.5);render();
+  }
+  window.addEventListener('resize',onResize);
+  window.visualViewport?.addEventListener('resize',onResize);
+
+  reset();
+  const qp=new URLSearchParams(location.search);
+  if(qp.get('status')==='open'&&!statusExpanded)toggleStatusPanel();
+  if(qp.get('filter')&&['available','booked','sold'].includes(qp.get('filter'))){if(!statusExpanded)toggleStatusPanel();setStatusFilter(qp.get('filter'))}
+  if(qp.get('view')==='3d')setTimeout(()=>{set3D(true);const id=norm(qp.get('plot')||'');if(id&&plots.some(p=>p.id===id)){selected=plots.find(p=>p.id===id);setSelected(id);engine3D?.select(id,qp.get('focus')==='1',false)}},80);
+})();
+</script>
+</body></html>
