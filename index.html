@@ -44,7 +44,7 @@ button,input{font:inherit}.app{height:100%;display:grid;grid-template-rows:auto 
 .controls{position:absolute;right:9px;bottom:11px;z-index:7;display:flex;flex-direction:column;gap:8px}.ctrl,.percent{width:49px;border-radius:13px;border:1px solid #263654;background:#0a1428ee;color:#91b4fb;box-shadow:0 8px 24px #0007}
 .ctrl{height:49px;font-size:20px;font-weight:800}.ctrl.text{font-size:12px;color:#8592ad}.percent{height:43px;display:grid;place-items:center;font-size:12px;font-weight:950;color:#73a6ff}
 .bottom-links{position:absolute;right:9px;bottom:234px;z-index:7;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
-.pill{height:38px;padding:0 16px;border-radius:999px;border:1px solid #2b3854;background:#0a1325e8;color:#f2f5ff;display:flex;align-items:center;gap:8px;font-size:11px;font-weight:950;letter-spacing:.06em;box-shadow:0 8px 22px #0007}.pill .pin{color:#ff4261}.pill .gallery{color:#f4c246}
+.pill{width:44px;height:24px;padding:0;border-radius:999px;border:1px solid #2b3854;background:#0a1325e8;color:#f2f5ff;display:flex;align-items:center;justify-content:center;gap:0;font-size:0;font-weight:950;letter-spacing:.06em;box-shadow:0 8px 22px #0007}.pill .pin,.pill .gallery{font-size:12px;line-height:1}.pill .pin{color:#ff4261}.pill .gallery{color:#f4c246}
 .toast{position:absolute;left:50%;bottom:92px;z-index:12;transform:translateX(-50%) translateY(14px);opacity:0;background:#030711ec;border:1px solid #ffffff1c;border-radius:999px;padding:10px 15px;pointer-events:none;transition:.16s;white-space:nowrap}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .scrim{position:fixed;inset:0;z-index:29;background:#000a;opacity:0;pointer-events:none;transition:.18s;backdrop-filter:blur(4px)}.scrim.open{opacity:1;pointer-events:auto}
 .drawer{position:fixed;z-index:30;left:0;top:0;bottom:0;width:min(87vw,600px);overflow:auto;background:#0d172b;border-top:4px solid var(--green);padding:35px 36px calc(96px + var(--safe));transform:translateX(-103%);transition:.22s ease;box-shadow:18px 0 50px #000b}.drawer.open{transform:translateX(0)}
@@ -106,7 +106,7 @@ button,input{font:inherit}.app{height:100%;display:grid;grid-template-rows:auto 
   .ctrl{height:38px;font-size:16px}.ctrl.text{font-size:9px}.percent{height:32px;font-size:9px}
 
   .bottom-links{right:7px;left:auto;bottom:177px;transform:none;flex-direction:column;gap:6px;max-width:none;align-items:flex-end}
-  .pill{height:31px;padding:0 10px;font-size:8px;gap:5px;white-space:nowrap}
+  .pill{width:41px;height:23px;padding:0;font-size:0;gap:0;white-space:nowrap}
 
   .toast{bottom:55px;font-size:11px;padding:8px 12px;max-width:84vw;overflow:hidden;text-overflow:ellipsis}
 
@@ -125,7 +125,7 @@ button,input{font:inherit}.app{height:100%;display:grid;grid-template-rows:auto 
   .icon{width:39px;height:39px}.brandmark{width:39px;height:39px}.brandmark .monogram{width:32px;height:32px}
   .search{height:44px}
   .bottom-links{max-width:none}
-  .pill{padding:0 8px;font-size:7.5px}
+  .pill{width:41px;height:23px;padding:0;font-size:0}
 }
 
 
@@ -221,8 +221,8 @@ button,input{font:inherit}.app{height:100%;display:grid;grid-template-rows:auto 
   </div>
 
   <div class="bottom-links">
-    <button class="pill" id="galleryBtn"><span class="gallery">▣</span> GALLERY</button>
-    <button class="pill" id="locationBtn"><span class="pin">●</span> LOCATION</button>
+    <button type="button" class="pill" id="galleryBtn" aria-label="Open gallery" title="Gallery"><span class="gallery" aria-hidden="true">▣</span> GALLERY</button>
+    <button type="button" class="pill" id="locationBtn" aria-label="Open location in Google Maps" title="Location"><span class="pin" aria-hidden="true">●</span> LOCATION</button>
   </div>
 
   <div class="controls">
