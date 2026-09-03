@@ -14,3 +14,17 @@ Implemented:
 - No external CDN/library required.
 
 Test URL: index.html?view=3d&plot=A-15&focus=1
+
+LATEST CHANGE:
+- Selected 3D plot extrusion height reduced by 50% (1.10 -> 0.55 world units).
+
+DESKTOP PLOT CLICK FIX:
+- Plot tap/click is now resolved on pointer-up when movement is <= 6px.
+- Dragging more than 6px remains map pan and does not open details.
+- Works with mouse, touch and pen pointer events.
+- 3D plot selection now opens the same plot-details drawer.
+
+PC STATUS FIX
+- Status card pointer events are isolated from map pan/pointer capture.
+- Desktop mouse click on the STATUS toggle now expands/collapses reliably.
+- Status option clicks no longer start map dragging.
