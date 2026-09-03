@@ -472,7 +472,7 @@ button,input{font:inherit}.app{height:100%;display:grid;grid-template-rows:auto 
     }
   }
   q('#view3d').onclick=()=>set3D(!mode3D);
-  q('#galleryBtn').onclick=()=>toast('Gallery');q('#locationBtn').onclick=()=>toast('Raigarh, Chhattisgarh');
+  q('#galleryBtn').onclick=()=>toast('Gallery');q('#locationBtn').onclick=()=>window.open('https://maps.app.goo.gl/n9BjoY4BYzZfmqTL7','_blank','noopener,noreferrer');
 
   function onResize(){
     if(mode3D){engine3D?.resize();return}
