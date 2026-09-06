@@ -36,6 +36,13 @@
       "when": 1788707012405,
       "tag": "0004_unique_wiccan",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788711052752,
+      "tag": "0005_spooky_tomas",
+      "breakpoints": true
     }
   ]
 }

@@ -599,6 +599,7 @@ fetch('/api/public-data',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.rejec
 
   function applyPublicData(data){
     const live=new Map((data.plots||[]).map(p=>[p.id,p]));
+    (data.plots||[]).forEach(row=>{if(plots.some(p=>p.id===row.id)||!row.polygon)return;try{const normalized=JSON.parse(row.polygon);if(!Array.isArray(normalized)||normalized.length<3)return;const mapped=normalized.map(([x,y])=>[x*W,y*H]),p={...row,points:mapped,center:[mapped.reduce((s,v)=>s+v[0],0)/mapped.length,mapped.reduce((s,v)=>s+v[1],0)/mapped.length]};plots.push(p);const poly=document.createElementNS('http://www.w3.org/2000/svg','polygon');poly.setAttribute('points',polyPoints(p));poly.setAttribute('class','plot');poly.dataset.plotId=p.id;poly.dataset.status=plotStatus(p);poly.setAttribute('tabindex','0');poly.setAttribute('role','button');poly.setAttribute('aria-label',`Plot ${p.id}`);poly.addEventListener('click',e=>{if(e.detail!==0&&coarseMQ.matches)return;e.stopPropagation();openPlot(p,false)});poly.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openPlot(p,false)}});svg.appendChild(poly)}catch(_){}});
     plots.forEach(p=>{const row=live.get(p.id);if(row){const shape={points:p.points,center:p.center,path:p.path};Object.assign(p,row,shape)}const el=svg.querySelector(`[data-plot-id="${p.id}"]`);if(el)el.dataset.status=plotStatus(p)});
     if(data.settings){PHONE=String(data.settings.whatsapp||data.settings.phone1||PHONE).replace(/\D/g,'')||PHONE;MAP_URL=data.settings.mapUrl||MAP_URL}
     updateStatusCounts();
@@ -613,6 +614,7 @@ fetch('/api/public-data',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.rejec
     if(s.brandName){const small=document.querySelector('.monogram small');if(small)small.textContent=s.brandName.toUpperCase()}
     if(s.brandShort){const mono=document.querySelector('.monogram');if(mono&&mono.firstChild)mono.firstChild.textContent=s.brandShort.toUpperCase()}
     if(s.location){const location=document.querySelector('.brand small');if(location)location.textContent=s.location.toUpperCase()}
+    if(s.masterplanName){const master=document.querySelector('.master');if(master)master.src='/api/project-asset/masterplan'}
     if(/^#[0-9a-f]{6}$/i.test(s.accentColor||''))document.documentElement.style.setProperty('--gold',s.accentColor);
     document.body.dataset.template=s.template||'plots';
   };

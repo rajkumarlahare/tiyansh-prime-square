@@ -1,0 +1,1 @@
+ALTER TABLE `plots` ADD `polygon` text DEFAULT '' NOT NULL;
