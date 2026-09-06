@@ -5,6 +5,7 @@ import { env } from "cloudflare:workers";
 const COOKIE="tiyansh_admin";
 const enc=new TextEncoder(),dec=new TextDecoder();
 const cfg=()=>env as unknown as Record<string,string>;
+export const panelMode=()=>cfg().PANEL_MODE==="super"?"super":"client";
 const bytes=(s:string)=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 const b64url=(value:Uint8Array)=>btoa(String.fromCharCode(...value)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
 const fromB64url=(value:string)=>bytes(value.replace(/-/g,"+").replace(/_/g,"/")+"===".slice((value.length+3)%4));
@@ -35,7 +36,9 @@ export async function hashAdminPassword(password:string){
 
 export async function authenticateAdmin(email:string,password:string,host?:string):Promise<AdminSession|null>{
   const normalized=email.trim().toLowerCase(),now=Date.now();
-  if(normalized===cfg().ADMIN_EMAIL?.toLowerCase()&&await verifyPassword(password,cfg().ADMIN_PASSWORD_SALT,cfg().ADMIN_PASSWORD_HASH))return {id:"owner",name:"Super Admin",email:normalized,role:"super_admin",projectId:"tiyansh-prime-square",exp:now+8*60*60*1000};
+  const mode=panelMode();
+  if(mode==="super"&&normalized===cfg().ADMIN_EMAIL?.toLowerCase()&&await verifyPassword(password,cfg().ADMIN_PASSWORD_SALT,cfg().ADMIN_PASSWORD_HASH))return {id:"owner",name:"Rekixo Super Admin",email:normalized,role:"super_admin",projectId:"tiyansh-prime-square",exp:now+8*60*60*1000};
+  if(mode!=="client")return null;
   const row=await env.DB.prepare("SELECT u.id, u.email, u.name, u.role, u.project_id AS projectId, u.password_hash AS passwordHash, u.password_salt AS passwordSalt, u.status, p.status AS projectStatus, p.admin_host AS adminHost FROM admin_users u JOIN projects p ON p.id = u.project_id WHERE u.email = ? LIMIT 1").bind(normalized).first<{id:string;email:string;name:string;role:AdminRole;projectId:string;passwordHash:string;passwordSalt:string;status:string;projectStatus:string;adminHost:string|null}>();
   if(!row||row.status!=="active"||row.projectStatus!=="active"||(row.adminHost&&host&&row.adminHost!==host)||!(await verifyPassword(password,row.passwordSalt,row.passwordHash)))return null;
   const timestamp=new Date().toISOString();
@@ -48,7 +51,9 @@ export async function getAdminSession():Promise<AdminSession|null>{
   const [body,sig]=token.split(".");if(!body||!sig||sig!==await signature(body))return null;
   let session:AdminSession;try{session=JSON.parse(dec.decode(fromB64url(body))) as AdminSession}catch{return null}
   if(!session.id||!session.email||!session.role||!session.projectId||session.exp<Date.now())return null;
-  if(session.role==="super_admin"&&session.id==="owner")return session;
+  const mode=panelMode();
+  if(session.role==="super_admin"&&session.id==="owner")return mode==="super"?session:null;
+  if(mode!=="client")return null;
   const row=await env.DB.prepare("SELECT u.name, u.email, u.role, u.project_id AS projectId, u.status, p.status AS projectStatus FROM admin_users u JOIN projects p ON p.id=u.project_id WHERE u.id = ? LIMIT 1").bind(session.id).first<{name:string;email:string;role:AdminRole;projectId:string;status:string;projectStatus:string}>();
   if(!row||row.status!=="active"||row.projectStatus!=="active"||row.email!==session.email)return null;
   return {...session,name:row.name,role:row.role,projectId:row.projectId};

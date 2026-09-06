@@ -2,6 +2,11 @@ import { readFile, writeFile } from "node:fs/promises";
 
 const path = "dist/server/wrangler.json";
 const config = JSON.parse(await readFile(path, "utf8"));
+const mode=process.argv[2];
+if(!["client","super"].includes(mode))throw new Error("Usage: node scripts/prepare-cloudflare-deploy.mjs client|super");
+
+config.name=mode==="super"?"rekixo-super-admin":"tiyansh-prime-square";
+config.vars={...(config.vars||{}),PANEL_MODE:mode,CLIENT_ADMIN_ORIGIN:"https://tiyansh-prime-square.ai-8f3.workers.dev"};
 
 config.d1_databases = [
   {
@@ -19,4 +24,4 @@ config.r2_buckets = [
 ];
 
 await writeFile(path, `${JSON.stringify(config)}\n`);
-console.log("Prepared generated Wrangler config with unique production bindings.");
+console.log(`Prepared ${mode} Worker with unique production bindings.`);

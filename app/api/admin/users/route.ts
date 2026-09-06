@@ -6,11 +6,12 @@ const emailPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 type UserRow={id:string;email:string;name:string;role:string;status:string;mustChangePassword:number;createdAt:string;updatedAt:string;lastLoginAt:string|null;projectId:string;projectName:string;publicHost:string|null;adminHost:string|null};
 const cleanHost=(value:unknown)=>String(value||"").trim().toLowerCase().replace(/^https?:\/\//,"").replace(/\/.*$/,"")||null;
 const slugify=(value:string)=>value.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"project";
+const clientAdminUrl=()=>((env as unknown as Record<string,string>).CLIENT_ADMIN_ORIGIN||"https://tiyansh-prime-square.ai-8f3.workers.dev").replace(/\/$/,"")+"/admin/login";
 
 export async function GET(){
   if(!(await requireSuperAdmin()))return unauthorized();
   const result=await env.DB.prepare("SELECT u.id, u.email, u.name, u.role, u.status, u.must_change_password AS mustChangePassword, u.created_at AS createdAt, u.updated_at AS updatedAt, u.last_login_at AS lastLoginAt, p.id AS projectId, p.name AS projectName, p.public_host AS publicHost, p.admin_host AS adminHost FROM admin_users u JOIN projects p ON p.id=u.project_id ORDER BY u.created_at DESC").all<UserRow>();
-  return Response.json({users:result.results},{headers:{"cache-control":"no-store"}});
+  return Response.json({users:result.results,clientAdminUrl:clientAdminUrl()},{headers:{"cache-control":"no-store"}});
 }
 
 export async function POST(request:Request){
@@ -29,7 +30,7 @@ export async function POST(request:Request){
     env.DB.prepare("INSERT INTO projects (id,name,slug,public_host,admin_host,status,created_at,updated_at) VALUES (?,?,?,?,?,'active',?,?)").bind(projectId,projectName,slug,publicHost,adminHost,now,now),
     env.DB.prepare("INSERT INTO admin_users (id,email,name,project_id,role,password_hash,password_salt,status,must_change_password,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)").bind(id,email,name,projectId,"client_admin",hash.passwordHash,hash.passwordSalt,"active",1,now,now)
   ])}catch(error){console.error("Client project create failed",error);return Response.json({error:"Email ya domain pehle se use ho raha hai"},{status:409})}
-  return Response.json({user:{id,email,name,projectId,projectName,publicHost,adminHost,role:"client_admin",status:"active",mustChangePassword:true,createdAt:now,updatedAt:now,lastLoginAt:null}},{status:201});
+  return Response.json({user:{id,email,name,projectId,projectName,publicHost,adminHost,role:"client_admin",status:"active",mustChangePassword:true,createdAt:now,updatedAt:now,lastLoginAt:null},clientAdminUrl:clientAdminUrl()},{status:201});
 }
 
 export async function PATCH(request:Request){
