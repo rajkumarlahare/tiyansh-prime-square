@@ -4,14 +4,19 @@ import test from "node:test";
 
 const source=path=>readFile(new URL(path,import.meta.url),"utf8");
 
-test("plot mapper stores normalized tenant boundaries and project assets",async()=>{
-  const [mapper,api,schema,website]=await Promise.all([source("../app/plot-mapper.tsx"),source("../app/api/mapper/route.ts"),source("../db/schema.ts"),source("../public/project/index.html")]);
+test("plot mapper is owner-only and stores normalized project boundaries",async()=>{
+  const [mapper,api,legacyApi,schema,website,clientAdmin,superAdmin]=await Promise.all([source("../app/plot-mapper.tsx"),source("../app/api/super-mapper/route.ts"),source("../app/api/mapper/route.ts"),source("../db/schema.ts"),source("../public/project/index.html"),source("../app/admin-dashboard.tsx"),source("../app/super-admin-dashboard.tsx")]);
   assert.match(mapper,/\(event\.clientX-box\.left\)\/box\.width/);
   assert.match(mapper,/mode==="rectangle"/);
-  assert.match(api,/projects\/\$\{session\.projectId\}\/mapper/);
+  assert.match(api,/requireSuperAdmin/);
+  assert.match(legacyApi,/status:403/);
+  assert.match(api,/projects\/\$\{projectId\}\/mapper/);
   assert.match(api,/image\/jpeg/);
   assert.match(api,/application\/pdf/);
   assert.match(schema,/polygon:text\("polygon"\)/);
   assert.match(website,/row\.polygon/);
   assert.match(website,/project-asset\/masterplan/);
+  assert.doesNotMatch(clientAdmin,/PlotMapper/);
+  assert.match(superAdmin,/PlotMapper/);
+  assert.match(superAdmin,/projectId=\{projectId\}/);
 });
