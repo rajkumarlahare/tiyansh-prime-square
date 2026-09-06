@@ -37,7 +37,7 @@ jobs:
 
       - name: Upload Client Worker session secret
         run: |
-          node -e 'process.stdout.write(JSON.stringify({SESSION_SECRET:process.env.SESSION_SECRET}))' | npx wrangler secret bulk
+          node -e 'process.stdout.write(JSON.stringify({SESSION_SECRET:process.env.SESSION_SECRET}))' | npx wrangler secret bulk --name tiyansh-prime-square
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -50,7 +50,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Deploy Tiyansh Client Worker
-        run: npx wrangler deploy
+        run: npx wrangler deploy --config dist/server/wrangler.json
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -60,7 +60,7 @@ jobs:
 
       - name: Upload Super Admin credentials
         run: |
-          node -e 'process.stdout.write(JSON.stringify({ADMIN_EMAIL:process.env.ADMIN_EMAIL,ADMIN_PASSWORD_SALT:process.env.ADMIN_PASSWORD_SALT,ADMIN_PASSWORD_HASH:process.env.ADMIN_PASSWORD_HASH,SESSION_SECRET:process.env.SESSION_SECRET}))' | npx wrangler secret bulk
+          node -e 'process.stdout.write(JSON.stringify({ADMIN_EMAIL:process.env.ADMIN_EMAIL,ADMIN_PASSWORD_SALT:process.env.ADMIN_PASSWORD_SALT,ADMIN_PASSWORD_HASH:process.env.ADMIN_PASSWORD_HASH,SESSION_SECRET:process.env.SESSION_SECRET}))' | npx wrangler secret bulk --name rekixo-super-admin
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -70,7 +70,7 @@ jobs:
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
 
       - name: Deploy Rekixo Super Admin Worker
-        run: npx wrangler deploy
+        run: npx wrangler deploy --config dist/server/wrangler.json
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
