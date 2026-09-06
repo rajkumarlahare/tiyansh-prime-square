@@ -1,4 +1,4 @@
-import { integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 export const projects = sqliteTable("projects", {
   id:text("id").primaryKey(), name:text("name").notNull(), slug:text("slug").notNull().unique(),
   publicHost:text("public_host"), adminHost:text("admin_host"), status:text("status").notNull().default("active"),
@@ -14,5 +14,10 @@ export const adminUsers = sqliteTable("admin_users", {
   role:text("role").notNull().default("client_admin"), passwordHash:text("password_hash").notNull(),
   passwordSalt:text("password_salt").notNull(), status:text("status").notNull().default("active"),
   mustChangePassword:integer("must_change_password",{mode:"boolean"}).notNull().default(true),
+  sessionVersion:integer("session_version").notNull().default(1), passwordChangedAt:text("password_changed_at"),
   createdAt:text("created_at").notNull(), updatedAt:text("updated_at").notNull(), lastLoginAt:text("last_login_at")
 });
+export const auditLogs = sqliteTable("audit_logs", {
+  id:text("id").primaryKey(), actorId:text("actor_id").notNull(), actorEmail:text("actor_email").notNull(),
+  action:text("action").notNull(), projectId:text("project_id"), targetId:text("target_id"), details:text("details").notNull().default("{}"), createdAt:text("created_at").notNull()
+},table=>({projectCreatedIndex:index("idx_audit_logs_project_created").on(table.projectId,table.createdAt)}));
