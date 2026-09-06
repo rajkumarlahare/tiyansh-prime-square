@@ -1,10 +1,16 @@
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
-export const plots = sqliteTable("plots", { id:text("id").primaryKey(), sqft:real("sqft").notNull(), sqm:real("sqm").notNull(), sqyd:real("sqyd").notNull(), dimensions:text("dimensions").notNull(), road:text("road").notNull(), status:text("status").notNull().default("available"), notes:text("notes").notNull().default(""), featured:integer("featured",{mode:"boolean"}).notNull().default(false), updatedAt:text("updated_at").notNull() });
-export const settings = sqliteTable("settings", { key:text("key").primaryKey(), value:text("value").notNull(), updatedAt:text("updated_at").notNull() });
-export const gallery = sqliteTable("gallery", { id:text("id").primaryKey(), objectKey:text("object_key").notNull().unique(), filename:text("filename").notNull(), contentType:text("content_type").notNull(), caption:text("caption").notNull().default(""), sortOrder:integer("sort_order").notNull().default(0), createdAt:text("created_at").notNull() });
+import { integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+export const projects = sqliteTable("projects", {
+  id:text("id").primaryKey(), name:text("name").notNull(), slug:text("slug").notNull().unique(),
+  publicHost:text("public_host"), adminHost:text("admin_host"), status:text("status").notNull().default("active"),
+  createdAt:text("created_at").notNull(), updatedAt:text("updated_at").notNull()
+},table=>({publicHostUnique:uniqueIndex("projects_public_host_unique").on(table.publicHost),adminHostUnique:uniqueIndex("projects_admin_host_unique").on(table.adminHost)}));
+export const plots = sqliteTable("plots", { projectId:text("project_id").notNull().default("tiyansh-prime-square").references(()=>projects.id), id:text("id").notNull(), sqft:real("sqft").notNull(), sqm:real("sqm").notNull(), sqyd:real("sqyd").notNull(), dimensions:text("dimensions").notNull(), road:text("road").notNull(), status:text("status").notNull().default("available"), notes:text("notes").notNull().default(""), featured:integer("featured",{mode:"boolean"}).notNull().default(false), updatedAt:text("updated_at").notNull() },table=>({pk:primaryKey({columns:[table.projectId,table.id]})}));
+export const settings = sqliteTable("settings", { projectId:text("project_id").notNull().default("tiyansh-prime-square").references(()=>projects.id), key:text("key").notNull(), value:text("value").notNull(), updatedAt:text("updated_at").notNull() },table=>({pk:primaryKey({columns:[table.projectId,table.key]})}));
+export const gallery = sqliteTable("gallery", { projectId:text("project_id").notNull().default("tiyansh-prime-square").references(()=>projects.id), id:text("id").notNull(), objectKey:text("object_key").notNull().unique(), filename:text("filename").notNull(), contentType:text("content_type").notNull(), caption:text("caption").notNull().default(""), sortOrder:integer("sort_order").notNull().default(0), createdAt:text("created_at").notNull() },table=>({pk:primaryKey({columns:[table.projectId,table.id]})}));
 export const loginAttempts = sqliteTable("login_attempts", { key:text("key").primaryKey(), attempts:integer("attempts").notNull().default(0), windowStart:integer("window_start").notNull() });
 export const adminUsers = sqliteTable("admin_users", {
   id:text("id").primaryKey(), email:text("email").notNull().unique(), name:text("name").notNull(),
+  projectId:text("project_id").notNull().references(()=>projects.id),
   role:text("role").notNull().default("client_admin"), passwordHash:text("password_hash").notNull(),
   passwordSalt:text("password_salt").notNull(), status:text("status").notNull().default("active"),
   mustChangePassword:integer("must_change_password",{mode:"boolean"}).notNull().default(true),
