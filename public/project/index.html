@@ -605,6 +605,17 @@ fetch('/api/public-data',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.rejec
     if(selected){const fresh=plots.find(p=>p.id===selected.id);if(fresh){selected=fresh;if(drawer.classList.contains('open')){q('#sqm').textContent=Number(fresh.sqm).toLocaleString('en-IN')+' Sq.M';q('#sqft').textContent=Number(fresh.sqft).toLocaleString('en-IN')+' Sq.Ft';q('#sqyd').textContent=Number(fresh.sqyd).toLocaleString('en-IN')+' Sq.Yd';q('#dims').textContent=fresh.dimensions||'—';q('#road').textContent=fresh.road||'—';const st=plotStatus(fresh),statusEl=q('#plotStatusValue');statusEl.textContent=st.charAt(0).toUpperCase()+st.slice(1);statusEl.className=st}}}
     engine3D?.setShowAll(showAll);engine3D?.setStatusFilter?.(statusFilter)
   }
+  const originalApplyPublicData=applyPublicData;
+  applyPublicData=function(data){
+    originalApplyPublicData(data);
+    const s=data&&data.settings||{};
+    if(s.projectName){document.title=s.projectName;const brand=document.querySelector('.brand b');if(brand)brand.textContent=s.projectName.toUpperCase()}
+    if(s.brandName){const small=document.querySelector('.monogram small');if(small)small.textContent=s.brandName.toUpperCase()}
+    if(s.brandShort){const mono=document.querySelector('.monogram');if(mono&&mono.firstChild)mono.firstChild.textContent=s.brandShort.toUpperCase()}
+    if(s.location){const location=document.querySelector('.brand small');if(location)location.textContent=s.location.toUpperCase()}
+    if(/^#[0-9a-f]{6}$/i.test(s.accentColor||''))document.documentElement.style.setProperty('--gold',s.accentColor);
+    document.body.dataset.template=s.template||'plots';
+  };
   window.TIYANSH_APPLY_PUBLIC_DATA=applyPublicData;
   reset();
   if(window.TIYANSH_PENDING_PUBLIC_DATA){applyPublicData(window.TIYANSH_PENDING_PUBLIC_DATA);delete window.TIYANSH_PENDING_PUBLIC_DATA}
