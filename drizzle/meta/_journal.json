@@ -15,6 +15,13 @@
       "when": 1788526257832,
       "tag": "0001_serious_albert_cleary",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788693526672,
+      "tag": "0002_last_peter_parker",
+      "breakpoints": true
     }
   ]
 }
