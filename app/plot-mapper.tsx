@@ -4,6 +4,7 @@ import {
   FileText,
   ImagePlus,
   Hand,
+  Maximize2,
   MousePointer2,
   RotateCcw,
   Save,
@@ -28,6 +29,7 @@ type Plot = {
 };
 
 const MAX_MASTERPLAN_BYTES = 900_000;
+const COMPLETED_PROJECT_ID = "tiyansh-prime-square";
 async function apiResult(response: Response) {
   const raw = await response.text();
   let result: Record<string, unknown> = {};
@@ -116,8 +118,11 @@ export default function PlotMapper({
   notify: (message: string) => void;
   projectId: string;
 }) {
+  const completedProject = projectId === COMPLETED_PROJECT_ID;
   const assetUrl = (kind: string) =>
-    `/api/project-asset/${kind}?projectId=${encodeURIComponent(projectId)}`;
+    completedProject && kind === "masterplan"
+      ? "/project/masterplan.jpg"
+      : `/api/project-asset/${kind}?projectId=${encodeURIComponent(projectId)}`;
   const [plots, setPlots] = useState<Plot[]>([]),
     [points, setPoints] = useState<Point[]>([]),
     [mode, setMode] = useState<"block" | "rectangle" | "polygon">("block"),
@@ -134,6 +139,7 @@ export default function PlotMapper({
     [busy, setBusy] = useState(false),
     [pdfName, setPdfName] = useState("");
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
   // projectId is also the component key, so switching projects remounts this editor.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -324,11 +330,15 @@ export default function PlotMapper({
         <div className="mapper-upload-row">
           <label className="mapper-upload">
             <ImagePlus />
-            {busy ? "Processing…" : "3D masterplan"}
+            {completedProject
+              ? "Completed masterplan locked"
+              : busy
+                ? "Processing…"
+                : "3D masterplan"}
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
-              disabled={busy}
+              disabled={busy || completedProject}
               onChange={(e) =>
                 e.target.files?.[0] && upload(e.target.files[0], "masterplan")
               }
@@ -459,28 +469,88 @@ export default function PlotMapper({
         </small>
       </div>
       <div className="mapper-work">
-        <div className={`mapper-canvas card ${navigate ? "pan-mode" : ""}`}>
+        <div
+          ref={canvasRef}
+          className={`mapper-canvas card ${navigate ? "pan-mode" : ""}`}
+        >
           <div className="mapper-zoombar">
-            <button className={!navigate ? "active" : ""} onClick={()=>setNavigate(false)}><MousePointer2/>Map points</button>
-            <button className={navigate ? "active" : ""} onClick={()=>setNavigate(true)}><Hand/>Move image</button>
-            <span>{Math.round(zoom*100)}%</span>
-            <button aria-label="Zoom out" disabled={zoom<=1} onClick={()=>setZoom(value=>Math.max(1,value-.5))}><ZoomOut/></button>
-            <button aria-label="Zoom in" disabled={zoom>=6} onClick={()=>setZoom(value=>Math.min(6,value+.5))}><ZoomIn/></button>
-            <button aria-label="Reset zoom" onClick={()=>setZoom(1)}><RotateCcw/></button>
+            <select
+              value={mode}
+              onChange={(event) => {
+                setMode(event.target.value as typeof mode);
+                setPoints([]);
+              }}
+              aria-label="Mapping mode"
+            >
+              <option value="block">Block Auto</option>
+              <option value="rectangle">Rectangle</option>
+              <option value="polygon">Polygon</option>
+            </select>
+            <button
+              className={!navigate ? "active" : ""}
+              onClick={() => setNavigate(false)}
+            >
+              <MousePointer2 />
+              Map points
+            </button>
+            <button
+              className={navigate ? "active" : ""}
+              onClick={() => setNavigate(true)}
+            >
+              <Hand />
+              Move image
+            </button>
+            <span>{Math.round(zoom * 100)}%</span>
+            <input
+              className="mapper-zoom-range"
+              type="range"
+              min="1"
+              max="6"
+              step="0.1"
+              value={zoom}
+              onChange={(event) => setZoom(Number(event.target.value))}
+              aria-label="Zoom level"
+            />
+            <button
+              aria-label="Zoom out"
+              disabled={zoom <= 1}
+              onClick={() => setZoom((value) => Math.max(1, value - 0.5))}
+            >
+              <ZoomOut />
+            </button>
+            <button
+              aria-label="Zoom in"
+              disabled={zoom >= 6}
+              onClick={() => setZoom((value) => Math.min(6, value + 0.5))}
+            >
+              <ZoomIn />
+            </button>
+            <button aria-label="Reset zoom" onClick={() => setZoom(1)}>
+              <RotateCcw />
+            </button>
+            <button
+              aria-label="Full screen"
+              onClick={() => canvasRef.current?.requestFullscreen?.()}
+            >
+              <Maximize2 />
+            </button>
           </div>
           {!imageReady && (
             <div className="mapper-loading">
               Masterplan upload करें या image load होने दें…
             </div>
           )}
-          <div className="mapper-image-wrap" style={{width:`${zoom*100}%`,maxWidth:"none"}}>
+          <div
+            className="mapper-image-wrap"
+            style={{ width: `${zoom * 100}%`, maxWidth: "none" }}
+          >
             <img
               ref={imageRef}
               src={imageUrl}
               alt="Project masterplan"
               onLoad={() => setImageReady(true)}
               onError={() => setImageReady(false)}
-              style={{width:"100%",maxHeight:"none"}}
+              style={{ width: "100%", maxHeight: "none" }}
             />
             {imageReady && (
               <svg
@@ -519,18 +589,19 @@ export default function PlotMapper({
                       .map(([x, y]) => `${x * 1000},${y * 1000}`)
                       .join(" ")}
                   />
-                )}{" "}
-                {points.map(([x, y], i) => (
-                  <circle
-                    className="point"
-                    key={i}
-                    cx={x * 1000}
-                    cy={y * 1000}
-                    r="8"
-                  />
-                ))}
+                )}
               </svg>
             )}
+            {imageReady &&
+              points.map(([x, y], index) => (
+                <span
+                  className="mapper-point-handle"
+                  key={index}
+                  style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
+                >
+                  {index + 1}
+                </span>
+              ))}
           </div>
         </div>
         <aside className="card mapper-list">

@@ -17,6 +17,7 @@ test("plot mapper is owner-only and stores normalized project boundaries",async(
   assert.match(mapper,/plots: batch/);
   assert.match(mapper,/Math\.min\(6/);
   assert.match(mapper,/Move image/);
+  assert.match(mapper,/Completed masterplan locked/);
   assert.match(mapper,/onPointerDown=\{navigate \? undefined : point\}/);
   assert.match(api,/requireSuperAdmin/);
   assert.match(legacyApi,/status:403/);
@@ -25,9 +26,11 @@ test("plot mapper is owner-only and stores normalized project boundaries",async(
   assert.match(api,/application\/pdf/);
   assert.match(api,/mapper\.block_saved/);
   assert.match(api,/env\.DB\.batch/);
+  assert.match(api,/Completed Tiyansh masterplan locked/);
   assert.match(schema,/polygon:text\("polygon"\)/);
   assert.match(website,/row\.polygon/);
   assert.match(website,/project-asset\/masterplan/);
+  assert.match(website,/data\.projectId!==\'tiyansh-prime-square\'/);
   assert.doesNotMatch(clientAdmin,/PlotMapper/);
   assert.match(superAdmin,/PlotMapper/);
   assert.match(superAdmin,/projectId=\{projectId\}/);

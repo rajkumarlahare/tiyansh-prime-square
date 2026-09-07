@@ -4,6 +4,7 @@ import { writeAudit } from "../../audit";
 
 const denied = () =>
   Response.json({ error: "Super Admin access required" }, { status: 403 });
+const COMPLETED_PROJECT_ID = "tiyansh-prime-square";
 async function projectExists(projectId: string) {
   return Boolean(
     await env.DB.prepare(
@@ -31,10 +32,35 @@ function validPolygon(value: string) {
     return false;
   }
 }
-function cleanPlot(projectId:string,p:Record<string,unknown>,now:string){
-  const id=String(p.id||"").trim().toUpperCase().slice(0,80),polygon=String(p.polygon||""),status=String(p.status||"available"),numbers=[Number(p.sqft),Number(p.sqm),Number(p.sqyd)];
-  if(!id||(polygon&&!validPolygon(polygon))||!["available","booked","sold"].includes(status)||numbers.some(value=>!Number.isFinite(value)||value<0))return null;
-  return {projectId,id,sqft:numbers[0],sqm:numbers[1],sqyd:numbers[2],dimensions:String(p.dimensions||"").slice(0,120),road:String(p.road||"").slice(0,160),polygon,status,notes:String(p.notes||"").slice(0,2000),featured:p.featured?1:0,updatedAt:now};
+function cleanPlot(projectId: string, p: Record<string, unknown>, now: string) {
+  const id = String(p.id || "")
+      .trim()
+      .toUpperCase()
+      .slice(0, 80),
+    polygon = String(p.polygon || ""),
+    status = String(p.status || "available"),
+    numbers = [Number(p.sqft), Number(p.sqm), Number(p.sqyd)];
+  if (
+    !id ||
+    (polygon && !validPolygon(polygon)) ||
+    !["available", "booked", "sold"].includes(status) ||
+    numbers.some((value) => !Number.isFinite(value) || value < 0)
+  )
+    return null;
+  return {
+    projectId,
+    id,
+    sqft: numbers[0],
+    sqm: numbers[1],
+    sqyd: numbers[2],
+    dimensions: String(p.dimensions || "").slice(0, 120),
+    road: String(p.road || "").slice(0, 160),
+    polygon,
+    status,
+    notes: String(p.notes || "").slice(0, 2000),
+    featured: p.featured ? 1 : 0,
+    updatedAt: now,
+  };
 }
 
 export async function GET(request: Request) {
@@ -75,6 +101,14 @@ export async function POST(request: Request) {
       projectId = String(form.get("projectId") || ""),
       kind = String(form.get("kind") || ""),
       file = form.get("file");
+    if (projectId === COMPLETED_PROJECT_ID && kind === "masterplan")
+      return Response.json(
+        {
+          error:
+            "Completed Tiyansh masterplan locked है। नए काम के लिए नया project बनाएँ।",
+        },
+        { status: 409 },
+      );
     if (!(await projectExists(projectId)))
       return Response.json({ error: "Project नहीं मिला" }, { status: 404 });
     const allowed =
@@ -118,28 +152,62 @@ export async function POST(request: Request) {
       plots?: Record<string, unknown>[];
     },
     projectId = String(body.projectId || ""),
-    incoming = Array.isArray(body.plots) ? body.plots : body.plot ? [body.plot] : [];
+    incoming = Array.isArray(body.plots)
+      ? body.plots
+      : body.plot
+        ? [body.plot]
+        : [];
   if (!(await projectExists(projectId)) || !incoming.length)
     return Response.json(
       { error: "Project या plot नहीं मिला" },
       { status: 404 },
     );
-  if(incoming.length>50)return Response.json({error:"एक block में अधिकतम 50 plots रखें"},{status:400});
-  const now = new Date().toISOString(),cleaned=incoming.map(plot=>cleanPlot(projectId,plot,now));
-  if(cleaned.some(plot=>!plot))
+  if (incoming.length > 50)
+    return Response.json(
+      { error: "एक block में अधिकतम 50 plots रखें" },
+      { status: 400 },
+    );
+  const now = new Date().toISOString(),
+    cleaned = incoming.map((plot) => cleanPlot(projectId, plot, now));
+  if (cleaned.some((plot) => !plot))
     return Response.json({ error: "Plot data सही नहीं है" }, { status: 400 });
-  const saved=cleaned.filter((plot):plot is NonNullable<typeof plot>=>Boolean(plot));
-  await env.DB.batch(saved.map(plot=>env.DB.prepare("INSERT INTO plots (project_id,id,sqft,sqm,sqyd,dimensions,road,polygon,status,notes,featured,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id,id) DO UPDATE SET sqft=excluded.sqft,sqm=excluded.sqm,sqyd=excluded.sqyd,dimensions=excluded.dimensions,road=excluded.road,polygon=excluded.polygon,status=excluded.status,notes=excluded.notes,featured=excluded.featured,updated_at=excluded.updated_at").bind(plot.projectId,plot.id,plot.sqft,plot.sqm,plot.sqyd,plot.dimensions,plot.road,plot.polygon,plot.status,plot.notes,plot.featured,plot.updatedAt)));
+  const saved = cleaned.filter((plot): plot is NonNullable<typeof plot> =>
+    Boolean(plot),
+  );
+  await env.DB.batch(
+    saved.map((plot) =>
+      env.DB.prepare(
+        "INSERT INTO plots (project_id,id,sqft,sqm,sqyd,dimensions,road,polygon,status,notes,featured,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id,id) DO UPDATE SET sqft=excluded.sqft,sqm=excluded.sqm,sqyd=excluded.sqyd,dimensions=excluded.dimensions,road=excluded.road,polygon=excluded.polygon,status=excluded.status,notes=excluded.notes,featured=excluded.featured,updated_at=excluded.updated_at",
+      ).bind(
+        plot.projectId,
+        plot.id,
+        plot.sqft,
+        plot.sqm,
+        plot.sqyd,
+        plot.dimensions,
+        plot.road,
+        plot.polygon,
+        plot.status,
+        plot.notes,
+        plot.featured,
+        plot.updatedAt,
+      ),
+    ),
+  );
   await writeAudit(
     actor,
-    saved.length>1?"mapper.block_saved":saved[0].polygon ? "mapper.plot_saved" : "mapper.boundary_removed",
+    saved.length > 1
+      ? "mapper.block_saved"
+      : saved[0].polygon
+        ? "mapper.plot_saved"
+        : "mapper.boundary_removed",
     projectId,
-    saved.length===1?saved[0].id:null,
-    { count:saved.length,ids:saved.map(plot=>plot.id) },
+    saved.length === 1 ? saved[0].id : null,
+    { count: saved.length, ids: saved.map((plot) => plot.id) },
   );
   return Response.json({
     ok: true,
     plot: saved[0],
-    plots:saved,
+    plots: saved,
   });
 }

@@ -614,7 +614,7 @@ fetch('/api/public-data',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.rejec
     if(s.brandName){const small=document.querySelector('.monogram small');if(small)small.textContent=s.brandName.toUpperCase()}
     if(s.brandShort){const mono=document.querySelector('.monogram');if(mono&&mono.firstChild)mono.firstChild.textContent=s.brandShort.toUpperCase()}
     if(s.location){const location=document.querySelector('.brand small');if(location)location.textContent=s.location.toUpperCase()}
-    if(s.masterplanName){const master=document.querySelector('.master');if(master)master.src='/api/project-asset/masterplan'}
+    if(s.masterplanName&&data.projectId!=='tiyansh-prime-square'){const master=document.querySelector('.master');if(master)master.src='/api/project-asset/masterplan'}
     if(/^#[0-9a-f]{6}$/i.test(s.accentColor||''))document.documentElement.style.setProperty('--gold',s.accentColor);
     document.body.dataset.template=s.template||'plots';
   };
