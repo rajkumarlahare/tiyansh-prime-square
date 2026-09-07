@@ -2,6 +2,8 @@
 @import "tw-animate-css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
 
+.mapper-fields select{min-width:0;height:44px;border:1px solid #2d3d58;border-radius:9px;background:#071221;color:#fff;padding:0 11px}.mapper-image-wrap polygon.block-draft{fill:#20ce7938;stroke:#ffe077;stroke-dasharray:none}
+
 @utility scrollbar-thin {
   scrollbar-width: thin;
 }

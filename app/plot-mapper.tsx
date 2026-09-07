@@ -75,6 +75,36 @@ async function optimizeMasterplan(file: File) {
   );
 }
 
+function numberedId(start: string, offset: number) {
+  const match = start
+    .trim()
+    .toUpperCase()
+    .match(/^(.*?)(\d+)$/);
+  if (!match)
+    return offset
+      ? `${start.trim().toUpperCase()}-${offset + 1}`
+      : start.trim().toUpperCase();
+  const value = Math.max(0, Number(match[2]) + offset);
+  return `${match[1]}${String(value).padStart(match[2].length, "0")}`;
+}
+function splitBlock(points: Point[], count: number) {
+  if (points.length !== 4 || count < 2) return [];
+  const mix = (a: Point, b: Point, t: number): Point => [
+    a[0] + (b[0] - a[0]) * t,
+    a[1] + (b[1] - a[1]) * t,
+  ];
+  return Array.from({ length: count }, (_, index) => {
+    const from = index / count,
+      to = (index + 1) / count;
+    return [
+      mix(points[0], points[1], from),
+      mix(points[0], points[1], to),
+      mix(points[3], points[2], to),
+      mix(points[3], points[2], from),
+    ] as Point[];
+  });
+}
+
 export default function PlotMapper({
   notify,
   projectId,
@@ -86,11 +116,13 @@ export default function PlotMapper({
     `/api/project-asset/${kind}?projectId=${encodeURIComponent(projectId)}`;
   const [plots, setPlots] = useState<Plot[]>([]),
     [points, setPoints] = useState<Point[]>([]),
-    [mode, setMode] = useState<"rectangle" | "polygon">("rectangle"),
+    [mode, setMode] = useState<"block" | "rectangle" | "polygon">("block"),
     [plotId, setPlotId] = useState(""),
     [dimensions, setDimensions] = useState(""),
     [sqft, setSqft] = useState(""),
     [road, setRoad] = useState(""),
+    [blockCount, setBlockCount] = useState("6"),
+    [numberStep, setNumberStep] = useState<1 | -1>(1),
     [imageUrl, setImageUrl] = useState(() => assetUrl("masterplan")),
     [imageReady, setImageReady] = useState(false),
     [busy, setBusy] = useState(false),
@@ -121,13 +153,22 @@ export default function PlotMapper({
         : points,
     [mode, points],
   );
+  const blockDrafts = useMemo(
+    () =>
+      mode === "block"
+        ? splitBlock(points, Math.min(50, Math.max(2, Number(blockCount) || 2)))
+        : [],
+    [mode, points, blockCount],
+  );
   function point(event: React.PointerEvent<SVGSVGElement>) {
     const box = event.currentTarget.getBoundingClientRect(),
       p: [number, number] = [
         (event.clientX - box.left) / box.width,
         (event.clientY - box.top) / box.height,
       ];
-    if (mode === "rectangle") {
+    if (mode === "block") {
+      setPoints((current) => (current.length >= 4 ? [p] : [...current, p]));
+    } else if (mode === "rectangle") {
       setPoints((current) => (current.length >= 2 ? [p] : [...current, p]));
     } else
       setPoints((current) => (current.length < 80 ? [...current, p] : current));
@@ -165,6 +206,47 @@ export default function PlotMapper({
   }
   async function save() {
     const id = plotId.trim().toUpperCase();
+    if (mode === "block") {
+      if (!id || blockDrafts.length < 2) {
+        notify("पहला plot number दें और block के चारों outer corners tap करें");
+        return;
+      }
+      const area = Number(sqft) || 0;
+      const batch = blockDrafts.map((polygon, index): Plot => ({
+        id: numberedId(id, index * numberStep),
+        sqft: area,
+        sqm: area / 10.7639,
+        sqyd: area / 9,
+        dimensions: dimensions.trim(),
+        road: road.trim(),
+        status: "available",
+        polygon: JSON.stringify(polygon),
+      }));
+      setBusy(true);
+      try {
+        const response = await fetch("/api/super-mapper", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ projectId, plots: batch }),
+          }),
+          result = await apiResult(response),
+          saved = result.plots as Plot[];
+        setPlots((current) => [
+          ...current.filter(
+            (item) => !saved.some((plot) => plot.id === item.id),
+          ),
+          ...saved,
+        ]);
+        setPoints([]);
+        setPlotId(numberedId(id, batch.length * numberStep));
+        notify(`${batch.length} plots एक साथ clickable बन गए`);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : "Block save नहीं हुआ");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (!id || draft.length < 3) {
       notify("Plot number और पूरी boundary जरूरी है");
       return;
@@ -259,16 +341,21 @@ export default function PlotMapper({
             />
           </label>
           {pdfName && (
-            <a
-              href={assetUrl("sourcePdf")}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a href={assetUrl("sourcePdf")} target="_blank" rel="noreferrer">
               Open {pdfName}
             </a>
           )}
         </div>
         <div className="mapper-mode">
+          <button
+            className={mode === "block" ? "active" : ""}
+            onClick={() => {
+              setMode("block");
+              setPoints([]);
+            }}
+          >
+            Block Auto: 4 taps
+          </button>
           <button
             className={mode === "rectangle" ? "active" : ""}
             onClick={() => {
@@ -310,6 +397,29 @@ export default function PlotMapper({
             onChange={(e) => setRoad(e.target.value)}
             placeholder="Road access"
           />
+          {mode === "block" && (
+            <>
+              <input
+                type="number"
+                min="2"
+                max="50"
+                value={blockCount}
+                onChange={(e) => setBlockCount(e.target.value)}
+                placeholder="Plots in block"
+                aria-label="Plots in block"
+              />
+              <select
+                value={numberStep}
+                onChange={(e) =>
+                  setNumberStep(Number(e.target.value) as 1 | -1)
+                }
+                aria-label="Number direction"
+              >
+                <option value="1">Numbering +1</option>
+                <option value="-1">Numbering −1</option>
+              </select>
+            </>
+          )}
         </div>
         <div className="mapper-actions">
           <button
@@ -324,16 +434,22 @@ export default function PlotMapper({
           </button>
           <button
             className="primary"
-            disabled={busy || draft.length < 3}
+            disabled={
+              busy ||
+              (mode === "block" ? blockDrafts.length < 2 : draft.length < 3)
+            }
             onClick={save}
           >
             <Save />
-            Save clickable plot
+            {mode === "block"
+              ? `Save ${blockDrafts.length || Number(blockCount) || 0} plots together`
+              : "Save clickable plot"}
           </button>
         </div>
         <small className="mapper-help">
-          Rectangle mode: plot के ऊपर-left और नीचे-right corner पर tap करें।
-          Irregular plot के लिए Polygon mode चुनें और सभी corners tap करें।
+          {mode === "block"
+            ? "Block Auto: numbering जिस दिशा में चाहिए, उस block के start-left → end-left → end-right → start-right corners tap करें।"
+            : "Rectangle mode में 2 opposite corners tap करें। Irregular plot के लिए Polygon mode चुनें।"}
         </small>
       </div>
       <div className="mapper-work">
@@ -370,7 +486,18 @@ export default function PlotMapper({
                     </polygon>
                   );
                 })}
-                {draft.length > 0 && (
+                {blockDrafts.map((shape, index) => (
+                  <polygon
+                    key={`block-${index}`}
+                    className="draft block-draft"
+                    points={shape
+                      .map(([x, y]) => `${x * 1000},${y * 1000}`)
+                      .join(" ")}
+                  >
+                    <title>{numberedId(plotId, index * numberStep)}</title>
+                  </polygon>
+                ))}
+                {mode !== "block" && draft.length > 0 && (
                   <polygon
                     className="draft"
                     points={draft
