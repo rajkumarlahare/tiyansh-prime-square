@@ -103,6 +103,14 @@ type ZoomAnchor = {
   visualY: number;
 };
 
+type PendingPinchFrame = {
+  zoom: number;
+  centerX: number;
+  centerY: number;
+  panX: number;
+  panY: number;
+};
+
 const COMPLETED_PROJECT_ID = "tiyansh-prime-square";
 const MAX_MAPPING_DIMENSION = 6144;
 const MAX_MAPPING_PIXELS = 24_000_000;
@@ -321,6 +329,13 @@ export default function PlotMapper({
   const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
   const suppressTapUntilRef = useRef(0);
   const zoomRef = useRef(1);
+  // Pointer events can arrive much faster than the screen can paint. Keep raw
+  // coordinates in refs and mutate scroll/zoom at most once per animation frame.
+  // This removes the Android/Chrome "kapkapi" caused by layout + scroll work on
+  // every pointermove while preserving the exact latest finger position.
+  const gestureFrameRef = useRef<number | null>(null);
+  const pendingPanRef = useRef({ x: 0, y: 0 });
+  const pendingPinchRef = useRef<PendingPinchFrame | null>(null);
 
 
   useLayoutEffect(() => {
@@ -382,6 +397,7 @@ export default function PlotMapper({
   }
 
   useEffect(() => {
+    resetGestureFrameQueue();
     activeGesturePointersRef.current.clear();
     panGestureRef.current = null;
     pinchGestureRef.current = null;
@@ -668,6 +684,19 @@ export default function PlotMapper({
     }
   }
 
+  function clearCurrentSelection() {
+    const saved = plots.find(
+      (plot) => plot.id === plotId && parsePolygon(plot).length >= 3,
+    );
+    if (saved) {
+      // "Clear" on an already-mapped plot must clear the persisted clickable
+      // boundary, not just hide its edit handles locally.
+      void remove(saved);
+      return;
+    }
+    clearCurrentPoints();
+  }
+
   function undoPoint() {
     setPoints((current) => current.slice(0, -1));
     setManualPhase("select");
@@ -768,7 +797,7 @@ export default function PlotMapper({
     } else {
       zoomAnchorRef.current = null;
     }
-    if (Math.abs(next - zoomRef.current) < 0.0001) {
+    if (Math.abs(next - zoomRef.current) < 0.0015) {
       zoomAnchorRef.current = null;
       return;
     }
@@ -814,6 +843,68 @@ export default function PlotMapper({
       lastY: y,
       moved: false,
     };
+  }
+
+  function resetGestureFrameQueue() {
+    if (gestureFrameRef.current !== null) {
+      cancelAnimationFrame(gestureFrameRef.current);
+      gestureFrameRef.current = null;
+    }
+    pendingPanRef.current = { x: 0, y: 0 };
+    pendingPinchRef.current = null;
+  }
+
+  function scheduleGestureFrame() {
+    if (gestureFrameRef.current !== null) return;
+    gestureFrameRef.current = requestAnimationFrame(() => {
+      gestureFrameRef.current = null;
+      const canvas = canvasRef.current;
+      const pinch = pendingPinchRef.current;
+      const pan = pendingPanRef.current;
+      pendingPinchRef.current = null;
+      pendingPanRef.current = { x: 0, y: 0 };
+      if (!canvas) return;
+
+      if (pinch) {
+        // Finger-center movement and pinch scale are committed together in ONE
+        // frame. Tiny sub-pixel tremor is ignored instead of shaking the image.
+        if (Math.abs(pinch.panX) >= 0.25) canvas.scrollLeft += pinch.panX;
+        if (Math.abs(pinch.panY) >= 0.25) canvas.scrollTop += pinch.panY;
+        setMapperZoom(pinch.zoom, pinch.centerX, pinch.centerY);
+        return;
+      }
+
+      if (Math.abs(pan.x) >= 0.25) canvas.scrollLeft += pan.x;
+      if (Math.abs(pan.y) >= 0.25) canvas.scrollTop += pan.y;
+    });
+  }
+
+  function queuePanDelta(x: number, y: number) {
+    pendingPanRef.current = {
+      x: pendingPanRef.current.x + x,
+      y: pendingPanRef.current.y + y,
+    };
+    scheduleGestureFrame();
+  }
+
+  function queuePinchFrame(
+    zoomValue: number,
+    centerX: number,
+    centerY: number,
+    panX: number,
+    panY: number,
+  ) {
+    const pending = pendingPinchRef.current;
+    pendingPinchRef.current = {
+      zoom: zoomValue,
+      centerX,
+      centerY,
+      panX: (pending?.panX || 0) + panX,
+      panY: (pending?.panY || 0) + panY,
+    };
+    // A pinch owns the frame; stale one-finger delta must never fight it.
+    pendingPanRef.current = { x: 0, y: 0 };
+    scheduleGestureFrame();
   }
 
   function handleMapperGesturePointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -904,12 +995,8 @@ export default function PlotMapper({
         pinchGestureRef.current = pinch;
       }
 
-      const canvas = canvasRef.current;
-      if (canvas) {
-        // Two fingers also pan together, including while SELECT mode is active.
-        canvas.scrollLeft += pinch.lastCenterX - pair.centerX;
-        canvas.scrollTop += pinch.lastCenterY - pair.centerY;
-      }
+      const panX = pinch.lastCenterX - pair.centerX;
+      const panY = pinch.lastCenterY - pair.centerY;
       pinch.lastCenterX = pair.centerX;
       pinch.lastCenterY = pair.centerY;
 
@@ -917,7 +1004,7 @@ export default function PlotMapper({
         pinch.startZoom * (pair.distance / Math.max(1, pinch.startDistance));
       tapStartRef.current = null;
       suppressTapUntilRef.current = Date.now() + 600;
-      setMapperZoom(nextZoom, pair.centerX, pair.centerY);
+      queuePinchFrame(nextZoom, pair.centerX, pair.centerY, panX, panY);
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -946,13 +1033,11 @@ export default function PlotMapper({
       // Pointer capture may be unavailable for a pointer that just ended.
     }
 
-    const canvas = canvasRef.current;
-    if (canvas) {
-      canvas.scrollLeft += pan.lastX - event.clientX;
-      canvas.scrollTop += pan.lastY - event.clientY;
-    }
+    const deltaX = pan.lastX - event.clientX;
+    const deltaY = pan.lastY - event.clientY;
     pan.lastX = event.clientX;
     pan.lastY = event.clientY;
+    queuePanDelta(deltaX, deltaY);
 
     if (!pan.moved) {
       pan.moved = true;
@@ -1012,6 +1097,7 @@ export default function PlotMapper({
 
   function handleMapperGesturePointerCancel(event: React.PointerEvent<HTMLDivElement>) {
     if (mapperGestureTargetIsHandle(event.target)) return;
+    resetGestureFrameQueue();
     activeGesturePointersRef.current.delete(event.pointerId);
     panGestureRef.current = null;
     pinchGestureRef.current = null;
@@ -1052,6 +1138,7 @@ export default function PlotMapper({
       return next;
     });
     // A quarter turn changes portrait/landscape bounds. Fit once, then user can zoom again.
+    resetGestureFrameQueue();
     activeGesturePointersRef.current.clear();
     panGestureRef.current = null;
     pinchGestureRef.current = null;
@@ -1072,6 +1159,7 @@ export default function PlotMapper({
   }
 
   function resetMapperView() {
+    resetGestureFrameQueue();
     activeGesturePointersRef.current.clear();
     panGestureRef.current = null;
     pinchGestureRef.current = null;
@@ -1308,18 +1396,34 @@ export default function PlotMapper({
   }
 
   async function remove(plot: Plot) {
-    if (!confirm(`Plot ${plot.id} की clickable boundary हटाएँ? Details सुरक्षित रहेंगी।`)) return;
+    if (!confirm(`Plot ${plot.id} की saved clickable boundary हटाएँ? Plot details/status सुरक्षित रहेंगे।`)) return;
     setBusy(true);
     try {
+      const cleared: Plot = { ...plot, polygon: "" };
       const response = await fetch("/api/super-mapper", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectId, plot: { ...plot, polygon: "" } }),
+        body: JSON.stringify({ projectId, plot: cleared }),
       });
-      await apiResult(response);
-      setPlots((current) => current.map((item) => (item.id === plot.id ? { ...item, polygon: "" } : item)));
-      loadPlotDetails({ ...plot, polygon: "" }, false);
-      notify(`Plot ${plot.id} boundary हट गई; inventory details सुरक्षित हैं`);
+      const result = await apiResult(response);
+      const saved = (result.plot || cleared) as Plot;
+
+      // Clearing a mapped plot is also a persistent mutation. Do not tell the
+      // operator it is gone until a second no-cache read confirms polygon="".
+      const verified = await verifyPlotPersistence(saved);
+      setPlots(verified.plots);
+      setLastVerifiedId(verified.plot.id);
+      setPoints([]);
+      setEditingId("");
+      setManualPhase("select");
+      setToolMode("select");
+      try {
+        window.localStorage.removeItem(mappingDraftKey(projectId, verified.plot.id));
+      } catch {
+        // Local draft cleanup is best-effort; server data is already verified.
+      }
+      loadPlotDetails({ ...verified.plot, polygon: "" }, false);
+      notify(`Plot ${verified.plot.id} boundary SERVER VERIFIED removed ✓; details/status सुरक्षित हैं`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Boundary नहीं हटी");
     } finally {
@@ -1410,6 +1514,9 @@ export default function PlotMapper({
   }
 
   const currentPlot = plots.find((plot) => plot.id === plotId);
+  const currentHasSavedBoundary = Boolean(
+    currentPlot && parsePolygon(currentPlot).length >= 3,
+  );
   const currentCenter = points.length ? polygonCenter(points) : null;
   const shapeInvalid = points.length >= 4 && polygonSelfIntersects(points);
   const shapeReady = points.length >= 3 && (shape === "polygon" || points.length === 4) && !shapeInvalid;
@@ -1731,7 +1838,11 @@ export default function PlotMapper({
           {!completedProject && (
             <div className="mapper-v4-bottom-bar">
               <button type="button" disabled={!points.length} onClick={undoPoint}><Undo2 />Undo</button>
-              <button type="button" disabled={!points.length} onClick={clearCurrentPoints}>Clear</button>
+              <button
+                type="button"
+                disabled={busy || (!points.length && !currentHasSavedBoundary)}
+                onClick={clearCurrentSelection}
+              >{currentHasSavedBoundary ? "Remove saved" : "Clear"}</button>
               <button type="button" onClick={clonePreviousShape}><Copy />Clone prev</button>
               <button
                 type="button"
@@ -1812,7 +1923,10 @@ export default function PlotMapper({
             </div>
             <div className="mapper-actions compact">
               <button disabled={!points.length} onClick={undoPoint}><Undo2 />Undo</button>
-              <button disabled={!points.length} onClick={clearCurrentPoints}>Clear</button>
+              <button
+                disabled={busy || (!points.length && !currentHasSavedBoundary)}
+                onClick={clearCurrentSelection}
+              >{currentHasSavedBoundary ? "Remove saved boundary" : "Clear"}</button>
               <button onClick={clonePreviousShape}><Copy />Clone previous</button>
               {shape === "polygon" && <button className="primary" disabled={points.length < 3} onClick={() => setManualPhase("details")}><CheckCircle2 />Boundary complete</button>}
             </div>

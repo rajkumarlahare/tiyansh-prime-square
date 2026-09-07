@@ -39,6 +39,27 @@ test("each confirmed polygon is server-read-back verified before draft cleanup a
   assert.match(publicSite, /fetch\('\/api\/public-data'[\s\S]*cache:'no-store'/);
 });
 
+test("Clear on a mapped plot removes the persisted boundary and verifies server read-back", async () => {
+  const [mapper, api] = await Promise.all([
+    source("../app/plot-mapper.tsx"),
+    source("../app/api/super-mapper/route.ts"),
+  ]);
+  assert.match(mapper, /function clearCurrentSelection\(\)/);
+  assert.match(mapper, /currentHasSavedBoundary/);
+  assert.match(mapper, /void remove\(saved\)/);
+
+  const removeStart = mapper.indexOf("async function remove(plot: Plot)");
+  const removeEnd = mapper.indexOf("function cadTap", removeStart);
+  const removeBody = mapper.slice(removeStart, removeEnd);
+  assert.match(removeBody, /polygon: ""/);
+  assert.match(removeBody, /verifyPlotPersistence\(saved\)/);
+  assert.match(removeBody, /SERVER VERIFIED removed/);
+  assert.match(removeBody, /mappingDraftKey\(projectId, verified\.plot\.id\)/);
+
+  assert.match(api, /saved\[0\]\.polygon/);
+  assert.match(api, /"mapper\.boundary_removed"/);
+});
+
 test("RPK original 29.51 MB masterplan remains valid for future replacement", async () => {
   const [mapper, api] = await Promise.all([
     source("../app/plot-mapper.tsx"),

@@ -11,12 +11,20 @@ const css = await readFile(
   "utf8",
 );
 
-test("mapper owns one-finger pan instead of relying on blocked browser scrolling", () => {
+test("mapper owns one-finger pan and frame-coalesces raw pointer motion", () => {
   assert.match(mapper, /activeGesturePointersRef/);
   assert.match(mapper, /armPanGesture/);
-  assert.match(mapper, /canvas\.scrollLeft \+= pan\.lastX - event\.clientX/);
-  assert.match(mapper, /canvas\.scrollTop \+= pan\.lastY - event\.clientY/);
+  assert.match(mapper, /gestureFrameRef/);
+  assert.match(mapper, /requestAnimationFrame/);
+  assert.match(mapper, /queuePanDelta\(deltaX, deltaY\)/);
+  assert.match(mapper, /pendingPanRef/);
   assert.match(mapper, /toolMode === "pan"/);
+
+  const moveStart = mapper.indexOf("function handleMapperGesturePointerMove");
+  const moveEnd = mapper.indexOf("function handleMapperGesturePointerEnd", moveStart);
+  const moveBody = mapper.slice(moveStart, moveEnd);
+  assert.doesNotMatch(moveBody, /canvas\.scrollLeft/);
+  assert.doesNotMatch(moveBody, /canvas\.scrollTop/);
 });
 
 test("select mode keeps tap-to-corner but converts a real drag into pan", () => {
@@ -28,12 +36,13 @@ test("select mode keeps tap-to-corner but converts a real drag into pan", () => 
   assert.match(mapper, /SELECT: tap = corner/);
 });
 
-test("two fingers pinch-zoom and pan in the mapper itself", () => {
+test("two fingers pinch-zoom and pan are committed together once per paint frame", () => {
   assert.match(mapper, /Math\.hypot\(b\.x - a\.x, b\.y - a\.y\)/);
   assert.match(mapper, /pinch\.startZoom \* \(pair\.distance \/ Math\.max\(1, pinch\.startDistance\)\)/);
-  assert.match(mapper, /canvas\.scrollLeft \+= pinch\.lastCenterX - pair\.centerX/);
-  assert.match(mapper, /canvas\.scrollTop \+= pinch\.lastCenterY - pair\.centerY/);
-  assert.match(mapper, /setMapperZoom\(nextZoom, pair\.centerX, pair\.centerY\)/);
+  assert.match(mapper, /queuePinchFrame\(nextZoom, pair\.centerX, pair\.centerY, panX, panY\)/);
+  assert.match(mapper, /pendingPinchRef/);
+  assert.match(mapper, /Math\.abs\(pinch\.panX\) >= 0\.25/);
+  assert.match(mapper, /setMapperZoom\(pinch\.zoom, pinch\.centerX, pinch\.centerY\)/);
 });
 
 test("zoom keeps the point under the fingers anchored after React relayout", () => {
