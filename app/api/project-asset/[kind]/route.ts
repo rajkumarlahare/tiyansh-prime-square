@@ -53,25 +53,35 @@ export async function GET(
   const projectId = await authorizedProjectId(request);
   if (!projectId) return new Response("Not found", { status: 404 });
 
-  const storageKind =
-    kind === "masterplan" && session?.role !== "super_admin"
-      ? "masterplanPublic"
-      : kind;
-  let object = await env.BUCKET.get(`projects/${projectId}/mapper/${storageKind}`);
-  if (!object && storageKind === "masterplanPublic") {
-    object = await env.BUCKET.get(`projects/${projectId}/mapper/masterplan`);
+  // The mapping masterplan is the canonical visual source of truth.
+  // Do NOT silently swap generic/public clients to an independently generated
+  // derivative here: a stale/rotated derivative can make the visible image move
+  // away from the already-saved normalized SVG polygons. Correctness wins over
+  // bandwidth. masterplanPublic remains a disaster-recovery fallback only.
+  const canonicalKind = kind === "masterplan" ? "masterplan" : kind;
+  let object = await env.BUCKET.get(`projects/${projectId}/mapper/${canonicalKind}`);
+  let servedMasterplanSource = kind === "masterplan" ? "canonical" : canonicalKind;
+
+  if (!object && kind === "masterplan") {
+    object = await env.BUCKET.get(`projects/${projectId}/mapper/masterplanPublic`);
+    servedMasterplanSource = "public-fallback";
   }
   if (!object) return new Response("Not found", { status: 404 });
 
+  const previewRequest = new URL(request.url).searchParams.get("preview") === "1";
   const headers = new Headers({
     "content-type": object.httpMetadata?.contentType || "application/octet-stream",
-    "cache-control": session
-      ? "no-store"
-      : kind === "masterplan"
-        ? "public,max-age=0,must-revalidate"
-        : "private,no-store",
+    "cache-control":
+      session || previewRequest
+        ? "no-store"
+        : kind === "masterplan"
+          ? "public,max-age=0,must-revalidate"
+          : "private,no-store",
     "x-content-type-options": "nosniff",
   });
+  if (kind === "masterplan") {
+    headers.set("x-rekixo-masterplan-source", servedMasterplanSource);
+  }
   if (kind === "sourceCad" || kind === "plotSheet" || kind === "masterplanOriginal")
     headers.set("content-disposition", "attachment");
   if (object.httpEtag) headers.set("etag", object.httpEtag);
