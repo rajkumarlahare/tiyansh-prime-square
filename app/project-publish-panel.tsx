@@ -45,6 +45,19 @@ export default function ProjectPublishPanel({
     );
   }, [projectId, notify]);
 
+  useEffect(() => {
+    const handleMapperUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: string }>).detail;
+      if (detail?.projectId && detail.projectId !== projectId) return;
+      load().catch((error) =>
+        notify(error instanceof Error ? error.message : "Publish status refresh nahi hua"),
+      );
+    };
+    window.addEventListener("rekixo:mapper-settings-updated", handleMapperUpdate);
+    return () =>
+      window.removeEventListener("rekixo:mapper-settings-updated", handleMapperUpdate);
+  }, [projectId, notify]);
+
   async function action(next: "publish" | "unpublish") {
     if (
       !confirm(

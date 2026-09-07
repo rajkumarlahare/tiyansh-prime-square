@@ -19,6 +19,7 @@ const SETTINGS_WHITELIST = new Set([
   "calibrationError",
   "cadMatchedCount",
   "cadReviewCount",
+  "publicRotation",
 ]);
 
 async function projectExists(projectId: string) {
@@ -110,6 +111,12 @@ function validatedSetting(key: string, raw: unknown) {
     const number = Number(raw);
     if (!(number >= 100 && number <= 10000)) throw new Error(`${key} invalid hai`);
     return String(Math.round(number));
+  }
+  if (key === "publicRotation") {
+    const number = Number(raw);
+    if (!Number.isInteger(number) || number < 0 || number > 3)
+      throw new Error("publicRotation invalid hai");
+    return String(number);
   }
   if (["cadMatchedCount", "cadReviewCount"].includes(key)) {
     const number = Number(raw);

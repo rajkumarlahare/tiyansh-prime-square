@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=yes">
 <meta name="theme-color" content="#050914">
 <title>Tiyansh — The Prime Square</title>
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const generic = Boolean(params.get('projectId') || params.get('projectSlug') || /^\/p\//.test(location.pathname));
+  if (generic) {
+    document.documentElement.classList.add('rekixo-project-loading');
+    document.title = 'Project';
+  }
+})();
+</script>
 <style>
 :root{
   --bg:#050914;--panel:#0b1427;--panel2:#101a30;--line:#202d47;
@@ -13,7 +23,12 @@
   --blue:#88a5ff;--safe:env(safe-area-inset-bottom,0px)
 }
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif;overflow:hidden}
-button,input{font:inherit}.app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}
+button,input{font:inherit}
+html.rekixo-project-loading .app,html.rekixo-project-error .app{visibility:hidden}
+html.rekixo-project-loading body::after,html.rekixo-project-error body::after{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:28px;background:#050914;color:#aab7d2;font-size:15px;font-weight:800;text-align:center}
+html.rekixo-project-loading body::after{content:"Loading project…"}
+html.rekixo-project-error body::after{content:"Project preview load nahi hua. Reload karke dobara try karein.";color:#ff9eaa}
+.app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}
 .header{z-index:20;background:#060b17;border-bottom:1px solid #1c2840;padding:11px 17px 12px;box-shadow:0 8px 28px #0007}
 .brandrow{display:flex;align-items:center;gap:14px}.brandmark{width:60px;height:60px;flex:none;border-radius:13px;background:#fff;border:1px solid #e7e7e7;display:grid;place-items:center;color:#111;box-shadow:0 0 0 2px #ffffff12}
 .brandmark .monogram{width:48px;height:48px;border:2px solid #141414;border-radius:8px;display:grid;place-items:center;font-weight:950;font-size:17px;line-height:1;text-align:center}
@@ -370,22 +385,26 @@ const REKIXO_DEFAULT_PROJECT='tiyansh-prime-square';
 const REKIXO_PARAMS=new URLSearchParams(location.search);
 const REKIXO_PROJECT_PARAM=REKIXO_PARAMS.get('projectId')||'';
 const REKIXO_PROJECT_SLUG=REKIXO_PARAMS.get('projectSlug')||'';
+const REKIXO_GENERIC_BOOT=Boolean(REKIXO_PROJECT_PARAM||REKIXO_PROJECT_SLUG||/^\/p\//.test(location.pathname));
+window.REKIXO_GENERIC_BOOT=REKIXO_GENERIC_BOOT;
 const REKIXO_FORWARD=new URLSearchParams();
 if(REKIXO_PROJECT_PARAM)REKIXO_FORWARD.set('projectId',REKIXO_PROJECT_PARAM);
 if(REKIXO_PROJECT_SLUG)REKIXO_FORWARD.set('projectSlug',REKIXO_PROJECT_SLUG);
 if(REKIXO_PARAMS.get('preview')==='1')REKIXO_FORWARD.set('preview','1');
 const REKIXO_PROJECT_QUERY=REKIXO_FORWARD.toString()?'?'+REKIXO_FORWARD.toString():'';
 window.REKIXO_PROJECT_QUERY=REKIXO_PROJECT_QUERY;
-fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{if(typeof window.TIYANSH_APPLY_PUBLIC_DATA==='function')window.TIYANSH_APPLY_PUBLIC_DATA(data);else window.TIYANSH_PENDING_PUBLIC_DATA=data}).catch(()=>{});
+fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{if(typeof window.TIYANSH_APPLY_PUBLIC_DATA==='function')window.TIYANSH_APPLY_PUBLIC_DATA(data);else window.TIYANSH_PENDING_PUBLIC_DATA=data}).catch(()=>{document.documentElement.classList.remove('rekixo-project-loading');document.documentElement.classList.add('rekixo-project-error')});
 </script>
 <script>
 (() => {
   'use strict';
 
   let W = 1200, H = 2133;
-  let PHONE = '919009995582', MAP_URL = 'https://maps.app.goo.gl/n9BjoY4BYzZfmqTL7', PROJECT_NAME='Tiyansh — The Prime Square', PROJECT_LOCATION='Raigarh, Chhattisgarh', ADMIN_URL='/admin/login';
-  const plots = Array.isArray(window.TIYANSH_PLOTS) ? window.TIYANSH_PLOTS : [];
-  let ACTIVE_PROJECT_ID=REKIXO_DEFAULT_PROJECT;
+  const GENERIC_BOOT=Boolean(window.REKIXO_GENERIC_BOOT);
+  let PHONE = GENERIC_BOOT?'':'919009995582', MAP_URL = GENERIC_BOOT?'':'https://maps.app.goo.gl/n9BjoY4BYzZfmqTL7', PROJECT_NAME=GENERIC_BOOT?'Project':'Tiyansh — The Prime Square', PROJECT_LOCATION=GENERIC_BOOT?'':'Raigarh, Chhattisgarh', ADMIN_URL='/admin/login';
+  const plots = GENERIC_BOOT ? [] : (Array.isArray(window.TIYANSH_PLOTS) ? window.TIYANSH_PLOTS : []);
+  let ACTIVE_PROJECT_ID=GENERIC_BOOT?'':REKIXO_DEFAULT_PROJECT;
+  let PUBLIC_ROTATION=0;
   const q = s => document.querySelector(s);
   const viewport = q('#viewport');
   const world = q('#world');
@@ -423,18 +442,21 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.setAttribute('width',String(W));svg.setAttribute('height',String(H));
   }
 
+  function displaySize(){return PUBLIC_ROTATION===1||PUBLIC_ROTATION===3?{w:H,h:W}:{w:W,h:H}}
   function calcFit(){
     const mobile = window.matchMedia('(max-width:700px)').matches;
-    const fw = viewport.clientWidth / W;
-    const fh = viewport.clientHeight / H;
-    fit = mobile ? fw : Math.min(fw,fh);
+    const size=displaySize();
+    const fw = viewport.clientWidth / size.w;
+    const fh = viewport.clientHeight / size.h;
+    const legacyWidthFit=ACTIVE_PROJECT_ID===REKIXO_DEFAULT_PROJECT&&mobile&&PUBLIC_ROTATION===0;
+    fit = legacyWidthFit ? fw : Math.min(fw,fh);
     if(!Number.isFinite(fit) || fit <= 0) fit = .3;
   }
-  function limits(){return {x:Math.max(0,(W*scale-viewport.clientWidth)/2),y:Math.max(0,(H*scale-viewport.clientHeight)/2)}}
+  function limits(){const size=displaySize();return {x:Math.max(0,(size.w*scale-viewport.clientWidth)/2),y:Math.max(0,(size.h*scale-viewport.clientHeight)/2)}}
   function clampPan(){const l=limits();pan.x=clamp(pan.x,-l.x,l.x);pan.y=clamp(pan.y,-l.y,l.y)}
   function render(){
     clampPan();
-    world.style.transform = `translate(calc(-50% + ${pan.x}px),calc(-50% + ${pan.y}px)) scale(${scale})`;
+    world.style.transform = `translate(calc(-50% + ${pan.x}px),calc(-50% + ${pan.y}px)) scale(${scale}) rotate(${PUBLIC_ROTATION*90}deg)`;
     q('#percent').textContent = Math.round(scale/fit*100)+'%';
   }
   function scheduleRender(){if(!mapRaf)mapRaf=requestAnimationFrame(()=>{mapRaf=0;render()})}
@@ -499,7 +521,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
 
   function pointInPolygon(x,y,pts){let inside=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const xi=pts[i][0],yi=pts[i][1],xj=pts[j][0],yj=pts[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi))inside=!inside}return inside}
   function distSeg(px,py,ax,ay,bx,by){const vx=bx-ax,vy=by-ay,wx=px-ax,wy=py-ay,c1=vx*wx+vy*wy;if(c1<=0)return Math.hypot(px-ax,py-ay);const c2=vx*vx+vy*vy;if(c2<=c1)return Math.hypot(px-bx,py-by);const t=c1/c2,qx=ax+t*vx,qy=ay+t*vy;return Math.hypot(px-qx,py-qy)}
-  function clientToPlan(x,y){const r=viewport.getBoundingClientRect();return{x:(x-r.left-r.width/2-pan.x)/scale+W/2,y:(y-r.top-r.height/2-pan.y)/scale+H/2}}
+  function clientToPlan(x,y){const r=viewport.getBoundingClientRect(),dx=(x-r.left-r.width/2-pan.x)/scale,dy=(y-r.top-r.height/2-pan.y)/scale;let sx=dx,sy=dy;if(PUBLIC_ROTATION===1){sx=dy;sy=-dx}else if(PUBLIC_ROTATION===2){sx=-dx;sy=-dy}else if(PUBLIC_ROTATION===3){sx=-dy;sy=dx}return{x:sx+W/2,y:sy+H/2}}
   function plotAtClient(x,y,padCss=0){
     const pt=clientToPlan(x,y);
     const exact=plots.find(p=>pointInPolygon(pt.x,pt.y,p.points));
@@ -628,10 +650,22 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     poly.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openPlot(p,false)}});
     svg.appendChild(poly);
   }
+  function rescaleNormalizedPlots(){
+    plots.forEach(p=>{
+      if(!Array.isArray(p._normalized)||p._normalized.length<3)return;
+      const mapped=p._normalized.map(([x,y])=>[x*W,y*H]);
+      p.points=mapped;
+      p.center=[mapped.reduce((sum,v)=>sum+v[0],0)/mapped.length,mapped.reduce((sum,v)=>sum+v[1],0)/mapped.length];
+      const el=svg.querySelector(`[data-plot-id="${p.id}"]`);
+      if(el)el.setAttribute('points',polyPoints(p));
+    });
+  }
   function applyPublicData(data){
-    ACTIVE_PROJECT_ID=data.projectId||REKIXO_DEFAULT_PROJECT;
+    ACTIVE_PROJECT_ID=data.projectId||(GENERIC_BOOT?'':REKIXO_DEFAULT_PROJECT);
     const isTiyansh=ACTIVE_PROJECT_ID===REKIXO_DEFAULT_PROJECT;
     const s=data&&data.settings||{};
+    const configuredRotation=Number(s.publicRotation);
+    PUBLIC_ROTATION=!isTiyansh&&(configuredRotation===0||configuredRotation===1||configuredRotation===2||configuredRotation===3)?configuredRotation:0;
     setMapDimensions(isTiyansh?1200:(s.mapWidth||1200),isTiyansh?2133:(s.mapHeight||2133));
     if(!isTiyansh){
       plots.splice(0,plots.length);
@@ -645,19 +679,28 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
       try{
         const normalized=JSON.parse(row.polygon);if(!Array.isArray(normalized)||normalized.length<3)return;
         const mapped=normalized.map(([x,y])=>[x*W,y*H]);
-        const p={...row,points:mapped,center:[mapped.reduce((sum,v)=>sum+v[0],0)/mapped.length,mapped.reduce((sum,v)=>sum+v[1],0)/mapped.length]};
+        const p={...row,_normalized:normalized,points:mapped,center:[mapped.reduce((sum,v)=>sum+v[0],0)/mapped.length,mapped.reduce((sum,v)=>sum+v[1],0)/mapped.length]};
         plots.push(p);addPlotPolygon(p);
       }catch(_){}
     });
     plots.forEach(p=>{const row=live.get(p.id);if(row){const shape={points:p.points,center:p.center,path:p.path};Object.assign(p,row,shape)}const el=svg.querySelector(`[data-plot-id="${p.id}"]`);if(el)el.dataset.status=plotStatus(p)});
     if(!isTiyansh){PHONE=String(s.whatsapp||s.phone1||'').replace(/\D/g,'');MAP_URL=s.mapUrl||''}
     else {PHONE=String(s.whatsapp||s.phone1||PHONE).replace(/\D/g,'')||PHONE;MAP_URL=s.mapUrl||MAP_URL}
-    PROJECT_NAME=s.projectName||data.projectName||PROJECT_NAME;PROJECT_LOCATION=s.location||PROJECT_LOCATION;ADMIN_URL=data.adminUrl||ADMIN_URL;
-    if(s.projectName||data.projectName){const title=s.projectName||data.projectName;document.title=title;const brand=document.querySelector('.brand b');if(brand)brand.textContent=title.toUpperCase()}
-    if(s.brandName){const small=document.querySelector('.monogram small');if(small)small.textContent=s.brandName.toUpperCase()}
-    if(s.brandShort){const mono=document.querySelector('.monogram');if(mono&&mono.firstChild)mono.firstChild.textContent=s.brandShort.toUpperCase();const badge=document.querySelector('.mini-logo strong');if(badge)badge.textContent=s.brandShort.toUpperCase()}
-    if(s.location){const location=document.querySelector('.brand small');if(location)location.textContent=s.location.toUpperCase();const sub=document.querySelector('.dhead .sub');if(sub)sub.textContent=s.location.toUpperCase()}
-    const gallerySub=document.querySelector('.gallery-head p');if(gallerySub)gallerySub.textContent=[s.brandName||s.projectName||data.projectName||PROJECT_NAME,s.location||PROJECT_LOCATION].filter(Boolean).join(' · ').toUpperCase();
+    const resolvedName=String(s.projectName||data.projectName||(isTiyansh?'Tiyansh — The Prime Square':'Project')).trim()||'Project';
+    const resolvedLocation=String(s.location||(isTiyansh?'Raigarh, Chhattisgarh':'')).trim();
+    const words=resolvedName.split(/\s+/).filter(Boolean);
+    const fallbackShort=(words.map(word=>word.charAt(0)).join('').replace(/[^A-Za-z0-9]/g,'').slice(0,3)||'PRJ').toUpperCase();
+    const resolvedShort=String(s.brandShort||(isTiyansh?'TPS':fallbackShort)).slice(0,4).toUpperCase();
+    const resolvedBrand=String(s.brandName||(isTiyansh?'TIYANSH':(words[0]||'PROJECT'))).trim().toUpperCase();
+    PROJECT_NAME=resolvedName;PROJECT_LOCATION=resolvedLocation;ADMIN_URL=data.adminUrl||ADMIN_URL;
+    document.title=PROJECT_NAME;
+    const brand=document.querySelector('.brand b');if(brand)brand.textContent=PROJECT_NAME.toUpperCase();
+    const small=document.querySelector('.monogram small');if(small)small.textContent=resolvedBrand;
+    const mono=document.querySelector('.monogram');if(mono&&mono.firstChild)mono.firstChild.textContent=resolvedShort;
+    const badge=document.querySelector('.mini-logo strong');if(badge)badge.textContent=resolvedShort;
+    const location=document.querySelector('.brand small');if(location)location.textContent=PROJECT_LOCATION.toUpperCase();
+    const sub=document.querySelector('.dhead .sub');if(sub)sub.textContent=PROJECT_LOCATION.toUpperCase();
+    const gallerySub=document.querySelector('.gallery-head p');if(gallerySub)gallerySub.textContent=[resolvedBrand||PROJECT_NAME,PROJECT_LOCATION].filter(Boolean).join(' · ').toUpperCase();
     const master=document.querySelector('.master');
     HAS_MASTERPLAN=isTiyansh||Boolean(s.masterplanName);
     if(master){
@@ -670,8 +713,11 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     document.body.dataset.template=s.template||'plots';
     updateStatusCounts();
     if(selected){const fresh=plots.find(p=>p.id===selected.id);if(fresh){selected=fresh;if(drawer.classList.contains('open')){q('#sqm').textContent=Number(fresh.sqm).toLocaleString('en-IN')+' Sq.M';q('#sqft').textContent=Number(fresh.sqft).toLocaleString('en-IN')+' Sq.Ft';q('#sqyd').textContent=Number(fresh.sqyd).toLocaleString('en-IN')+' Sq.Yd';q('#dims').textContent=fresh.dimensions||'—';q('#road').textContent=fresh.road||'—';const st=plotStatus(fresh),statusEl=q('#plotStatusValue');statusEl.textContent=st.charAt(0).toUpperCase()+st.slice(1);statusEl.className=st}}}
-    PUBLIC_READY=true;world.style.visibility='visible';reset();
-    engine3D?.setPlots?.(plots);if(master&&HAS_MASTERPLAN&&master.src)engine3D?.setImageSrc?.(master.src);engine3D?.setShowAll(showAll);engine3D?.setStatusFilter?.(statusFilter);
+    let revealed=false;
+    const revealProject=()=>{if(revealed)return;revealed=true;PUBLIC_READY=true;world.style.visibility='visible';reset();document.documentElement.classList.remove('rekixo-project-loading','rekixo-project-error');engine3D?.setPlots?.(plots);if(master&&HAS_MASTERPLAN&&master.src)engine3D?.setImageSrc?.(master.src);engine3D?.setShowAll(showAll);engine3D?.setStatusFilter?.(statusFilter)};
+    const alignMasterAndReveal=()=>{if(revealed)return;if(!isTiyansh&&master&&master.naturalWidth>0&&master.naturalHeight>0){setMapDimensions(master.naturalWidth,master.naturalHeight);rescaleNormalizedPlots()}revealProject()};
+    const masterFailed=()=>{if(revealed)return;document.documentElement.classList.remove('rekixo-project-loading');document.documentElement.classList.add('rekixo-project-error')};
+    if(!isTiyansh&&master&&HAS_MASTERPLAN){master.addEventListener('load',alignMasterAndReveal,{once:true});master.addEventListener('error',masterFailed,{once:true});if(master.complete){queueMicrotask(()=>master.naturalWidth>0?alignMasterAndReveal():masterFailed())}}else revealProject();
   }
   window.TIYANSH_APPLY_PUBLIC_DATA=applyPublicData;
   reset();

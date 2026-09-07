@@ -68,6 +68,7 @@ type MapperSettings = {
   calibrationError?: string;
   cadMatchedCount?: string;
   cadReviewCount?: string;
+  publicRotation?: string;
 };
 
 type AutoMatch = {
@@ -301,6 +302,7 @@ export default function PlotMapper({
   // metadata/CSS mismatch from ever stretching the masterplan.
   const [naturalImageSize, setNaturalImageSize] = useState<{ width: number; height: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [settingsReady, setSettingsReady] = useState(false);
   const [lastVerifiedId, setLastVerifiedId] = useState("");
   const [zoom, setZoom] = useState(1);
   // 0/1/2/3 = 0°/90°/180°/270° clockwise. Rotation is mapping-view only:
@@ -346,6 +348,7 @@ export default function PlotMapper({
   const draggingPointRef = useRef<number | null>(null);
   const pointsRef = useRef<MapperPoint[]>([]);
   const loupeRef = useRef<HTMLDivElement | null>(null);
+  const metadataRepairRef = useRef(false);
 
 
   useEffect(() => {
@@ -368,7 +371,25 @@ export default function PlotMapper({
     canvas.scrollTop += anchoredClientY - anchor.clientY;
   }, [zoom]);
 
+  function announceMapperSettingsUpdated() {
+    window.dispatchEvent(
+      new CustomEvent("rekixo:mapper-settings-updated", { detail: { projectId } }),
+    );
+  }
+
+  async function persistMapperSettings(next: Record<string, string>) {
+    const response = await fetch("/api/super-mapper", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId, settings: next }),
+    });
+    await apiResult(response);
+    setSettings((current) => ({ ...current, ...next }));
+    announceMapperSettingsUpdated();
+  }
+
   async function reload() {
+    setSettingsReady(false);
     const response = await fetch(`/api/super-mapper?projectId=${encodeURIComponent(projectId)}`, {
       cache: "no-store",
     });
@@ -377,6 +398,24 @@ export default function PlotMapper({
     const nextSettings = (data.settings || {}) as MapperSettings;
     setPlots(nextPlots);
     setSettings(nextSettings);
+    const savedPublicRotation = Number(nextSettings.publicRotation);
+    if (
+      savedPublicRotation === 0 ||
+      savedPublicRotation === 1 ||
+      savedPublicRotation === 2 ||
+      savedPublicRotation === 3
+    ) {
+      setRotation(savedPublicRotation as 0 | 1 | 2 | 3);
+      try {
+        window.localStorage.setItem(
+          `rekixo:mapper-rotation:${projectId}`,
+          String(savedPublicRotation),
+        );
+      } catch {
+        // localStorage is only a convenience mirror; D1 remains source of truth.
+      }
+    }
+    setSettingsReady(true);
     setCadGeometry((data.cadGeometry || null) as CadGeometry | null);
     setImageUrl(assetUrl("masterplan"));
     setImageReady(false);
@@ -409,6 +448,60 @@ export default function PlotMapper({
       }
     } else setCalibrationPairs([]);
   }
+
+  useEffect(() => {
+    if (
+      completedProject ||
+      !settingsReady ||
+      !naturalImageSize ||
+      metadataRepairRef.current
+    )
+      return;
+
+    const width = Math.round(naturalImageSize.width);
+    const height = Math.round(naturalImageSize.height);
+    if (!(width >= 100 && height >= 100 && width <= 10000 && height <= 10000)) return;
+
+    const storedWidth = Number(settings.mapWidth);
+    const storedHeight = Number(settings.mapHeight);
+    if (storedWidth === width && storedHeight === height) return;
+
+    metadataRepairRef.current = true;
+    persistMapperSettings({ mapWidth: String(width), mapHeight: String(height) })
+      .then(() => notify(`Masterplan dimensions auto-verified: ${width} × ${height}`))
+      .catch((error) => {
+        metadataRepairRef.current = false;
+        notify(
+          error instanceof Error
+            ? error.message
+            : "Masterplan dimensions auto-repair nahi hui",
+        );
+      });
+  }, [
+    completedProject,
+    settingsReady,
+    naturalImageSize,
+    settings.mapWidth,
+    settings.mapHeight,
+    projectId,
+  ]);
+
+  useEffect(() => {
+    if (completedProject || !settingsReady) return;
+    const stored = Number(settings.publicRotation);
+    if (stored === rotation) return;
+
+    const timer = window.setTimeout(() => {
+      persistMapperSettings({ publicRotation: String(rotation) }).catch((error) =>
+        notify(
+          error instanceof Error
+            ? error.message
+            : "Website orientation save nahi hui",
+        ),
+      );
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [completedProject, settingsReady, rotation, settings.publicRotation, projectId]);
 
   useEffect(() => {
     resetGestureFrameQueue();
@@ -1651,6 +1744,14 @@ export default function PlotMapper({
   const shapeReady = points.length >= 3 && (shape === "polygon" || points.length === 4) && !shapeInvalid;
   const rotationDegrees = rotation * 90;
   const rotationSwapsAxes = rotation === 1 || rotation === 3;
+  const savedPublicRotation = Number(settings.publicRotation);
+  const websiteRotationDegrees =
+    savedPublicRotation === 0 ||
+    savedPublicRotation === 1 ||
+    savedPublicRotation === 2 ||
+    savedPublicRotation === 3
+      ? savedPublicRotation * 90
+      : rotationDegrees;
 
   // Prefer dimensions decoded from the ACTUAL displayed mapping image. Stored
   // original dimensions are fallback only; mapping dimensions are final fallback.
@@ -1740,6 +1841,7 @@ export default function PlotMapper({
           <span>Mapped: <b>{mappedPlots.length}</b></span>
           <span>Review: <b>{unmappedPlots.length}</b></span>
           <span>Last server verify: <b>{lastVerifiedId ? `Plot ${lastVerifiedId} ✓` : "—"}</b></span>
+          {!completedProject && <span>Website view: <b>{websiteRotationDegrees}°</b></span>}
         </div>
         {settings.sourcePdfName && <a className="mapper-pdf-link" href={assetUrl("sourcePdf")} target="_blank" rel="noreferrer"><FileText /> Open technical PDF reference</a>}
         {settings.cadParseError && <div className="mapper-warning">CAD source सुरक्षित है, लेकिन automatic geometry parse नहीं हुआ: {settings.cadParseError}. DXF export upload करें या Manual Precise fallback use करें.</div>}
@@ -1847,7 +1949,7 @@ export default function PlotMapper({
           </div>
 
           {!imageReady && <div className="mapper-loading">{hasMasterplan ? "High-resolution masterplan load हो रहा है…" : "पहले masterplan image upload करें"}</div>}
-          <div className="mapper-pan-hint">{toolMode === "pan" ? `PAN: 1 finger drag = move · 2 fingers pinch = zoom + move · ↺/↻ 90° = rotate. Current: ${rotationDegrees}°.` : `SELECT: tap = corner · खाली जगह drag = move · 2 fingers pinch = zoom + move. Rotation ${rotationDegrees}° सिर्फ view है; saved geometry original image coordinates में रहती है.`}</div>
+          <div className="mapper-pan-hint">{toolMode === "pan" ? `PAN: 1 finger drag = move · 2 fingers pinch = zoom + move · ↺/↻ 90° = rotate. Current: ${rotationDegrees}°.` : `SELECT: tap = corner · खाली जगह drag = move · 2 fingers pinch = zoom + move. Rotation ${rotationDegrees}° display-only है और website view से sync होती है; saved geometry original image coordinates में रहती है.`}</div>
           <div
             ref={imageWrapRef}
             className="mapper-image-wrap mapper-image-v2"

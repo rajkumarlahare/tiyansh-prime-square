@@ -27,6 +27,7 @@ const PUBLIC_SETTING_KEYS = new Set([
   "masterplanName",
   "mapWidth",
   "mapHeight",
+  "publicRotation",
 ]);
 
 async function previewProjectId(request: Request) {
