@@ -17,8 +17,17 @@ test("auto CAD mapper is owner-only, project-native and keeps precise manual fal
       source("../app/super-admin-dashboard.tsx"),
     ]);
 
-  assert.match(mapper, /Rekixo Auto CAD Mapper/);
+  assert.match(mapper, /Rekixo Plot Mapper/);
   assert.match(mapper, /Perspective plot · 4 corners/);
+  assert.match(mapper, /Main masterplan image/);
+  assert.match(mapper, /toolMode/);
+  assert.match(mapper, /"pan" \| "select"/);
+  assert.match(mapper, /max="16"/);
+  assert.match(mapper, /polygonSelfIntersects/);
+  assert.match(mapper, /mappingDraftKey/);
+  assert.match(mapper, /Clone prev/);
+  assert.match(mapper, /Advanced CAD Assistant/);
+  assert.match(mapper, /Shape independent save/);
   assert.doesNotMatch(mapper, /Rectangle · 2 taps/);
   assert.doesNotMatch(mapper, />Move image</);
   assert.match(mapper, /snapPoint/);
@@ -28,7 +37,7 @@ test("auto CAD mapper is owner-only, project-native and keeps precise manual fal
   assert.match(mapper, /publishAutoMatches/);
   assert.match(mapper, /plotSheet/);
   assert.match(mapper, /sourceCad/);
-  assert.match(mapper, /MAX_MAPPING_DIMENSION = 4096/);
+  assert.match(mapper, /MAX_MAPPING_DIMENSION = 6144/);
   assert.match(mapper, /Keep the exact project aspect ratio/);
   assert.doesNotMatch(mapper, /MAP_WIDTH = 1200/);
   assert.doesNotMatch(mapper, /MAP_HEIGHT = 2133/);

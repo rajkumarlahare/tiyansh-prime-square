@@ -126,3 +126,16 @@ Before production push:
 - `.sites-runtime/`, `node_modules/`, source customer files and local logs are not committed accidentally.
 - GitHub Actions Ubuntu performs the authoritative dependency install/build because Android Termux cannot install the `workerd` native package.
 - Both Tiyansh Client Worker and Rekixo Super Admin Worker deploy successfully.
+
+## V4 image-first primary workflow
+
+The normal production workflow is **main masterplan image first**, not CAD calibration first:
+
+1. Upload the company masterplan image; preserve its aspect ratio and original dimensions.
+2. Import plot IDs/details from CSV/JSON and keep the technical PDF as metadata/reference.
+3. Open the mobile precision mapper, zoom the visible plot, switch from PAN to SELECT, and mark exact corners clockwise.
+4. Save normalized polygon coordinates independently from dimensions/area/facing. Metadata may be added or re-imported later without destroying geometry/status.
+5. The same normalized polygon is the single source of truth for SVG hit testing, selected highlight, public 2D and 3D.
+6. Touch editing must provide large draggable handles, loupe/crosshair, snapping, undo/clear, draft restore, previous/next plot navigation and automatic next plot after confirm.
+7. CAD/DWG/DXF remains an **Advanced CAD Assistant** for optional suggestions/review; normal admins must not be forced to perform tiny CAD-to-image calibration taps.
+8. Tiyansh stays locked and its existing saved polygon/path data remains the regression reference for public plot interaction.

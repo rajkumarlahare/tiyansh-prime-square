@@ -3,13 +3,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
   FileText,
+  Hand,
   ImagePlus,
   Maximize2,
   MousePointer2,
   Pencil,
   RotateCcw,
   Save,
+  Target,
   Trash2,
   Undo2,
   ZoomIn,
@@ -74,13 +79,13 @@ type AutoMatch = {
 };
 
 const COMPLETED_PROJECT_ID = "tiyansh-prime-square";
-const MAX_MAPPING_DIMENSION = 4096;
-const MAX_MAPPING_PIXELS = 12_000_000;
-const TARGET_MAPPING_BYTES = 7 * 1024 * 1024;
+const MAX_MAPPING_DIMENSION = 6144;
+const MAX_MAPPING_PIXELS = 24_000_000;
+const TARGET_MAPPING_BYTES = 12 * 1024 * 1024;
 const MAX_PUBLIC_DIMENSION = 2400;
 const MAX_PUBLIC_PIXELS = 5_000_000;
 const TARGET_PUBLIC_BYTES = 2_500_000;
-const MAX_ORIGINAL_MASTERPLAN_BYTES = 20 * 1024 * 1024;
+const MAX_ORIGINAL_MASTERPLAN_BYTES = 40 * 1024 * 1024;
 
 async function apiResult(response: Response) {
   const raw = await response.text();
@@ -102,7 +107,7 @@ async function apiResult(response: Response) {
 
 async function prepareMasterplan(file: File) {
   if (file.size > MAX_ORIGINAL_MASTERPLAN_BYTES) {
-    throw new Error("Masterplan 20 MB se chhoti rakhein");
+    throw new Error("Masterplan 40 MB se chhoti rakhein");
   }
   const bitmap = await createImageBitmap(file);
   const originalWidth = bitmap.width;
@@ -203,6 +208,37 @@ function settingsNumber(value: string | undefined, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function segmentDirection(a: MapperPoint, b: MapperPoint, c: MapperPoint) {
+  return (c[0] - a[0]) * (b[1] - a[1]) - (b[0] - a[0]) * (c[1] - a[1]);
+}
+
+function segmentsCross(a: MapperPoint, b: MapperPoint, c: MapperPoint, d: MapperPoint) {
+  const abC = segmentDirection(a, b, c);
+  const abD = segmentDirection(a, b, d);
+  const cdA = segmentDirection(c, d, a);
+  const cdB = segmentDirection(c, d, b);
+  return ((abC > 0 && abD < 0) || (abC < 0 && abD > 0)) &&
+    ((cdA > 0 && cdB < 0) || (cdA < 0 && cdB > 0));
+}
+
+function polygonSelfIntersects(points: MapperPoint[]) {
+  if (points.length < 4) return false;
+  for (let a = 0; a < points.length; a += 1) {
+    const aNext = (a + 1) % points.length;
+    for (let b = a + 1; b < points.length; b += 1) {
+      const bNext = (b + 1) % points.length;
+      if (a === b || aNext === b || bNext === a) continue;
+      if (a === 0 && bNext === 0) continue;
+      if (segmentsCross(points[a], points[aNext], points[b], points[bNext])) return true;
+    }
+  }
+  return false;
+}
+
+function mappingDraftKey(projectId: string, plotId: string) {
+  return `rekixo:mapper-draft:${projectId}:${cleanPlotId(plotId)}`;
+}
+
 export default function PlotMapper({
   notify,
   projectId,
@@ -223,8 +259,9 @@ export default function PlotMapper({
   const [imageReady, setImageReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [toolMode, setToolMode] = useState<"pan" | "select">("pan");
 
-  // Precise manual fallback.
+  // Primary precision image mapper.
   const [plotId, setPlotId] = useState("1");
   const [dimensions, setDimensions] = useState("");
   const [sqft, setSqft] = useState("");
@@ -293,6 +330,56 @@ export default function PlotMapper({
     // projectId remounts the component in Super Admin.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  useEffect(() => {
+    if (completedProject || !plotId || editingId || points.length) return;
+    try {
+      const raw = window.localStorage.getItem(mappingDraftKey(projectId, plotId));
+      if (!raw) return;
+      const draft = JSON.parse(raw) as {
+        points?: MapperPoint[];
+        shape?: "quad" | "polygon";
+        manualPhase?: "select" | "details";
+      };
+      const restored =
+        Array.isArray(draft.points) &&
+        draft.points.length > 0 &&
+        draft.points.length <= 80 &&
+        draft.points.every(
+          (point) =>
+            Array.isArray(point) &&
+            point.length === 2 &&
+            Number.isFinite(point[0]) &&
+            Number.isFinite(point[1]) &&
+            point[0] >= 0 &&
+            point[0] <= 1 &&
+            point[1] >= 0 &&
+            point[1] <= 1,
+        );
+      if (!restored) return;
+      setPoints(draft.points as MapperPoint[]);
+      setShape(draft.shape === "polygon" ? "polygon" : "quad");
+      setManualPhase(draft.manualPhase === "details" && draft.points!.length >= 3 ? "details" : "select");
+      setToolMode("select");
+      notify(`Plot ${plotId} का unsaved shape draft restore हुआ`);
+    } catch {
+      // A broken local draft must never block the project mapper.
+    }
+    // Restore is intentionally scoped to project/plot changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, plotId]);
+
+  useEffect(() => {
+    if (completedProject || !plotId || !points.length) return;
+    try {
+      window.localStorage.setItem(
+        mappingDraftKey(projectId, plotId),
+        JSON.stringify({ points, shape, manualPhase }),
+      );
+    } catch {
+      // Storage quota/private mode should not block mapping.
+    }
+  }, [completedProject, manualPhase, plotId, points, projectId, shape]);
 
   const mappedPlots = useMemo(() => plots.filter((plot) => parsePolygon(plot).length >= 3), [plots]);
   const inventoryPlots = useMemo(() => [...plots].sort(plotSort), [plots]);
@@ -431,13 +518,15 @@ export default function PlotMapper({
       const polygon = parsePolygon(plot);
       setPoints(polygon);
       setEditingId(plot.id);
-      setShape("polygon");
+      setShape(polygon.length === 4 ? "quad" : "polygon");
       setManualPhase("details");
+      setToolMode("select");
       canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     } else {
       setPoints([]);
       setEditingId("");
       setManualPhase("select");
+      setToolMode("pan");
     }
   }
 
@@ -457,6 +546,48 @@ export default function PlotMapper({
       setSqft("");
       setRoad("");
     }
+  }
+
+  function selectSiblingPlot(offset: -1 | 1) {
+    if (!inventoryPlots.length) return;
+    const currentIndex = Math.max(0, inventoryPlots.findIndex((plot) => plot.id === plotId));
+    const nextIndex = Math.max(0, Math.min(inventoryPlots.length - 1, currentIndex + offset));
+    const target = inventoryPlots[nextIndex];
+    if (target) loadPlotDetails(target, Boolean(target.polygon));
+  }
+
+  function clearCurrentPoints() {
+    setPoints([]);
+    setManualPhase("select");
+    setEditingId("");
+    setToolMode("select");
+    try {
+      window.localStorage.removeItem(mappingDraftKey(projectId, plotId));
+    } catch {
+      // Ignore local storage failures.
+    }
+  }
+
+  function undoPoint() {
+    setPoints((current) => current.slice(0, -1));
+    setManualPhase("select");
+    setToolMode("select");
+  }
+
+  function clonePreviousShape() {
+    const currentIndex = inventoryPlots.findIndex((plot) => plot.id === plotId);
+    const before = currentIndex > 0 ? inventoryPlots.slice(0, currentIndex).reverse() : [];
+    const source = before.find((plot) => parsePolygon(plot).length >= 3) ||
+      [...inventoryPlots].reverse().find((plot) => plot.id !== plotId && parsePolygon(plot).length >= 3);
+    if (!source) return notify("Clone करने के लिए पहले कोई mapped plot चाहिए");
+    const polygon = parsePolygon(source);
+    setPoints(polygon.map(([x, y]) => [x, y] as MapperPoint));
+    setShape(polygon.length === 4 ? "quad" : "polygon");
+    setManualPhase("details");
+    setEditingId("");
+    setToolMode("select");
+    canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    notify(`Plot ${source.id} shape clone हुआ — handles drag करके ${plotId} पर fit करें`);
   }
 
   function downloadPlotSheetTemplate() {
@@ -549,6 +680,7 @@ export default function PlotMapper({
       );
       return;
     }
+    if (toolMode !== "select") return;
     if (manualPhase !== "select") return;
     const snapped = precisePoint(point);
     setPoints((current) => {
@@ -563,10 +695,12 @@ export default function PlotMapper({
   }
 
   function handleImagePointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (!calibrationMode && toolMode !== "select") return;
     tapStartRef.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
   }
 
   function handleImagePointerUp(event: React.PointerEvent<SVGSVGElement>) {
+    if (!calibrationMode && toolMode !== "select") return;
     const start = tapStartRef.current;
     tapStartRef.current = null;
     if (!start || start.id !== event.pointerId) return;
@@ -605,27 +739,36 @@ export default function PlotMapper({
 
   async function confirmPlot() {
     const id = cleanPlotId(plotId);
-    const area = Number(sqft);
+    const existing = plots.find((plot) => plot.id === editingId || plot.id === id);
+    const parsedArea = Number(sqft);
+    const area = Number.isFinite(parsedArea) && parsedArea > 0
+      ? parsedArea
+      : Number(existing?.sqft || 0);
     if (!id) return notify("Plot number जरूरी है");
     if (points.length < 3) return notify("पहले plot boundary पूरी select करें");
-    if (!Number.isFinite(area) || area <= 0) return notify("Area sq.ft में भरें");
-    if (!dimensions.trim()) return notify("Plot dimensions भरें");
+    if (shape === "quad" && points.length !== 4)
+      return notify("4-corner plot के चारों corners select करें");
+    if (polygonSelfIntersects(points))
+      return notify("Shape cross हो रही है — corner order/handles ठीक करें");
     if (!editingId && plots.some((plot) => plot.id === id && plot.polygon)) {
       return notify(`${id} पहले से mapped है — list से Edit करें`);
     }
     if (editingId && id !== editingId && plots.some((plot) => plot.id === id)) {
       return notify(`Plot ${id} inventory में पहले से मौजूद है`);
     }
-    const existing = plots.find((plot) => plot.id === editingId || plot.id === id);
     const unchangedInventoryArea =
-      Boolean(existing) && Math.abs(Number(existing?.sqft || 0) - area) < 0.0001;
+      Boolean(existing) && area > 0 && Math.abs(Number(existing?.sqft || 0) - area) < 0.0001;
     const plot: Plot = {
       id,
       sqft: area,
-      sqm: unchangedInventoryArea ? Number(existing?.sqm || area / 10.7639) : area / 10.7639,
-      sqyd: unchangedInventoryArea ? Number(existing?.sqyd || area / 9) : area / 9,
-      dimensions: dimensions.trim(),
-      road: road.trim(),
+      sqm: area > 0
+        ? unchangedInventoryArea ? Number(existing?.sqm || area / 10.7639) : area / 10.7639
+        : Number(existing?.sqm || 0),
+      sqyd: area > 0
+        ? unchangedInventoryArea ? Number(existing?.sqyd || area / 9) : area / 9
+        : Number(existing?.sqyd || 0),
+      dimensions: dimensions.trim() || existing?.dimensions || "",
+      road: road.trim() || existing?.road || "",
       status: existing?.status || "available",
       notes: existing?.notes || "",
       featured: existing?.featured || false,
@@ -644,8 +787,14 @@ export default function PlotMapper({
         ...current.filter((item) => item.id !== editingId && item.id !== saved.id),
         saved,
       ]);
+      try {
+        window.localStorage.removeItem(mappingDraftKey(projectId, saved.id));
+      } catch {
+        // Ignore local draft cleanup failures.
+      }
+      setToolMode("pan");
       selectNextPlot(saved.id);
-      notify(`Plot ${saved.id} 2D + 3D clickable ready — next plot open`);
+      notify(`Plot ${saved.id} exact SVG hotspot + 2D/3D ready — next plot open`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Plot save नहीं हुआ");
     } finally {
@@ -757,6 +906,8 @@ export default function PlotMapper({
 
   const currentPlot = plots.find((plot) => plot.id === plotId);
   const currentCenter = points.length ? polygonCenter(points) : null;
+  const shapeInvalid = points.length >= 4 && polygonSelfIntersects(points);
+  const shapeReady = points.length >= 3 && (shape === "polygon" || points.length === 4) && !shapeInvalid;
 
   return (
     <section className="mapper-shell auto-cad-mapper">
@@ -764,17 +915,17 @@ export default function PlotMapper({
         <div className="section-title">
           <MousePointer2 />
           <div>
-            <h2>Rekixo Auto CAD Mapper</h2>
-            <p>Sources → CAD detect → calibrate → review → publish; manual precision fallback हमेशा available.</p>
+            <h2>Rekixo Plot Mapper</h2>
+            <p>Main masterplan image → full zoom → exact corners → SVG hotspot → details → publish. CAD optional assistant है.</p>
           </div>
         </div>
 
         <div className="mapper-v2-progress">
           <span className={hasMasterplan ? "done" : "active"}><b>1</b> Sources</span>
-          <span className={cadGeometry ? "done" : hasCad ? "warn" : ""}><b>2</b> CAD detect</span>
-          <span className={liveMatrix ? "done" : cadGeometry ? "active" : ""}><b>3</b> Calibration</span>
-          <span className={autoMatches.length ? "done" : ""}><b>4</b> Auto match</span>
-          <span className={mappedPlots.length ? "done" : ""}><b>5</b> Publish / Review</span>
+          <span className={mappedPlots.length ? "done" : hasMasterplan ? "active" : ""}><b>2</b> Plot Mapping</span>
+          <span className={hasPlotSheet ? "done" : ""}><b>3</b> Details</span>
+          <span className={unmappedPlots.length ? "active" : mappedPlots.length ? "done" : ""}><b>4</b> Review</span>
+          <span className={mappedPlots.length && !unmappedPlots.length ? "done" : ""}><b>5</b> Publish</span>
         </div>
 
         <div className="mapper-source-grid">
@@ -787,21 +938,21 @@ export default function PlotMapper({
 
           <label className={`mapper-upload-card ${hasCad ? "ready" : ""}`}>
             <span><FileText /></span>
-            <div><b>{hasCad ? "CAD source saved" : "2. DWG / DXF"}</b><small>{settings.sourceCadName || "Exact plot geometry source"}</small></div>
+            <div><b>{hasCad ? "CAD source saved" : "Advanced · DWG / DXF"}</b><small>{settings.sourceCadName || "Optional assistant — normal mapping ke liye जरूरी नहीं"}</small></div>
             {hasCad && <CheckCircle2 className="mapper-ready-icon" />}
             <input type="file" accept=".dwg,.dxf,application/acad,application/dxf,application/octet-stream" disabled={busy || completedProject} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "sourceCad")} />
           </label>
 
           <label className={`mapper-upload-card ${hasPlotSheet ? "ready" : ""}`}>
             <span><FileText /></span>
-            <div><b>{hasPlotSheet ? `Plot inventory · ${plots.length}` : "3. Plot sheet"}</b><small>{settings.plotSheetName || "CSV/JSON: ID, sqft/sqm, dimensions, facing"}</small></div>
+            <div><b>{hasPlotSheet ? `Plot inventory · ${plots.length}` : "2. Plot details sheet"}</b><small>{settings.plotSheetName || "CSV/JSON: ID, sqft/sqm, dimensions, facing"}</small></div>
             {hasPlotSheet && <CheckCircle2 className="mapper-ready-icon" />}
             <input type="file" accept=".csv,.json,text/csv,application/json" disabled={busy || completedProject} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "plotSheet")} />
           </label>
 
           <label className={`mapper-upload-card ${hasPdf ? "ready" : ""}`}>
             <span><FileText /></span>
-            <div><b>{hasPdf ? "Technical PDF saved" : "4. PDF reference"}</b><small>{settings.sourcePdfName || "Original sanctioned/technical sheet"}</small></div>
+            <div><b>{hasPdf ? "Technical PDF saved" : "3. PDF reference"}</b><small>{settings.sourcePdfName || "Original sanctioned/technical sheet"}</small></div>
             {hasPdf && <CheckCircle2 className="mapper-ready-icon" />}
             <input type="file" accept="application/pdf,.pdf" disabled={busy} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "sourcePdf")} />
           </label>
@@ -813,7 +964,8 @@ export default function PlotMapper({
         </div>
 
         <div className="mapper-source-meta">
-          <span>Map: <b>{Math.round(mapWidth)} × {Math.round(mapHeight)}</b></span>
+          <span>Mapping: <b>{Math.round(mapWidth)} × {Math.round(mapHeight)}</b></span>
+          {settings.masterplanOriginalWidth && settings.masterplanOriginalHeight && <span>Source: <b>{settings.masterplanOriginalWidth} × {settings.masterplanOriginalHeight}</b></span>}
           <span>Inventory: <b>{plots.length}</b></span>
           <span>Mapped: <b>{mappedPlots.length}</b></span>
           <span>Review: <b>{unmappedPlots.length}</b></span>
@@ -823,7 +975,12 @@ export default function PlotMapper({
       </div>
 
       {cadGeometry && !completedProject && (
-        <div className="card calibration-card">
+        <details className="card cad-assistant-card">
+          <summary>
+            <span><b>Advanced CAD Assistant</b><small>Optional auto-suggestions; normal plot mapping main image par hoti hai.</small></span>
+            <em>{cadGeometry.candidates.length} candidates</em>
+          </summary>
+          <div className="calibration-card">
           <div className="calibration-head">
             <div>
               <small>AUTO CAD CALIBRATION</small>
@@ -866,23 +1023,43 @@ export default function PlotMapper({
               {liveMatrix && <label className="overlay-toggle"><input type="checkbox" checked={showCadOverlay} onChange={(event) => setShowCadOverlay(event.target.checked)} /> Show transformed CAD overlay on masterplan</label>}
             </div>
           </div>
-        </div>
+          </div>
+        </details>
       )}
 
-      <div className="mapper-work mapper-v2-work">
-        <div ref={canvasRef} className="mapper-canvas card mapper-precision-canvas">
-          <div className="mapper-zoombar">
-            <strong>{calibrationMode ? pendingCadPoint ? "Tap same point on image" : "Choose CAD point first" : manualPhase === "select" ? `Manual: select ${plotId}` : `Manual: ${plotId} details`}</strong>
+      <div className="mapper-work mapper-v4-work">
+        <div ref={canvasRef} className={`mapper-canvas card mapper-precision-canvas mapper-v4-canvas ${toolMode === "pan" ? "pan-mode" : "select-mode"}`}>
+          <div className="mapper-v4-current">
+            <button type="button" onClick={() => selectSiblingPlot(-1)} disabled={!inventoryPlots.length} aria-label="Previous plot"><ChevronLeft /></button>
+            <label>
+              <small>Current plot</small>
+              <select value={plotId} onChange={(event) => {
+                const next = plots.find((item) => item.id === event.target.value);
+                if (next) loadPlotDetails(next, Boolean(next.polygon));
+                else setPlotId(event.target.value);
+              }}>
+                {inventoryPlots.length
+                  ? inventoryPlots.map((plot) => <option key={plot.id} value={plot.id}>{plot.id} · {plot.polygon ? "mapped" : "pending"}</option>)
+                  : <option value={plotId}>{plotId}</option>}
+              </select>
+            </label>
+            <span><b>{mappedPlots.length}</b>/{plots.length || "—"}</span>
+            <button type="button" onClick={() => selectSiblingPlot(1)} disabled={!inventoryPlots.length} aria-label="Next plot"><ChevronRight /></button>
+          </div>
+          <div className="mapper-zoombar mapper-v4-toolbar">
+            <button className={toolMode === "pan" ? "active" : ""} type="button" onClick={() => { setToolMode("pan"); setCalibrationMode(false); }}><Hand />Pan</button>
+            <button className={toolMode === "select" ? "active" : ""} type="button" onClick={() => { setToolMode("select"); setCalibrationMode(false); }}><Target />Select</button>
+            <strong>{shape === "quad" ? `Plot ${plotId} · ${points.length}/4 corners` : `Plot ${plotId} · ${points.length} corners`}</strong>
             <span>{Math.round(zoom * 100)}%</span>
-            <input className="mapper-zoom-range" type="range" min="1" max="8" step="0.1" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} aria-label="Zoom level" />
+            <input className="mapper-zoom-range" type="range" min="1" max="16" step="0.1" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} aria-label="Zoom level" />
             <button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom((value) => Math.max(1, value - 0.5))}><ZoomOut /></button>
-            <button aria-label="Zoom in" disabled={zoom >= 8} onClick={() => setZoom((value) => Math.min(8, value + 0.5))}><ZoomIn /></button>
-            <button aria-label="Reset zoom" onClick={() => setZoom(1)}><RotateCcw /></button>
-            <button aria-label="Full screen" onClick={() => canvasRef.current?.requestFullscreen?.()}><Maximize2 /></button>
+            <button aria-label="Zoom in" disabled={zoom >= 16} onClick={() => setZoom((value) => Math.min(16, value + 0.5))}><ZoomIn /></button>
+            <button aria-label="Fit full image" onClick={() => setZoom(1)}><RotateCcw /></button>
+            <button aria-label="Open mapping fullscreen" onClick={() => canvasRef.current?.requestFullscreen?.()}><Maximize2 />Fullscreen</button>
           </div>
 
           {!imageReady && <div className="mapper-loading">{hasMasterplan ? "High-resolution masterplan load हो रहा है…" : "पहले masterplan image upload करें"}</div>}
-          <div className="mapper-pan-hint">Tap = point/select · finger drag = pan · zoom slider / + − = smooth zoom · yellow handle drag = exact correction · shared edges auto-snap</div>
+          <div className="mapper-pan-hint">{toolMode === "pan" ? "PAN mode: pinch/zoom aur image move करें. Plot बड़ा दिखने पर SELECT दबाएँ." : "SELECT mode: corners clockwise tap करें. Yellow numbered handle drag = exact correction; nearby mapped edge/vertex auto-snap."}</div>
           <div ref={imageWrapRef} className="mapper-image-wrap mapper-image-v2" style={{ width: `${zoom * 100}%`, maxWidth: "none" }}>
             <img
               src={imageUrl}
@@ -931,6 +1108,20 @@ export default function PlotMapper({
             ))}
             {loupePoint && <div className="mapper-loupe" style={{ backgroundImage: `url(${imageUrl})`, backgroundSize: `${zoom * 400}% auto`, backgroundPosition: `${loupePoint[0] * 100}% ${loupePoint[1] * 100}%` }}><i /></div>}
           </div>
+          {!completedProject && (
+            <div className="mapper-v4-bottom-bar">
+              <button type="button" disabled={!points.length} onClick={undoPoint}><Undo2 />Undo</button>
+              <button type="button" disabled={!points.length} onClick={clearCurrentPoints}>Clear</button>
+              <button type="button" onClick={clonePreviousShape}><Copy />Clone prev</button>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || !shapeReady}
+                onClick={confirmPlot}
+              ><CheckCircle2 />{busy ? "Saving…" : editingId ? `Update ${plotId}` : `Confirm ${plotId} →`}</button>
+            </div>
+          )}
+          {shapeInvalid && <div className="mapper-shape-error">Shape cross ho rahi hai. Handles ko clockwise order me adjust karein.</div>}
         </div>
 
         <aside className="card mapper-list mapper-review-list">
@@ -969,8 +1160,8 @@ export default function PlotMapper({
         </aside>
       </div>
 
-      {!completedProject && (
-        <div className="card auto-publish-card">
+      {!completedProject && liveMatrix && acceptedAutoMatches.length > 0 && (
+        <div className="card auto-publish-card cad-only-card">
           <div>
             <small>AUTO MATCH REVIEW</small>
             <h3>{acceptedAutoMatches.length} Auto-ready · {reviewPlots.length} Review</h3>
@@ -983,7 +1174,7 @@ export default function PlotMapper({
       {!completedProject && hasMasterplan && (
         <div className="card manual-fallback-card">
           <div className="manual-fallback-head">
-            <div><small>PRECISE MANUAL FALLBACK</small><h3>{currentPlot ? `Plot ${currentPlot.id}` : `Plot ${plotId}`}</h3><p>CAD match miss होने पर ही use करें. Perspective layout के लिए 4-corner quadrilateral default है.</p></div>
+            <div><small>PLOT MAPPING CONTROLS</small><h3>{currentPlot ? `Plot ${currentPlot.id}` : `Plot ${plotId}`}</h3><p>Main image source of truth है. Plot को full zoom करें, corners clockwise mark करें, handles से exact boundary fit करके Confirm करें.</p></div>
             <select value={plotId} onChange={(event) => {
               const id = event.target.value;
               const plot = plots.find((item) => item.id === id);
@@ -1000,11 +1191,12 @@ export default function PlotMapper({
               <button className={shape === "polygon" ? "active" : ""} onClick={() => { setShape("polygon"); setPoints([]); }}>Irregular · corner taps</button>
             </div>
             <div className="mapper-actions compact">
-              <button disabled={!points.length} onClick={() => setPoints((current) => current.slice(0, -1))}><Undo2 />Undo</button>
-              <button disabled={!points.length} onClick={() => setPoints([])}>Clear</button>
+              <button disabled={!points.length} onClick={undoPoint}><Undo2 />Undo</button>
+              <button disabled={!points.length} onClick={clearCurrentPoints}>Clear</button>
+              <button onClick={clonePreviousShape}><Copy />Clone previous</button>
               {shape === "polygon" && <button className="primary" disabled={points.length < 3} onClick={() => setManualPhase("details")}><CheckCircle2 />Boundary complete</button>}
             </div>
-            <small className="mapper-help">Image पर clockwise corners tap करें. Existing plot vertex/edge के पास tap करने पर automatic snap होगा. Corner marker को drag करके exact correction करें.</small>
+            <small className="mapper-help">पहले PAN में plot को बड़ा zoom करें → SELECT करें → clockwise corners tap करें. Existing plot vertex/edge auto-snap होगा. Numbered handle drag करके pixel-level correction करें.</small>
           </> : <>
             <div className="mapper-fields guided-fields">
               <label><span>Plot number</span><input value={plotId} readOnly={Boolean(currentPlot)} onChange={(event) => setPlotId(event.target.value)} /></label>
@@ -1014,9 +1206,10 @@ export default function PlotMapper({
             </div>
             <div className="mapper-actions">
               <button onClick={() => setManualPhase("select")}><Pencil />Boundary बदलें</button>
-              <button className="primary mapper-confirm" disabled={busy || points.length < 3} onClick={confirmPlot}><Save />{busy ? "Saving…" : editingId ? `Update ${plotId}` : `Confirm ${plotId} & open next`}</button>
+              <button className="primary mapper-confirm" disabled={busy || !shapeReady} onClick={confirmPlot}><Save />{busy ? "Saving…" : editingId ? `Update ${plotId}` : `Save shape ${plotId} & open next`}</button>
             </div>
-            {currentCenter && <small className="mapper-help">Boundary center {currentCenter[0].toFixed(4)}, {currentCenter[1].toFixed(4)} · normalized geometry यही 2D और 3D दोनों use करेंगे.</small>}
+            <small className="mapper-help">Dimensions / area / facing optional metadata हैं; CSV/PDF से बाद में update हो सकते हैं. Shape independent save होती है.</small>
+            {currentCenter && <small className="mapper-help">Boundary center {currentCenter[0].toFixed(4)}, {currentCenter[1].toFixed(4)} · normalized geometry यही SVG hit-area, 2D और 3D use करेंगे.</small>}
           </>}
         </div>
       )}

@@ -2291,3 +2291,36 @@ body {
 @media(max-width:620px){.auto-cad-mapper{gap:12px}.mapper-v2-progress{grid-template-columns:1fr 1fr}.mapper-v2-progress span{min-height:50px;padding:7px;font-size:10px}.mapper-source-grid{grid-template-columns:1fr}.calibration-card,.manual-fallback-card{padding:13px}.calibration-head{gap:10px}.calibration-head h3,.manual-fallback-head h3,.auto-publish-card h3{font-size:17px}.calibration-grid{gap:10px}.cad-preview{height:42vh}.calibration-actions{display:grid;grid-template-columns:1fr 1fr}.calibration-actions button{padding:0 8px;font-size:11px}.mapper-precision-canvas{padding:7px;max-height:76vh}.mapper-precision-canvas .mapper-zoombar{position:sticky;left:0;top:0;min-width:100%;width:max-content;flex-wrap:nowrap;overflow-x:auto}.mapper-precision-canvas .mapper-zoombar strong{min-width:150px}.mapper-pan-hint{position:sticky;left:0;max-width:100vw}.mapper-loupe{width:106px;height:106px;right:10px;bottom:10px}.manual-fallback-head{flex-direction:column}.manual-fallback-head select{width:100%}.manual-fallback-card .mapper-fields{grid-template-columns:1fr 1fr}.auto-publish-card{padding:14px}.mapper-review-list{max-height:38vh}.mapper-image-wrap .mapped-plot text{font-size:13px}.plot-row-main{grid-template-columns:40px minmax(0,1fr) auto}}
 .mapper-image-v2 polygon.cad-review{fill:#ffb52b1f;stroke:#ffc34a;stroke-width:2;stroke-dasharray:4 3;pointer-events:none}.mapper-list-actions .auto-toggle{min-width:58px;border:1px solid #72571f!important;background:#2d2310!important;color:#f2c85e!important;padding:0 7px!important;font-size:9px!important;font-weight:900!important}.mapper-list-actions .auto-toggle.included{border-color:#2f6eaa!important;background:#102b48!important;color:#7fc0ff!important}.mapper-precision-canvas{scroll-behavior:smooth}
 .mapper-source-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px}.mapper-source-actions button{min-height:36px;display:inline-flex;align-items:center;gap:6px;border:1px solid #304764;border-radius:9px;background:#0b1a2c;color:#9fc6ff;padding:0 10px;font-size:10px;font-weight:900}.mapper-source-actions button svg{width:15px}.mapper-source-actions small{color:#74849e;font-size:10px;line-height:1.4}
+
+/* Rekixo Plot Mapper V4 — image-first mobile precision workflow ---------------- */
+.mapper-v4-work{grid-template-columns:minmax(0,1fr) 300px}
+.mapper-v4-canvas{position:relative;overflow:auto;overscroll-behavior:contain;background:#050b15}
+.mapper-v4-current{position:sticky;z-index:8;top:0;left:0;display:grid;grid-template-columns:44px minmax(0,1fr) auto 44px;align-items:center;gap:7px;min-width:100%;padding:8px;background:#071322f5;border-bottom:1px solid #273a55;backdrop-filter:blur(10px)}
+.mapper-v4-current>button{width:44px;height:44px;border:1px solid #30425f;border-radius:11px;background:#0f1e32;color:#b9c8de;display:grid;place-items:center}
+.mapper-v4-current>button:disabled{opacity:.35}.mapper-v4-current svg{width:18px}.mapper-v4-current label{min-width:0;display:grid;gap:2px}.mapper-v4-current label small{color:#7387a5;font-size:9px;font-weight:900;letter-spacing:.08em}.mapper-v4-current select{min-width:0;width:100%;height:38px;border:1px solid #30425e;border-radius:9px;background:#0b192a;color:#fff;padding:0 8px;font-weight:850}.mapper-v4-current>span{color:#8da0bb;font-size:12px;white-space:nowrap}.mapper-v4-current>span b{color:#36d88e}
+.mapper-v4-toolbar{top:61px!important}.mapper-v4-toolbar strong{min-width:150px}.mapper-v4-toolbar button.active{border-color:#24cb80!important;background:#12382e!important;color:#62e5ad!important}
+.mapper-v4-canvas.select-mode .mapper-image-v2 svg{pointer-events:auto;touch-action:none}
+.mapper-v4-canvas.pan-mode .mapper-image-v2 svg{pointer-events:none}
+.mapper-v4-canvas.pan-mode .mapper-image-v2{touch-action:pan-x pan-y}
+.mapper-v4-bottom-bar{position:sticky;z-index:9;left:0;right:0;bottom:0;display:grid;grid-template-columns:auto auto auto minmax(150px,1fr);gap:7px;padding:9px;background:#071322f5;border-top:1px solid #2b3e59;backdrop-filter:blur(10px)}
+.mapper-v4-bottom-bar button{min-height:46px;border:1px solid #30425e;border-radius:11px;background:#0e1c2f;color:#b8c6da;padding:0 12px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;font-weight:900}.mapper-v4-bottom-bar button svg{width:16px}.mapper-v4-bottom-bar button:disabled{opacity:.35}.mapper-v4-bottom-bar button.primary{border-color:#23835a;background:#0f3c2c;color:#68e6af}
+.mapper-shape-error{position:sticky;z-index:10;bottom:64px;margin:0 9px 8px;padding:9px 11px;border:1px solid #9b3545;border-radius:10px;background:#431821;color:#ff9cac;font-size:11px;font-weight:800}
+.mapper-point-handle.draggable{width:30px!important;height:30px!important;font-size:11px!important;box-shadow:0 2px 9px #000c,0 0 0 2px #ffb30055!important}
+.mapper-loupe{width:132px!important;height:132px!important}
+.cad-assistant-card{overflow:hidden;background:#081421}.cad-assistant-card>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;color:#c2cee1}.cad-assistant-card>summary::-webkit-details-marker{display:none}.cad-assistant-card>summary span{display:grid;gap:4px}.cad-assistant-card>summary b{color:#eaf1ff}.cad-assistant-card>summary small{color:#7688a4;font-size:10px}.cad-assistant-card>summary em{font-style:normal;border:1px solid #3a4d68;border-radius:999px;padding:5px 8px;color:#8fa3c0;font-size:10px;white-space:nowrap}.cad-assistant-card .calibration-card{border:0;border-top:1px solid #243650;border-radius:0}
+.cad-only-card{border-style:dashed}
+@media(max-width:620px){
+  .mapper-v4-work{display:block}
+  .mapper-review-list{display:none!important}
+  .mapper-v4-canvas{max-height:82vh!important;min-height:68vh;padding:0!important;border-radius:14px}
+  .mapper-v4-current{grid-template-columns:44px minmax(120px,1fr) auto 44px}
+  .mapper-v4-toolbar{top:61px!important;min-width:max-content!important;padding:6px!important}
+  .mapper-v4-toolbar strong{min-width:120px;font-size:10px}
+  .mapper-v4-toolbar button{min-width:46px;min-height:44px}
+  .mapper-v4-bottom-bar{grid-template-columns:56px 56px 74px minmax(130px,1fr);gap:6px;padding:7px}
+  .mapper-v4-bottom-bar button{min-height:50px;padding:0 7px;font-size:10px}
+  .mapper-v4-canvas:fullscreen{height:100dvh!important;max-height:none!important;border-radius:0!important}
+  .mapper-v4-canvas:fullscreen .mapper-v4-current{top:0}
+  .mapper-v4-canvas:fullscreen .mapper-v4-toolbar{top:61px!important}
+  .cad-assistant-card>summary{padding:13px}
+}
