@@ -2460,3 +2460,20 @@ body {
     box-shadow: 0 3px 14px #000b, 0 0 0 2px #f2b82d55;
   }
 }
+
+
+/* Rekixo Mapper V5.6 — precision smooth selection */
+.mapper-v4-canvas {
+  scroll-behavior: auto !important;
+}
+.mapper-v4-canvas .mapper-image-wrap {
+  transition: none !important;
+}
+.mapper-v4-canvas .mapper-point-handle.draggable {
+  transition: none !important;
+}
+.mapper-v4-canvas .mapper-image-v2,
+.mapper-v4-canvas .mapper-image-v2 svg,
+.mapper-v4-canvas .mapper-rotated-scene {
+  touch-action: none !important;
+}

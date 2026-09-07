@@ -52,7 +52,9 @@ test("rotated taps invert back to canonical original-image coordinates", () => {
 test("snapping swaps rendered source axes at quarter-turn rotations", () => {
   assert.match(source, /sourceRenderedWidth = rotation === 1 \|\| rotation === 3 \? box\.height : box\.width/);
   assert.match(source, /sourceRenderedHeight = rotation === 1 \|\| rotation === 3 \? box\.width : box\.height/);
-  assert.match(source, /snapPoint\(raw, mappedPolygons, sourceRenderedWidth, sourceRenderedHeight, 18\)/);
+  assert.match(source, /const snapThresholdPx = Math\.max/);
+  assert.match(source, /18 \/ Math\.sqrt\(Math\.max\(1, zoomRef\.current\)\)/);
+  assert.match(source, /snapPoint\(\s*raw,\s*mappedPolygons,\s*sourceRenderedWidth,\s*sourceRenderedHeight,\s*snapThresholdPx,\s*\)/s);
 });
 
 test("rotation remains project-device scoped and reset-safe", () => {

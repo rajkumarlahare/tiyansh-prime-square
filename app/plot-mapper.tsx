@@ -111,6 +111,13 @@ type PendingPinchFrame = {
   panY: number;
 };
 
+type PendingHandleFrame = {
+  index: number;
+  clientX: number;
+  clientY: number;
+  element: HTMLButtonElement;
+};
+
 const COMPLETED_PROJECT_ID = "tiyansh-prime-square";
 const MAX_MAPPING_DIMENSION = 6144;
 const MAX_MAPPING_PIXELS = 24_000_000;
@@ -310,8 +317,6 @@ export default function PlotMapper({
   const [shape, setShape] = useState<"quad" | "polygon">("quad");
   const [manualPhase, setManualPhase] = useState<"select" | "details">("select");
   const [editingId, setEditingId] = useState("");
-  const [draggingPoint, setDraggingPoint] = useState<number | null>(null);
-  const [loupePoint, setLoupePoint] = useState<MapperPoint | null>(null);
 
   // CAD calibration and automatic geometry matching.
   const [calibrationPairs, setCalibrationPairs] = useState<HomographyPair[]>([]);
@@ -336,7 +341,16 @@ export default function PlotMapper({
   const gestureFrameRef = useRef<number | null>(null);
   const pendingPanRef = useRef({ x: 0, y: 0 });
   const pendingPinchRef = useRef<PendingPinchFrame | null>(null);
+  const handleFrameRef = useRef<number | null>(null);
+  const pendingHandleRef = useRef<PendingHandleFrame | null>(null);
+  const draggingPointRef = useRef<number | null>(null);
+  const pointsRef = useRef<MapperPoint[]>([]);
+  const loupeRef = useRef<HTMLDivElement | null>(null);
 
+
+  useEffect(() => {
+    pointsRef.current = points;
+  }, [points]);
 
   useLayoutEffect(() => {
     zoomRef.current = zoom;
@@ -823,6 +837,24 @@ export default function PlotMapper({
     return target instanceof Element && Boolean(target.closest(".mapper-point-handle"));
   }
 
+  function latestPointerClient(event: {
+    clientX: number;
+    clientY: number;
+    nativeEvent: PointerEvent;
+  }) {
+    const native = event.nativeEvent;
+    try {
+      const samples =
+        typeof native.getCoalescedEvents === "function"
+          ? native.getCoalescedEvents()
+          : [];
+      const latest = samples.length ? samples[samples.length - 1] : native;
+      return { x: latest.clientX, y: latest.clientY };
+    } catch {
+      return { x: event.clientX, y: event.clientY };
+    }
+  }
+
   function currentTouchPair() {
     const touchPoints = [...activeGesturePointersRef.current.values()];
     if (touchPoints.length < 2) return null;
@@ -850,8 +882,15 @@ export default function PlotMapper({
       cancelAnimationFrame(gestureFrameRef.current);
       gestureFrameRef.current = null;
     }
+    if (handleFrameRef.current !== null) {
+      cancelAnimationFrame(handleFrameRef.current);
+      handleFrameRef.current = null;
+    }
     pendingPanRef.current = { x: 0, y: 0 };
     pendingPinchRef.current = null;
+    pendingHandleRef.current = null;
+    draggingPointRef.current = null;
+    if (loupeRef.current) loupeRef.current.style.display = "none";
   }
 
   function scheduleGestureFrame() {
@@ -972,13 +1011,15 @@ export default function PlotMapper({
   function handleMapperGesturePointerMove(event: React.PointerEvent<HTMLDivElement>) {
     if (mapperGestureTargetIsHandle(event.target)) return;
 
+    const pointer = latestPointerClient(event);
+
     if (
       event.pointerType === "touch" &&
       activeGesturePointersRef.current.has(event.pointerId)
     ) {
       activeGesturePointersRef.current.set(event.pointerId, {
-        x: event.clientX,
-        y: event.clientY,
+        x: pointer.x,
+        y: pointer.y,
       });
     }
 
@@ -1014,8 +1055,8 @@ export default function PlotMapper({
     if (!pan || pan.pointerId !== event.pointerId) return;
 
     const totalMovement = Math.hypot(
-      event.clientX - pan.startX,
-      event.clientY - pan.startY,
+      pointer.x - pan.startX,
+      pointer.y - pan.startY,
     );
     const shouldPan =
       !calibrationMode &&
@@ -1025,18 +1066,16 @@ export default function PlotMapper({
       );
     if (!shouldPan) return;
 
-    // SELECT becomes a pan only after the movement threshold. Capture from this
-    // point onward so the drag keeps working outside the immediate plot image.
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
       // Pointer capture may be unavailable for a pointer that just ended.
     }
 
-    const deltaX = pan.lastX - event.clientX;
-    const deltaY = pan.lastY - event.clientY;
-    pan.lastX = event.clientX;
-    pan.lastY = event.clientY;
+    const deltaX = pan.lastX - pointer.x;
+    const deltaY = pan.lastY - pointer.y;
+    pan.lastX = pointer.x;
+    pan.lastY = pointer.y;
     queuePanDelta(deltaX, deltaY);
 
     if (!pan.moved) {
@@ -1203,11 +1242,19 @@ export default function PlotMapper({
     const wrap = imageWrapRef.current;
     if (!wrap) return raw;
     const box = wrap.getBoundingClientRect();
-    // Snap math runs in canonical SOURCE coordinates. At 90°/270° the source X
-    // axis is rendered along the visible height and source Y along visible width.
     const sourceRenderedWidth = rotation === 1 || rotation === 3 ? box.height : box.width;
     const sourceRenderedHeight = rotation === 1 || rotation === 3 ? box.width : box.height;
-    return snapPoint(raw, mappedPolygons, sourceRenderedWidth, sourceRenderedHeight, 18).point;
+    const snapThresholdPx = Math.max(
+      8,
+      Math.min(18, 18 / Math.sqrt(Math.max(1, zoomRef.current))),
+    );
+    return snapPoint(
+      raw,
+      mappedPolygons,
+      sourceRenderedWidth,
+      sourceRenderedHeight,
+      snapThresholdPx,
+    ).point;
   }
 
   function imageTap(point: MapperPoint) {
@@ -1268,32 +1315,114 @@ export default function PlotMapper({
     if (point) imageTap(point);
   }
 
-  function dragHandle(event: React.PointerEvent<HTMLButtonElement>, index: number) {
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    setDraggingPoint(index);
-    const point = svgPointFromClient(event.clientX, event.clientY);
-    if (point) {
-      const snapped = precisePoint(point);
-      setPoints((current) => current.map((item, cursor) => (cursor === index ? snapped : item)));
-      setLoupePoint(snapped);
+  function renderHandlePreview(
+    index: number,
+    point: MapperPoint,
+    element: HTMLButtonElement,
+  ) {
+    const next = pointsRef.current.map((item, cursor) =>
+      cursor === index ? point : item,
+    );
+    pointsRef.current = next;
+
+    element.style.left = `${point[0] * 100}%`;
+    element.style.top = `${point[1] * 100}%`;
+
+    const draft = imageWrapRef.current?.querySelector<SVGPolygonElement>("polygon.draft");
+    if (draft && next.length >= 2) {
+      draft.setAttribute(
+        "points",
+        next.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" "),
+      );
+    }
+
+    const loupe = loupeRef.current;
+    if (loupe) {
+      loupe.style.display = "block";
+      loupe.style.backgroundImage = `url(${imageUrl})`;
+      loupe.style.backgroundSize = `${Math.max(4, zoomRef.current * 4) * 100}% auto`;
+      loupe.style.backgroundPosition = `${point[0] * 100}% ${point[1] * 100}%`;
+      loupe.style.transform = `rotate(${rotation * 90}deg)`;
     }
   }
 
-  function moveHandle(event: React.PointerEvent<HTMLButtonElement>, index: number) {
-    if (draggingPoint !== index) return;
-    event.preventDefault();
-    const point = svgPointFromClient(event.clientX, event.clientY);
+  function flushPendingHandleFrame() {
+    if (handleFrameRef.current !== null) {
+      cancelAnimationFrame(handleFrameRef.current);
+      handleFrameRef.current = null;
+    }
+    const pending = pendingHandleRef.current;
+    pendingHandleRef.current = null;
+    if (!pending || draggingPointRef.current !== pending.index) return;
+    const point = svgPointFromClient(pending.clientX, pending.clientY);
     if (!point) return;
-    const snapped = precisePoint(point);
-    setPoints((current) => current.map((item, cursor) => (cursor === index ? snapped : item)));
-    setLoupePoint(snapped);
+    renderHandlePreview(
+      pending.index,
+      precisePoint(point),
+      pending.element,
+    );
   }
 
-  function endHandle() {
-    setDraggingPoint(null);
-    setLoupePoint(null);
+  function queueHandleFrame(
+    index: number,
+    clientX: number,
+    clientY: number,
+    element: HTMLButtonElement,
+  ) {
+    pendingHandleRef.current = { index, clientX, clientY, element };
+    if (handleFrameRef.current !== null) return;
+    handleFrameRef.current = requestAnimationFrame(() => {
+      handleFrameRef.current = null;
+      const pending = pendingHandleRef.current;
+      pendingHandleRef.current = null;
+      if (!pending || draggingPointRef.current !== pending.index) return;
+      const point = svgPointFromClient(pending.clientX, pending.clientY);
+      if (!point) return;
+      renderHandlePreview(
+        pending.index,
+        precisePoint(point),
+        pending.element,
+      );
+    });
+  }
+
+  function dragHandle(event: React.PointerEvent<HTMLButtonElement>, index: number) {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Keep drag inside the mapper if capture is unavailable.
+    }
+    draggingPointRef.current = index;
+    const pointer = latestPointerClient(event);
+    queueHandleFrame(index, pointer.x, pointer.y, event.currentTarget);
+  }
+
+  function moveHandle(event: React.PointerEvent<HTMLButtonElement>, index: number) {
+    if (draggingPointRef.current !== index) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const pointer = latestPointerClient(event);
+    queueHandleFrame(index, pointer.x, pointer.y, event.currentTarget);
+  }
+
+  function endHandle(event: React.PointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    flushPendingHandleFrame();
+    if (draggingPointRef.current !== null) {
+      setPoints(pointsRef.current.map(([x, y]) => [x, y] as MapperPoint));
+    }
+    draggingPointRef.current = null;
+    if (loupeRef.current) loupeRef.current.style.display = "none";
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      // Nothing to release.
+    }
   }
 
   async function verifyPlotPersistence(saved: Plot) {
@@ -1828,12 +1957,11 @@ export default function PlotMapper({
                 >{index + 1}</button>
               ))}
             </div>
-            {loupePoint && <div className="mapper-loupe" style={{
-              backgroundImage: `url(${imageUrl})`,
-              backgroundSize: `${zoom * 400}% auto`,
-              backgroundPosition: `${loupePoint[0] * 100}% ${loupePoint[1] * 100}%`,
-              transform: `rotate(${rotationDegrees}deg)`,
-            }}><i /></div>}
+            <div
+              ref={loupeRef}
+              className="mapper-loupe"
+              style={{ display: "none" }}
+            ><i /></div>
           </div>
           {!completedProject && (
             <div className="mapper-v4-bottom-bar">
