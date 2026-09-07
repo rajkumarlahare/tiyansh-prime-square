@@ -2380,3 +2380,29 @@ body {
     user-select: none !important;
   }
 }
+
+
+/* Rekixo Platform Architecture V5 */
+.rekixo-domain-manager,.rekixo-publish-panel{margin-top:18px}
+.rekixo-domain-projects{display:grid;gap:14px;margin-top:14px}
+.rekixo-domain-project{border:1px solid #24344f;border-radius:16px;background:#081425;padding:14px}
+.rekixo-domain-project>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.rekixo-domain-project>header>div{display:grid;gap:4px}.rekixo-domain-project small{color:#8191ad}
+.rekixo-domain-project button,.rekixo-domain-project a,.rekixo-publish-actions a,.rekixo-publish-actions button{min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #2d405f;border-radius:11px;background:#0d1b30;color:#e9f1ff;text-decoration:none;padding:8px 11px}
+.rekixo-domain-project svg,.rekixo-publish-actions svg{width:16px;height:16px}
+.rekixo-domain-link{display:grid;grid-template-columns:120px minmax(0,1fr) 42px 42px;align-items:center;gap:8px;margin:8px 0}
+.rekixo-domain-link span{font-size:12px;color:#8291ad}.rekixo-domain-link code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#bcd4ff}
+.rekixo-domain-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.rekixo-domain-rows{display:grid;gap:8px}.rekixo-domain-rows>div{display:flex;align-items:center;gap:8px;border-top:1px solid #1d2d46;padding-top:9px}
+.rekixo-domain-rows>div>span{display:grid;gap:2px;min-width:0;flex:1}.rekixo-domain-rows>div>span b{overflow:hidden;text-overflow:ellipsis}
+.rekixo-domain-note{margin:14px 0 0;color:#7f8da7;font-size:12px}
+.rekixo-publish-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:14px 0}
+.rekixo-publish-stats span{border:1px solid #253752;border-radius:12px;padding:11px;color:#8493af}.rekixo-publish-stats b{display:block;color:#fff;margin-top:5px}
+.rekixo-publish-reasons{margin:12px 0;padding:12px 12px 12px 30px;border:1px solid #75451d;border-radius:12px;background:#2a1c0b;color:#ffd278}
+.rekixo-publish-actions{display:flex;flex-wrap:wrap;gap:9px}.rekixo-publish-panel>small{display:block;margin-top:11px;color:#7d8ba4}
+@media(max-width:720px){
+  .rekixo-domain-link{grid-template-columns:1fr 42px 42px}.rekixo-domain-link span{grid-column:1/-1}.rekixo-domain-link code{min-width:0}
+  .rekixo-domain-project>header{align-items:flex-start;flex-direction:column}
+  .rekixo-domain-rows>div{flex-wrap:wrap}.rekixo-domain-rows>div>span{flex-basis:100%}
+  .rekixo-publish-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

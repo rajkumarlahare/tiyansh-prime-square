@@ -367,8 +367,14 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
 <script src="three-view.js"></script>
 <script>
 const REKIXO_DEFAULT_PROJECT='tiyansh-prime-square';
-const REKIXO_PROJECT_PARAM=new URLSearchParams(location.search).get('projectId')||'';
-const REKIXO_PROJECT_QUERY=REKIXO_PROJECT_PARAM?'?projectId='+encodeURIComponent(REKIXO_PROJECT_PARAM):'';
+const REKIXO_PARAMS=new URLSearchParams(location.search);
+const REKIXO_PROJECT_PARAM=REKIXO_PARAMS.get('projectId')||'';
+const REKIXO_PROJECT_SLUG=REKIXO_PARAMS.get('projectSlug')||'';
+const REKIXO_FORWARD=new URLSearchParams();
+if(REKIXO_PROJECT_PARAM)REKIXO_FORWARD.set('projectId',REKIXO_PROJECT_PARAM);
+if(REKIXO_PROJECT_SLUG)REKIXO_FORWARD.set('projectSlug',REKIXO_PROJECT_SLUG);
+if(REKIXO_PARAMS.get('preview')==='1')REKIXO_FORWARD.set('preview','1');
+const REKIXO_PROJECT_QUERY=REKIXO_FORWARD.toString()?'?'+REKIXO_FORWARD.toString():'';
 window.REKIXO_PROJECT_QUERY=REKIXO_PROJECT_QUERY;
 fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject()).then(data=>{if(typeof window.TIYANSH_APPLY_PUBLIC_DATA==='function')window.TIYANSH_APPLY_PUBLIC_DATA(data);else window.TIYANSH_PENDING_PUBLIC_DATA=data}).catch(()=>{});
 </script>
@@ -377,7 +383,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   'use strict';
 
   let W = 1200, H = 2133;
-  let PHONE = '919009995582', MAP_URL = 'https://maps.app.goo.gl/n9BjoY4BYzZfmqTL7', PROJECT_NAME='Tiyansh — The Prime Square', PROJECT_LOCATION='Raigarh, Chhattisgarh';
+  let PHONE = '919009995582', MAP_URL = 'https://maps.app.goo.gl/n9BjoY4BYzZfmqTL7', PROJECT_NAME='Tiyansh — The Prime Square', PROJECT_LOCATION='Raigarh, Chhattisgarh', ADMIN_URL='/admin/login';
   const plots = Array.isArray(window.TIYANSH_PLOTS) ? window.TIYANSH_PLOTS : [];
   let ACTIVE_PROJECT_ID=REKIXO_DEFAULT_PROJECT;
   const q = s => document.querySelector(s);
@@ -583,7 +589,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   function paintGlass(e){if(!isCoarse(e))return;const el=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('.status-option');if(el!==glassOpt){clearGlass();glassOpt=el||null;if(glassOpt){glassOpt.classList.add('touch-glass');setStatusFilter(glassOpt.dataset.statusFilter,true)}}if(glassOpt){const r=glassOpt.getBoundingClientRect();glassOpt.style.setProperty('--rain-x',(e.clientX-r.left)+'px');glassOpt.style.setProperty('--rain-y',(e.clientY-r.top)+'px')}}
   statusBody.addEventListener('pointerdown',e=>{if(isCoarse(e))suppressStatusClick=true;paintGlass(e)});statusBody.addEventListener('pointermove',paintGlass);statusBody.addEventListener('pointerup',()=>setTimeout(clearGlass,140));statusBody.addEventListener('pointercancel',()=>{suppressStatusClick=false;clearGlass()});statusBody.addEventListener('pointerleave',clearGlass);
   q('#outlineToggle').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();toggleStatusPanel()});
-  q('#outlineTop').onclick=()=>{window.top.location.href='/admin'};
+  q('#outlineTop').onclick=()=>{window.top.location.href=ADMIN_URL||'/admin/login'};
   document.querySelectorAll('.status-option').forEach(b=>b.addEventListener('click',e=>{if(suppressStatusClick){suppressStatusClick=false;e.preventDefault();return}setStatusFilter(b.dataset.statusFilter)}));
   updateStatusCounts();
 
@@ -646,7 +652,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     plots.forEach(p=>{const row=live.get(p.id);if(row){const shape={points:p.points,center:p.center,path:p.path};Object.assign(p,row,shape)}const el=svg.querySelector(`[data-plot-id="${p.id}"]`);if(el)el.dataset.status=plotStatus(p)});
     if(!isTiyansh){PHONE=String(s.whatsapp||s.phone1||'').replace(/\D/g,'');MAP_URL=s.mapUrl||''}
     else {PHONE=String(s.whatsapp||s.phone1||PHONE).replace(/\D/g,'')||PHONE;MAP_URL=s.mapUrl||MAP_URL}
-    PROJECT_NAME=s.projectName||data.projectName||PROJECT_NAME;PROJECT_LOCATION=s.location||PROJECT_LOCATION;
+    PROJECT_NAME=s.projectName||data.projectName||PROJECT_NAME;PROJECT_LOCATION=s.location||PROJECT_LOCATION;ADMIN_URL=data.adminUrl||ADMIN_URL;
     if(s.projectName||data.projectName){const title=s.projectName||data.projectName;document.title=title;const brand=document.querySelector('.brand b');if(brand)brand.textContent=title.toUpperCase()}
     if(s.brandName){const small=document.querySelector('.monogram small');if(small)small.textContent=s.brandName.toUpperCase()}
     if(s.brandShort){const mono=document.querySelector('.monogram');if(mono&&mono.firstChild)mono.firstChild.textContent=s.brandShort.toUpperCase();const badge=document.querySelector('.mini-logo strong');if(badge)badge.textContent=s.brandShort.toUpperCase()}

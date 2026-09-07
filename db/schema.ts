@@ -1,9 +1,24 @@
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+
 export const projects = sqliteTable("projects", {
   id:text("id").primaryKey(), name:text("name").notNull(), slug:text("slug").notNull().unique(),
   publicHost:text("public_host"), adminHost:text("admin_host"), status:text("status").notNull().default("active"),
+  publicStatus:text("public_status").notNull().default("draft"), publishedAt:text("published_at"),
+  publishVersion:integer("publish_version").notNull().default(0),
   createdAt:text("created_at").notNull(), updatedAt:text("updated_at").notNull()
 },table=>({publicHostUnique:uniqueIndex("projects_public_host_unique").on(table.publicHost),adminHostUnique:uniqueIndex("projects_admin_host_unique").on(table.adminHost)}));
+
+export const projectDomains = sqliteTable("project_domains", {
+  host:text("host").primaryKey(),
+  projectId:text("project_id").notNull().references(()=>projects.id),
+  kind:text("kind").notNull(),
+  publicPrimary:integer("public_primary",{mode:"boolean"}).notNull().default(false),
+  adminPrimary:integer("admin_primary",{mode:"boolean"}).notNull().default(false),
+  status:text("status").notNull().default("active"),
+  createdAt:text("created_at").notNull(),
+  updatedAt:text("updated_at").notNull()
+},table=>({projectKindIndex:index("idx_project_domains_project_kind").on(table.projectId,table.kind,table.status)}));
+
 export const plots = sqliteTable("plots", { projectId:text("project_id").notNull().default("tiyansh-prime-square").references(()=>projects.id), id:text("id").notNull(), sqft:real("sqft").notNull(), sqm:real("sqm").notNull(), sqyd:real("sqyd").notNull(), dimensions:text("dimensions").notNull(), road:text("road").notNull(), polygon:text("polygon").notNull().default(""), status:text("status").notNull().default("available"), notes:text("notes").notNull().default(""), featured:integer("featured",{mode:"boolean"}).notNull().default(false), updatedAt:text("updated_at").notNull() },table=>({pk:primaryKey({columns:[table.projectId,table.id]})}));
 export const settings = sqliteTable("settings", { projectId:text("project_id").notNull().default("tiyansh-prime-square").references(()=>projects.id), key:text("key").notNull(), value:text("value").notNull(), updatedAt:text("updated_at").notNull() },table=>({pk:primaryKey({columns:[table.projectId,table.key]})}));
 export const gallery = sqliteTable("gallery", { projectId:text("project_id").notNull().default("tiyansh-prime-square").references(()=>projects.id), id:text("id").notNull(), objectKey:text("object_key").notNull().unique(), filename:text("filename").notNull(), contentType:text("content_type").notNull(), caption:text("caption").notNull().default(""), sortOrder:integer("sort_order").notNull().default(0), createdAt:text("created_at").notNull() },table=>({pk:primaryKey({columns:[table.projectId,table.id]})}));

@@ -2,11 +2,42 @@ import { readFile, writeFile } from "node:fs/promises";
 
 const path = "dist/server/wrangler.json";
 const config = JSON.parse(await readFile(path, "utf8"));
-const mode=process.argv[2];
-if(!["client","super"].includes(mode))throw new Error("Usage: node scripts/prepare-cloudflare-deploy.mjs client|super");
+const mode = process.argv[2];
 
-config.name=mode==="super"?"rekixo-super-admin":"tiyansh-prime-square";
-config.vars={...(config.vars||{}),PANEL_MODE:mode,CLIENT_ADMIN_ORIGIN:"https://tiyansh-prime-square.ai-8f3.workers.dev"};
+if (!["client", "legacy", "super"].includes(mode)) {
+  throw new Error(
+    "Usage: node scripts/prepare-cloudflare-deploy.mjs client|legacy|super",
+  );
+}
+
+const workersSubdomain =
+  String(process.env.REKIXO_WORKERS_SUBDOMAIN || "").trim() || "ai-8f3";
+const genericHost = `rekixo-client-sites.${workersSubdomain}.workers.dev`;
+const legacyHost = `tiyansh-prime-square.${workersSubdomain}.workers.dev`;
+const platformHost =
+  String(process.env.REKIXO_PLATFORM_HOST || "").trim() || "sites.rekixo.com";
+const sharedAdminHost = String(
+  process.env.REKIXO_SHARED_ADMIN_HOST || "",
+).trim();
+
+config.name =
+  mode === "super"
+    ? "rekixo-super-admin"
+    : mode === "legacy"
+      ? "tiyansh-prime-square"
+      : "rekixo-client-sites";
+
+config.vars = {
+  PANEL_MODE: mode === "super" ? "super" : "client",
+  SUPER_ADMIN_HOST: "admin.rekixo.com",
+  CLIENT_FALLBACK_HOST: genericHost,
+  LEGACY_FALLBACK_HOST: legacyHost,
+  CLIENT_PLATFORM_HOST: platformHost,
+  CLIENT_SHARED_ADMIN_HOST: sharedAdminHost,
+  CLIENT_ADMIN_ORIGIN: sharedAdminHost
+    ? `https://${sharedAdminHost}`
+    : `https://${genericHost}`,
+};
 
 config.d1_databases = [
   {
@@ -24,4 +55,6 @@ config.r2_buckets = [
 ];
 
 await writeFile(path, `${JSON.stringify(config)}\n`);
-console.log(`Prepared ${mode} Worker with unique production bindings.`);
+console.log(
+  `Prepared ${mode} Worker: ${config.name} · shared D1/R2 · platform ${platformHost}`,
+);
