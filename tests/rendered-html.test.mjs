@@ -18,8 +18,13 @@ test("client access includes mandatory password change and tenant guards", async
   assert.match(auth, /row\.role!=="client_admin"/);
   assert.match(auth, /session_version AS sessionVersion/);
   assert.match(changePassword, /must_change_password=0/);
-  assert.match(projectContext, /public_host = \?/);
+  // V5 multi-domain tenant routing: exact domain registry + legacy bridge + platform preview.
+  assert.match(projectContext, /FROM project_domains d JOIN projects p ON p\.id=d\.project_id/);
+  assert.match(projectContext, /WHERE d\.host=\?/);
+  assert.match(projectContext, /legacyProjectForHost\(host\)/);
   assert.match(projectContext, /searchParams\.get\("projectId"\)/);
-  assert.match(projectContext, /preview\.adminHost===host/);
-  assert.match(projectContext, /host===fallback\?DEFAULT_PROJECT_ID:null/);
+  assert.match(projectContext, /searchParams\.get\("projectSlug"\)/);
+  assert.match(projectContext, /legacy\.adminHost === host/);
+  assert.match(projectContext, /host === legacyFallbackHost\(\)/);
+  assert.match(projectContext, /projectById\(DEFAULT_PROJECT_ID\)/);
 });
