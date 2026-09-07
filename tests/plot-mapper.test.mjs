@@ -4,7 +4,7 @@ import test from "node:test";
 
 const source = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("guided mapper is owner-only and publishes normalized clickable 2D/3D plots", async () => {
+test("auto CAD mapper is owner-only, project-native and keeps precise manual fallback", async () => {
   const [mapper, api, legacyApi, schema, website, three, clientAdmin, superAdmin] =
     await Promise.all([
       source("../app/plot-mapper.tsx"),
@@ -17,43 +17,47 @@ test("guided mapper is owner-only and publishes normalized clickable 2D/3D plots
       source("../app/super-admin-dashboard.tsx"),
     ]);
 
-  assert.match(mapper, /\(event\.clientX\s*-\s*box\.left\)\s*\/\s*box\.width/);
-  assert.match(mapper, /shape === "rectangle"/);
-  assert.match(mapper, /phase.*"select".*"details"/s);
-  assert.match(mapper, /Confirm .*start next/);
-  assert.match(mapper, /nextPlotId/);
-  assert.match(mapper, /normalizeMasterplan/);
-  assert.match(mapper, /MAP_WIDTH = 1200/);
-  assert.match(mapper, /MAP_HEIGHT = 2133/);
-  assert.match(mapper, /createImageBitmap/);
-  assert.match(mapper, /context\.drawImage/);
-  assert.match(mapper, /assetUrl\("sourcePdf"\)/);
-  assert.match(mapper, /Move image/);
-  assert.match(mapper, /Tiyansh masterplan locked/);
-  assert.match(mapper, /onPointerDown=\{navigate \? undefined : mapPoint\}/);
+  assert.match(mapper, /Rekixo Auto CAD Mapper/);
+  assert.match(mapper, /Perspective plot · 4 corners/);
+  assert.doesNotMatch(mapper, /Rectangle · 2 taps/);
+  assert.doesNotMatch(mapper, />Move image</);
+  assert.match(mapper, /snapPoint/);
+  assert.match(mapper, /mapper-loupe/);
+  assert.match(mapper, /solveHomography/);
+  assert.match(mapper, /bestCadLabel/);
+  assert.match(mapper, /publishAutoMatches/);
+  assert.match(mapper, /plotSheet/);
+  assert.match(mapper, /sourceCad/);
+  assert.match(mapper, /MAX_MAPPING_DIMENSION = 4096/);
+  assert.match(mapper, /Keep the exact project aspect ratio/);
+  assert.doesNotMatch(mapper, /MAP_WIDTH = 1200/);
+  assert.doesNotMatch(mapper, /MAP_HEIGHT = 2133/);
 
   assert.match(api, /requireSuperAdmin/);
   assert.match(legacyApi, /status:403/);
-  assert.match(api, /projects\/\$\{projectId\}\/mapper/);
-  assert.match(api, /application\/pdf/);
-  assert.match(api, /env\.DB\.batch/);
-  assert.match(api, /Completed Tiyansh masterplan locked/);
+  assert.match(api, /parseCadGeometry/);
+  assert.match(api, /parsePlotSheetText/);
+  assert.match(api, /sourceCad/);
+  assert.match(api, /cadGeometry/);
+  assert.match(api, /mapWidth/);
+  assert.match(api, /mapHeight/);
+  assert.match(api, /preserveGeometry/);
+  assert.match(api, /Completed Tiyansh mapper locked/);
   assert.match(schema, /polygon:text\("polygon"\)/);
 
-  assert.match(website, /row\.polygon/);
-  assert.match(website, /if\(!isTiyansh\)/);
-  assert.match(website, /plots\.splice\(0,plots\.length\)/);
+  assert.match(website, /setMapDimensions/);
+  assert.match(website, /s\.mapWidth/);
+  assert.match(website, /s\.mapHeight/);
   assert.match(website, /project-asset\/masterplan/);
-  assert.match(website, /setImageSrc/);
-  assert.match(website, /PUBLIC_READY = false, HAS_MASTERPLAN = false/);
+  assert.match(website, /mapWidth:W,mapHeight:H/);
+  assert.match(website, /ACTIVE_PROJECT_ID/);
   assert.match(website, /world\.style\.visibility = 'hidden'/);
-  assert.match(website, /Masterplan upload hone ke baad 3D ready hoga/);
-  assert.match(three, /this\.imageSrc=opt\.imageSrc/);
-  assert.match(three, /setPlots\(plots\)/);
-  assert.match(three, /setImageSrc\(src\)/);
+  assert.match(three, /DEFAULT_IMG_W=1200,DEFAULT_IMG_H=2133/);
+  assert.match(three, /this\.imgW=Math\.max/);
+  assert.match(three, /this\.imgH=Math\.max/);
+  assert.doesNotMatch(three, /const IMG_W=1200,IMG_H=2133/);
 
   assert.doesNotMatch(clientAdmin, /PlotMapper/);
-  assert.match(clientAdmin, /isTiyansh\?\(plotInventory as Plot\[\]\):\[\]/);
   assert.match(superAdmin, /PlotMapper/);
   assert.match(superAdmin, /projectId=\{projectId\}/);
 });

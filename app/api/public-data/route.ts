@@ -4,6 +4,24 @@ import { desc, eq } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { publicProjectId } from "../../project-context";
 
+const PUBLIC_SETTING_KEYS = new Set([
+  "projectName",
+  "brandName",
+  "brandShort",
+  "template",
+  "accentColor",
+  "location",
+  "address",
+  "phone1",
+  "phone2",
+  "whatsapp",
+  "mapUrl",
+  "brochureUrl",
+  "masterplanName",
+  "mapWidth",
+  "mapHeight",
+]);
+
 export async function GET(request: Request) {
   try {
     const db = getDb();
@@ -35,7 +53,11 @@ export async function GET(request: Request) {
         projectId,
         projectName: project?.name || "Project",
         plots: plotRows,
-        settings: Object.fromEntries(settingRows.map((item) => [item.key, item.value])),
+        settings: Object.fromEntries(
+          settingRows
+            .filter((item) => PUBLIC_SETTING_KEYS.has(item.key))
+            .map((item) => [item.key, item.value]),
+        ),
         gallery: galleryRows,
       },
       { headers: { "cache-control": "no-store" } },

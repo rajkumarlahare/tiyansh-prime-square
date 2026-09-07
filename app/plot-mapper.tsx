@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   FileText,
-  Hand,
   ImagePlus,
   Maximize2,
   MousePointer2,
@@ -16,8 +15,24 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import {
+  applyHomography,
+  bestCadLabel,
+  cadAreaErrorRatio,
+  calibrationError,
+  cleanPlotId,
+  estimateCadAreaScale,
+  nextPlotId,
+  polygonCenter,
+  snapPoint,
+  solveHomography,
+  transformedCandidate,
+  validNormalizedPolygon,
+  type CadGeometry,
+  type HomographyPair,
+  type MapperPoint,
+} from "./mapper-geometry";
 
-type Point = [number, number];
 type Plot = {
   id: string;
   sqft: number;
@@ -34,12 +49,38 @@ type Plot = {
 type MapperSettings = {
   masterplanName?: string;
   sourcePdfName?: string;
+  sourceCadName?: string;
+  plotSheetName?: string;
+  mapWidth?: string;
+  mapHeight?: string;
+  masterplanOriginalWidth?: string;
+  masterplanOriginalHeight?: string;
+  masterplanOriginalName?: string;
+  cadCandidateCount?: string;
+  cadParseError?: string;
+  homography?: string;
+  calibrationPairs?: string;
+  calibrationError?: string;
+  cadMatchedCount?: string;
+  cadReviewCount?: string;
 };
 
-const MAX_MASTERPLAN_BYTES = 900_000;
+type AutoMatch = {
+  plot: Plot;
+  candidateKey: string;
+  points: MapperPoint[];
+  candidate: CadGeometry["candidates"][number];
+  areaErrorRatio: number | null;
+};
+
 const COMPLETED_PROJECT_ID = "tiyansh-prime-square";
-const MAP_WIDTH = 1200;
-const MAP_HEIGHT = 2133;
+const MAX_MAPPING_DIMENSION = 4096;
+const MAX_MAPPING_PIXELS = 12_000_000;
+const TARGET_MAPPING_BYTES = 7 * 1024 * 1024;
+const MAX_PUBLIC_DIMENSION = 2400;
+const MAX_PUBLIC_PIXELS = 5_000_000;
+const TARGET_PUBLIC_BYTES = 2_500_000;
+const MAX_ORIGINAL_MASTERPLAN_BYTES = 20 * 1024 * 1024;
 
 async function apiResult(response: Response) {
   const raw = await response.text();
@@ -47,86 +88,119 @@ async function apiResult(response: Response) {
   try {
     result = raw ? JSON.parse(raw) : {};
   } catch {
-    /* Cloudflare can return plain-text errors. */
+    // Cloudflare can return plain text errors.
   }
   if (!response.ok) {
     throw new Error(
       typeof result.error === "string"
         ? result.error
-        : response.status === 413
-          ? "File बहुत बड़ी है। छोटी file चुनें।"
-          : raw.trim() || `Request failed (${response.status})`,
+        : raw.trim() || `Request failed (${response.status})`,
     );
   }
   return result;
 }
 
-/**
- * Every editable customer masterplan is normalized to the same 1200x2133
- * coordinate surface used by the public 2D/3D engine. The source image keeps
- * its aspect ratio and is letterboxed instead of stretched.
- */
-async function normalizeMasterplan(file: File) {
+async function prepareMasterplan(file: File) {
+  if (file.size > MAX_ORIGINAL_MASTERPLAN_BYTES) {
+    throw new Error("Masterplan 20 MB se chhoti rakhein");
+  }
   const bitmap = await createImageBitmap(file);
-  const canvas = document.createElement("canvas");
-  canvas.width = MAP_WIDTH;
-  canvas.height = MAP_HEIGHT;
-  const context = canvas.getContext("2d");
-  if (!context) {
-    bitmap.close();
-    throw new Error("Image process नहीं हो पाई");
+  const originalWidth = bitmap.width;
+  const originalHeight = bitmap.height;
+  const mappingScale = Math.min(
+    1,
+    MAX_MAPPING_DIMENSION / Math.max(bitmap.width, bitmap.height),
+    Math.sqrt(MAX_MAPPING_PIXELS / (bitmap.width * bitmap.height)),
+  );
+  const width = Math.max(1, Math.round(bitmap.width * mappingScale));
+  const height = Math.max(1, Math.round(bitmap.height * mappingScale));
+
+  const renderWebp = async (
+    targetWidth: number,
+    targetHeight: number,
+    targetBytes: number,
+    qualities: number[],
+  ) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("Masterplan process nahi ho payi");
+    context.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+    const encode = (quality: number) =>
+      new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
+    let blob: Blob | null = null;
+    for (const quality of qualities) {
+      blob = await encode(quality);
+      if (blob && blob.size <= targetBytes) break;
+    }
+    if (!blob) throw new Error("Masterplan image encode nahi hui");
+    return blob;
+  };
+
+  // Keep the exact project aspect ratio while preserving as much source detail as practical.
+  let mappingFile = file;
+  if (mappingScale < 1 || file.size > TARGET_MAPPING_BYTES) {
+    const blob = await renderWebp(width, height, TARGET_MAPPING_BYTES, [0.92, 0.86, 0.8, 0.72, 0.64]);
+    mappingFile = new File(
+      [blob],
+      `${file.name.replace(/\.[^.]+$/, "") || "masterplan"}.mapping.webp`,
+      { type: "image/webp" },
+    );
   }
 
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
-  const scale = Math.min(MAP_WIDTH / bitmap.width, MAP_HEIGHT / bitmap.height);
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
-  const x = Math.round((MAP_WIDTH - width) / 2);
-  const y = Math.round((MAP_HEIGHT - height) / 2);
-  context.drawImage(bitmap, x, y, width, height);
+  // Public/mobile traffic gets a separate lighter derivative. Geometry stays
+  // normalized, so both image resolutions share exactly the same polygons.
+  const publicScale = Math.min(
+    1,
+    MAX_PUBLIC_DIMENSION / Math.max(bitmap.width, bitmap.height),
+    Math.sqrt(MAX_PUBLIC_PIXELS / (bitmap.width * bitmap.height)),
+  );
+  const publicWidth = Math.max(1, Math.round(bitmap.width * publicScale));
+  const publicHeight = Math.max(1, Math.round(bitmap.height * publicScale));
+  let publicFile = file;
+  if (publicScale < 1 || file.size > TARGET_PUBLIC_BYTES) {
+    const blob = await renderWebp(
+      publicWidth,
+      publicHeight,
+      TARGET_PUBLIC_BYTES,
+      [0.86, 0.78, 0.7, 0.62, 0.54],
+    );
+    publicFile = new File(
+      [blob],
+      `${file.name.replace(/\.[^.]+$/, "") || "masterplan"}.public.webp`,
+      { type: "image/webp" },
+    );
+  }
   bitmap.close();
 
-  const encode = (quality: number) =>
-    new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/webp", quality),
-    );
+  return {
+    mappingFile,
+    publicFile,
+    originalFile: file,
+    width,
+    height,
+    originalWidth,
+    originalHeight,
+  };
+}
 
-  let blob = await encode(0.84);
-  for (const quality of [0.72, 0.6, 0.5]) {
-    if (!blob || blob.size <= MAX_MASTERPLAN_BYTES) break;
-    blob = await encode(quality);
+function plotSort(a: Plot, b: Plot) {
+  return a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function parsePolygon(plot: Plot) {
+  try {
+    const points = JSON.parse(plot.polygon || "[]") as MapperPoint[];
+    return Array.isArray(points) && points.length >= 3 ? points : [];
+  } catch {
+    return [];
   }
-  if (!blob) throw new Error("इस image format को browser process नहीं कर पाया");
-
-  return new File(
-    [blob],
-    `${file.name.replace(/\.[^.]+$/, "") || "masterplan"}.webp`,
-    { type: "image/webp" },
-  );
 }
 
-function nextPlotId(value: string) {
-  const source = value.trim().toUpperCase();
-  const match = source.match(/^(.*?)(\d+)$/);
-  if (!match) return source ? `${source}-2` : "A-01";
-  return `${match[1]}${String(Number(match[2]) + 1).padStart(match[2].length, "0")}`;
-}
-
-function suggestedPlotId(plots: Plot[]) {
-  if (!plots.length) return "A-01";
-  const ordered = [...plots].sort((a, b) =>
-    a.id.localeCompare(b.id, undefined, { numeric: true }),
-  );
-  return nextPlotId(ordered[ordered.length - 1].id);
-}
-
-function polygonCenter(points: Point[]) {
-  if (!points.length) return [0.5, 0.5] as Point;
-  return [
-    points.reduce((sum, point) => sum + point[0], 0) / points.length,
-    points.reduce((sum, point) => sum + point[1], 0) / points.length,
-  ] as Point;
+function settingsNumber(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 export default function PlotMapper({
@@ -144,121 +218,293 @@ export default function PlotMapper({
 
   const [plots, setPlots] = useState<Plot[]>([]);
   const [settings, setSettings] = useState<MapperSettings>({});
-  const [points, setPoints] = useState<Point[]>([]);
-  const [shape, setShape] = useState<"rectangle" | "polygon">("rectangle");
-  const [phase, setPhase] = useState<"select" | "details">("select");
-  const [editingId, setEditingId] = useState("");
-  const [plotId, setPlotId] = useState("A-01");
-  const [dimensions, setDimensions] = useState("");
-  const [sqft, setSqft] = useState("");
-  const [road, setRoad] = useState("");
-  const [zoom, setZoom] = useState(1);
-  const [navigate, setNavigate] = useState(false);
+  const [cadGeometry, setCadGeometry] = useState<CadGeometry | null>(null);
   const [imageUrl, setImageUrl] = useState(() => assetUrl("masterplan"));
   const [imageReady, setImageReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [zoom, setZoom] = useState(1);
+
+  // Precise manual fallback.
+  const [plotId, setPlotId] = useState("1");
+  const [dimensions, setDimensions] = useState("");
+  const [sqft, setSqft] = useState("");
+  const [road, setRoad] = useState("");
+  const [points, setPoints] = useState<MapperPoint[]>([]);
+  const [shape, setShape] = useState<"quad" | "polygon">("quad");
+  const [manualPhase, setManualPhase] = useState<"select" | "details">("select");
+  const [editingId, setEditingId] = useState("");
+  const [draggingPoint, setDraggingPoint] = useState<number | null>(null);
+  const [loupePoint, setLoupePoint] = useState<MapperPoint | null>(null);
+
+  // CAD calibration and automatic geometry matching.
+  const [calibrationPairs, setCalibrationPairs] = useState<HomographyPair[]>([]);
+  const [pendingCadPoint, setPendingCadPoint] = useState<MapperPoint | null>(null);
+  const [calibrationMode, setCalibrationMode] = useState(false);
+  const [showCadOverlay, setShowCadOverlay] = useState(true);
+  const [excludedAutoIds, setExcludedAutoIds] = useState<Set<string>>(() => new Set());
+
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const imageWrapRef = useRef<HTMLDivElement | null>(null);
+  const tapStartRef = useRef<{ x: number; y: number; id: number } | null>(null);
+
+  async function reload() {
+    const response = await fetch(`/api/super-mapper?projectId=${encodeURIComponent(projectId)}`, {
+      cache: "no-store",
+    });
+    const data = await apiResult(response);
+    const nextPlots = (data.plots || []) as Plot[];
+    const nextSettings = (data.settings || {}) as MapperSettings;
+    setPlots(nextPlots);
+    setSettings(nextSettings);
+    setCadGeometry((data.cadGeometry || null) as CadGeometry | null);
+    setImageUrl(assetUrl("masterplan"));
+    setImageReady(false);
+    const firstUnmapped = [...nextPlots].sort(plotSort).find((plot) => !plot.polygon);
+    if (firstUnmapped) loadPlotDetails(firstUnmapped, false);
+    else if (nextPlots.length) setPlotId(nextPlotId([...nextPlots].sort(plotSort).at(-1)?.id || "1"));
+    else setPlotId("1");
+    setExcludedAutoIds(new Set());
+    const savedPairs = String(nextSettings.calibrationPairs || "");
+    if (savedPairs) {
+      try {
+        const parsed = JSON.parse(savedPairs) as HomographyPair[];
+        if (
+          Array.isArray(parsed) &&
+          parsed.length >= 4 &&
+          parsed.every(
+            (pair) =>
+              Array.isArray(pair?.source) &&
+              pair.source.length === 2 &&
+              Array.isArray(pair?.target) &&
+              pair.target.length === 2,
+          )
+        ) {
+          setCalibrationPairs(parsed.slice(0, 12));
+          setCalibrationMode(false);
+        } else setCalibrationPairs([]);
+      } catch {
+        setCalibrationPairs([]);
+      }
+    } else setCalibrationPairs([]);
+  }
 
   useEffect(() => {
-    let active = true;
-    setImageReady(false);
-    fetch(`/api/super-mapper?projectId=${encodeURIComponent(projectId)}`, {
-      cache: "no-store",
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((data) => {
-        if (!active) return;
-        const mapped = (data.plots || []).filter((plot: Plot) => plot.polygon);
-        const nextSettings = (data.settings || {}) as MapperSettings;
-        setPlots(mapped);
-        setSettings(nextSettings);
-        setPlotId(suggestedPlotId(mapped));
-        setImageUrl(assetUrl("masterplan"));
-      })
-      .catch(() => notify("Project mapper data load नहीं हुआ"));
-    return () => {
-      active = false;
-    };
-    // projectId is also the component key in the Super Admin dashboard.
+    reload().catch(() => notify("Project mapper data load नहीं हुआ"));
+    // projectId remounts the component in Super Admin.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  const draft = useMemo(() => {
-    if (shape === "rectangle" && points.length === 2) {
-      return [
-        [points[0][0], points[0][1]],
-        [points[1][0], points[0][1]],
-        [points[1][0], points[1][1]],
-        [points[0][0], points[1][1]],
-      ] as Point[];
-    }
-    return points;
-  }, [points, shape]);
-
+  const mappedPlots = useMemo(() => plots.filter((plot) => parsePolygon(plot).length >= 3), [plots]);
+  const inventoryPlots = useMemo(() => [...plots].sort(plotSort), [plots]);
+  const unmappedPlots = useMemo(
+    () => inventoryPlots.filter((plot) => parsePolygon(plot).length < 3),
+    [inventoryPlots],
+  );
+  const mappedPolygons = useMemo(
+    () => mappedPlots.filter((plot) => plot.id !== editingId).map(parsePolygon),
+    [mappedPlots, editingId],
+  );
+  const mapWidth = settingsNumber(settings.mapWidth, completedProject ? 1200 : 2048);
+  const mapHeight = settingsNumber(settings.mapHeight, completedProject ? 2133 : 1152);
   const hasMasterplan = completedProject || Boolean(settings.masterplanName);
+  const hasCad = Boolean(settings.sourceCadName);
+  const hasPlotSheet = Boolean(settings.plotSheetName) || plots.length > 0;
   const hasPdf = Boolean(settings.sourcePdfName);
-  const boundaryReady = draft.length >= 3;
 
-  function mapPoint(event: React.PointerEvent<SVGSVGElement>) {
-    if (navigate || phase !== "select" || !imageReady || completedProject) return;
-    const box = event.currentTarget.getBoundingClientRect();
-    const point: Point = [
-      Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)),
-      Math.max(0, Math.min(1, (event.clientY - box.top) / box.height)),
-    ];
+  const savedMatrix = useMemo(() => {
+    try {
+      const parsed = JSON.parse(settings.homography || "[]") as number[];
+      return Array.isArray(parsed) && parsed.length === 9 ? parsed : null;
+    } catch {
+      return null;
+    }
+  }, [settings.homography]);
 
-    if (shape === "rectangle") {
-      setPoints((current) => {
-        if (!current.length) return [point];
-        setPhase("details");
-        return [current[0], point];
-      });
+  const liveMatrix = useMemo(() => {
+    if (calibrationPairs.length >= 4) {
+      try {
+        return solveHomography(calibrationPairs);
+      } catch {
+        return null;
+      }
+    }
+    return savedMatrix;
+  }, [calibrationPairs, savedMatrix]);
+
+  const cadTransformed = useMemo(() => {
+    if (!cadGeometry || !liveMatrix) return [];
+    return cadGeometry.candidates
+      .map((candidate) => {
+        try {
+          return { candidate, points: transformedCandidate(candidate, liveMatrix) };
+        } catch {
+          return null;
+        }
+      })
+      .filter(
+        (item): item is NonNullable<typeof item> =>
+          Boolean(item && validNormalizedPolygon(item.points)),
+      );
+  }, [cadGeometry, liveMatrix]);
+
+  const labelMatches = useMemo(() => {
+    if (!cadGeometry || !liveMatrix || !inventoryPlots.length) return [];
+    const inventoryById = new Map(inventoryPlots.map((plot) => [cleanPlotId(plot.id), plot]));
+    const ids = new Set(inventoryById.keys());
+    const used = new Set<string>();
+    const matches: Omit<AutoMatch, "areaErrorRatio">[] = [];
+    for (const candidate of cadGeometry.candidates) {
+      const id = bestCadLabel(candidate, cadGeometry.labels, ids);
+      if (!id || used.has(id)) continue;
+      const plot = inventoryById.get(id);
+      if (!plot) continue;
+      let transformed: MapperPoint[];
+      try {
+        transformed = transformedCandidate(candidate, liveMatrix);
+      } catch {
+        continue;
+      }
+      if (!validNormalizedPolygon(transformed)) continue;
+      used.add(id);
+      matches.push({ plot, candidateKey: candidate.key, points: transformed, candidate });
+    }
+    return matches.sort((a, b) => plotSort(a.plot, b.plot));
+  }, [cadGeometry, inventoryPlots, liveMatrix]);
+
+  const cadAreaScale = useMemo(
+    () =>
+      estimateCadAreaScale(
+        labelMatches.map((match) => ({ candidate: match.candidate, sqm: Number(match.plot.sqm) })),
+      ),
+    [labelMatches],
+  );
+
+  const scoredLabelMatches = useMemo<AutoMatch[]>(
+    () =>
+      labelMatches.map((match) => ({
+        ...match,
+        areaErrorRatio: cadAreaErrorRatio(match.candidate, Number(match.plot.sqm), cadAreaScale),
+      })),
+    [labelMatches, cadAreaScale],
+  );
+
+  // Exact unique ID + a CAD area consistent with the project-wide unit scale is
+  // Auto-ready. Large area disagreement is never bulk-published silently.
+  const autoMatches = useMemo(
+    () =>
+      scoredLabelMatches.filter(
+        (match) => match.areaErrorRatio == null || match.areaErrorRatio <= 0.22,
+      ),
+    [scoredLabelMatches],
+  );
+  const areaReviewMatches = useMemo(
+    () => scoredLabelMatches.filter((match) => (match.areaErrorRatio ?? 0) > 0.22),
+    [scoredLabelMatches],
+  );
+  const acceptedAutoMatches = useMemo(
+    () => autoMatches.filter((match) => !excludedAutoIds.has(match.plot.id)),
+    [autoMatches, excludedAutoIds],
+  );
+  const excludedAutoMatches = useMemo(
+    () => autoMatches.filter((match) => excludedAutoIds.has(match.plot.id)),
+    [autoMatches, excludedAutoIds],
+  );
+  const autoMatchIds = useMemo(
+    () => new Set(acceptedAutoMatches.map((match) => match.plot.id)),
+    [acceptedAutoMatches],
+  );
+  const areaReviewIds = useMemo(
+    () => new Set(areaReviewMatches.map((match) => match.plot.id)),
+    [areaReviewMatches],
+  );
+  const reviewPlots = useMemo(
+    () => inventoryPlots.filter((plot) => !plot.polygon && !autoMatchIds.has(plot.id)),
+    [inventoryPlots, autoMatchIds],
+  );
+
+  function loadPlotDetails(plot: Plot, editBoundary: boolean) {
+    setPlotId(plot.id);
+    setDimensions(plot.dimensions || "");
+    setSqft(plot.sqft ? String(plot.sqft) : "");
+    setRoad(plot.road || "");
+    if (editBoundary && plot.polygon) {
+      const polygon = parsePolygon(plot);
+      setPoints(polygon);
+      setEditingId(plot.id);
+      setShape("polygon");
+      setManualPhase("details");
+      canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      setPoints([]);
+      setEditingId("");
+      setManualPhase("select");
+    }
+  }
+
+  function selectNextPlot(afterId = "") {
+    const ordered = [...plots].sort(plotSort);
+    const remaining = ordered.filter((plot) => !plot.polygon && plot.id !== afterId);
+    const currentIndex = ordered.findIndex((plot) => plot.id === afterId);
+    const next =
+      remaining.find((plot) => ordered.indexOf(plot) > currentIndex) || remaining[0] || null;
+    if (next) loadPlotDetails(next, false);
+    else {
+      setPoints([]);
+      setEditingId("");
+      setManualPhase("select");
+      setPlotId(nextPlotId(afterId || ordered.at(-1)?.id || "1"));
+      setDimensions("");
+      setSqft("");
+      setRoad("");
+    }
+  }
+
+  function downloadPlotSheetTemplate() {
+    const text = [
+      "Plot No,Sqft,Sqm,Dimensions,Facing,Notes",
+      "1,1162.08,108,12.00 x 9.00 m,East face,",
+    ].join("\n");
+    const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "rekixo-plot-sheet-template.csv";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  async function upload(file: File, kind: "masterplan" | "sourcePdf" | "sourceCad" | "plotSheet") {
+    if (completedProject && kind !== "sourcePdf") {
+      notify("Tiyansh completed project locked है");
       return;
     }
-    setPoints((current) => (current.length < 80 ? [...current, point] : current));
-  }
-
-  function resetCurrent(nextId = plotId) {
-    setPoints([]);
-    setPhase("select");
-    setEditingId("");
-    setPlotId(nextId);
-    setDimensions("");
-    setSqft("");
-    setRoad("");
-    setNavigate(false);
-  }
-
-  async function upload(file: File, kind: "masterplan" | "sourcePdf") {
     setBusy(true);
     try {
-      if (kind === "sourcePdf" && file.size > 25 * 1024 * 1024) {
-        throw new Error("PDF 25 MB से छोटी रखें");
-      }
-      const uploadFile =
-        kind === "masterplan" ? await normalizeMasterplan(file) : file;
       const data = new FormData();
       data.append("projectId", projectId);
       data.append("kind", kind);
-      data.append("file", uploadFile);
-      const response = await fetch("/api/super-mapper", {
-        method: "POST",
-        body: data,
-      });
-      const result = await apiResult(response);
       if (kind === "masterplan") {
-        setImageReady(false);
-        setImageUrl(String(result.url));
-        setSettings((current) => ({
-          ...current,
-          masterplanName: file.name,
-        }));
-        resetCurrent(suggestedPlotId(plots));
-        notify("Masterplan तैयार है — अब पहला plot select करें");
-      } else {
-        setSettings((current) => ({ ...current, sourcePdfName: file.name }));
-        notify("Technical PDF reference save हो गया");
-      }
+        const prepared = await prepareMasterplan(file);
+        data.append("file", prepared.mappingFile);
+        data.append("originalFile", prepared.originalFile);
+        data.append("publicFile", prepared.publicFile);
+        data.append("mapWidth", String(prepared.width));
+        data.append("mapHeight", String(prepared.height));
+        data.append("originalWidth", String(prepared.originalWidth));
+        data.append("originalHeight", String(prepared.originalHeight));
+      } else data.append("file", file);
+
+      const response = await fetch("/api/super-mapper", { method: "POST", body: data });
+      const result = await apiResult(response);
+      if (kind === "sourceCad" && result.cadError) {
+        notify(`CAD save हुआ, auto-detect review चाहिए: ${String(result.cadError)}`);
+      } else if (kind === "sourceCad") {
+        notify(`${(result.cadGeometry as CadGeometry | undefined)?.candidates.length || 0} CAD boundaries मिलीं`);
+      } else if (kind === "plotSheet") {
+        notify(`${Number(result.count || 0)} plot records import हुए`);
+      } else if (kind === "masterplan") {
+        notify("Masterplan native aspect ratio में ready है");
+      } else notify("Technical PDF reference save हो गया");
+      await reload();
     } catch (error) {
       notify(error instanceof Error ? error.message : "Upload नहीं हुआ");
     } finally {
@@ -266,41 +512,125 @@ export default function PlotMapper({
     }
   }
 
-  async function confirmPlot() {
-    const id = plotId.trim().toUpperCase();
-    const area = Number(sqft);
-    if (!id) {
-      notify("Plot number जरूरी है");
-      return;
-    }
-    if (!boundaryReady) {
-      notify("पहले plot की पूरी boundary select करें");
-      return;
-    }
-    if (!Number.isFinite(area) || area <= 0) {
-      notify("Plot area sq.ft में भरें");
-      return;
-    }
-    if (!dimensions.trim()) {
-      notify("Plot dimensions भरें");
-      return;
-    }
-    if (!editingId && plots.some((plot) => plot.id === id)) {
-      notify(`${id} पहले से mapped है। List से Edit चुनें।`);
-      return;
-    }
+  function svgPointFromClient(clientX: number, clientY: number): MapperPoint | null {
+    const wrap = imageWrapRef.current;
+    if (!wrap) return null;
+    const box = wrap.getBoundingClientRect();
+    if (!box.width || !box.height) return null;
+    return [
+      Math.max(0, Math.min(1, (clientX - box.left) / box.width)),
+      Math.max(0, Math.min(1, (clientY - box.top) / box.height)),
+    ];
+  }
 
+  function precisePoint(raw: MapperPoint) {
+    const wrap = imageWrapRef.current;
+    if (!wrap) return raw;
+    const box = wrap.getBoundingClientRect();
+    return snapPoint(raw, mappedPolygons, box.width, box.height, 18).point;
+  }
+
+  function imageTap(point: MapperPoint) {
+    if (completedProject) return;
+    if (calibrationMode) {
+      if (!pendingCadPoint) {
+        notify("पहले CAD preview में reference point tap करें");
+        return;
+      }
+      setCalibrationPairs((current) => [
+        ...current.slice(0, 11),
+        { source: pendingCadPoint, target: point },
+      ]);
+      setPendingCadPoint(null);
+      notify(
+        calibrationPairs.length + 1 >= 4
+          ? "Calibration ready — overlay check करें, जरूरत हो तो extra pair जोड़ें"
+          : `Pair ${calibrationPairs.length + 1} saved — अगला CAD point चुनें`,
+      );
+      return;
+    }
+    if (manualPhase !== "select") return;
+    const snapped = precisePoint(point);
+    setPoints((current) => {
+      if (shape === "quad") {
+        if (current.length >= 4) return [snapped];
+        const next = [...current, snapped];
+        if (next.length === 4) setManualPhase("details");
+        return next;
+      }
+      return current.length < 80 ? [...current, snapped] : current;
+    });
+  }
+
+  function handleImagePointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    tapStartRef.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
+  }
+
+  function handleImagePointerUp(event: React.PointerEvent<SVGSVGElement>) {
+    const start = tapStartRef.current;
+    tapStartRef.current = null;
+    if (!start || start.id !== event.pointerId) return;
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) return;
+    const point = svgPointFromClient(event.clientX, event.clientY);
+    if (point) imageTap(point);
+  }
+
+  function dragHandle(event: React.PointerEvent<HTMLButtonElement>, index: number) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setDraggingPoint(index);
+    const point = svgPointFromClient(event.clientX, event.clientY);
+    if (point) {
+      const snapped = precisePoint(point);
+      setPoints((current) => current.map((item, cursor) => (cursor === index ? snapped : item)));
+      setLoupePoint(snapped);
+    }
+  }
+
+  function moveHandle(event: React.PointerEvent<HTMLButtonElement>, index: number) {
+    if (draggingPoint !== index) return;
+    event.preventDefault();
+    const point = svgPointFromClient(event.clientX, event.clientY);
+    if (!point) return;
+    const snapped = precisePoint(point);
+    setPoints((current) => current.map((item, cursor) => (cursor === index ? snapped : item)));
+    setLoupePoint(snapped);
+  }
+
+  function endHandle() {
+    setDraggingPoint(null);
+    setLoupePoint(null);
+  }
+
+  async function confirmPlot() {
+    const id = cleanPlotId(plotId);
+    const area = Number(sqft);
+    if (!id) return notify("Plot number जरूरी है");
+    if (points.length < 3) return notify("पहले plot boundary पूरी select करें");
+    if (!Number.isFinite(area) || area <= 0) return notify("Area sq.ft में भरें");
+    if (!dimensions.trim()) return notify("Plot dimensions भरें");
+    if (!editingId && plots.some((plot) => plot.id === id && plot.polygon)) {
+      return notify(`${id} पहले से mapped है — list से Edit करें`);
+    }
+    if (editingId && id !== editingId && plots.some((plot) => plot.id === id)) {
+      return notify(`Plot ${id} inventory में पहले से मौजूद है`);
+    }
+    const existing = plots.find((plot) => plot.id === editingId || plot.id === id);
+    const unchangedInventoryArea =
+      Boolean(existing) && Math.abs(Number(existing?.sqft || 0) - area) < 0.0001;
     const plot: Plot = {
       id,
       sqft: area,
-      sqm: area / 10.7639,
-      sqyd: area / 9,
+      sqm: unchangedInventoryArea ? Number(existing?.sqm || area / 10.7639) : area / 10.7639,
+      sqyd: unchangedInventoryArea ? Number(existing?.sqyd || area / 9) : area / 9,
       dimensions: dimensions.trim(),
       road: road.trim(),
-      status: plots.find((item) => item.id === editingId)?.status || "available",
-      polygon: JSON.stringify(draft),
+      status: existing?.status || "available",
+      notes: existing?.notes || "",
+      featured: existing?.featured || false,
+      polygon: JSON.stringify(points),
     };
-
     setBusy(true);
     try {
       const response = await fetch("/api/super-mapper", {
@@ -314,9 +644,8 @@ export default function PlotMapper({
         ...current.filter((item) => item.id !== editingId && item.id !== saved.id),
         saved,
       ]);
-      const nextId = nextPlotId(saved.id);
-      resetCurrent(nextId);
-      notify(`Plot ${saved.id} confirm — site पर clickable + 3D ready. अब ${nextId} select करें`);
+      selectNextPlot(saved.id);
+      notify(`Plot ${saved.id} 2D + 3D clickable ready — next plot open`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Plot save नहीं हुआ");
     } finally {
@@ -324,41 +653,19 @@ export default function PlotMapper({
     }
   }
 
-  function editPlot(plot: Plot) {
-    try {
-      const polygon = JSON.parse(plot.polygon || "[]") as Point[];
-      if (!Array.isArray(polygon) || polygon.length < 3) throw new Error();
-      setEditingId(plot.id);
-      setPlotId(plot.id);
-      setDimensions(plot.dimensions || "");
-      setSqft(String(plot.sqft || ""));
-      setRoad(plot.road || "");
-      setShape("polygon");
-      setPoints(polygon);
-      setPhase("details");
-      setNavigate(false);
-      notify(`Plot ${plot.id} edit mode`);
-      canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch {
-      notify("इस plot की boundary edit नहीं हो पाई");
-    }
-  }
-
   async function remove(plot: Plot) {
-    if (!confirm(`Plot ${plot.id} की clickable boundary हटाएँ?`)) return;
-    const cleared = { ...plot, polygon: "" };
+    if (!confirm(`Plot ${plot.id} की clickable boundary हटाएँ? Details सुरक्षित रहेंगी।`)) return;
     setBusy(true);
     try {
       const response = await fetch("/api/super-mapper", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectId, plot: cleared }),
+        body: JSON.stringify({ projectId, plot: { ...plot, polygon: "" } }),
       });
       await apiResult(response);
-      const remaining = plots.filter((item) => item.id !== plot.id);
-      setPlots(remaining);
-      resetCurrent(suggestedPlotId(remaining));
-      notify(`Plot ${plot.id} boundary हट गई`);
+      setPlots((current) => current.map((item) => (item.id === plot.id ? { ...item, polygon: "" } : item)));
+      loadPlotDetails({ ...plot, polygon: "" }, false);
+      notify(`Plot ${plot.id} boundary हट गई; inventory details सुरक्षित हैं`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Boundary नहीं हटी");
     } finally {
@@ -366,121 +673,229 @@ export default function PlotMapper({
     }
   }
 
+  function cadTap(event: React.PointerEvent<SVGSVGElement>) {
+    if (!calibrationMode || completedProject) return;
+    const box = event.currentTarget.getBoundingClientRect();
+    const point: MapperPoint = [
+      Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)),
+      Math.max(0, Math.min(1, (event.clientY - box.top) / box.height)),
+    ];
+    setPendingCadPoint(point);
+    notify("अब masterplan image पर यही reference point tap करें");
+    canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function saveCalibration() {
+    if (calibrationPairs.length < 4 || !liveMatrix)
+      return notify("पहले 4 दूर-दूर calibration pairs बनाएं");
+    const error = calibrationPairs.length >= 4 ? calibrationError(liveMatrix, calibrationPairs) : 0;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/super-mapper", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          settings: {
+            homography: JSON.stringify(liveMatrix),
+            calibrationPairs: JSON.stringify(calibrationPairs),
+            calibrationError: String(error),
+            cadMatchedCount: String(acceptedAutoMatches.length),
+            cadReviewCount: String(reviewPlots.length),
+          },
+        }),
+      });
+      await apiResult(response);
+      setSettings((current) => ({
+        ...current,
+        homography: JSON.stringify(liveMatrix),
+        calibrationPairs: JSON.stringify(calibrationPairs),
+        calibrationError: String(error),
+        cadMatchedCount: String(acceptedAutoMatches.length),
+        cadReviewCount: String(reviewPlots.length),
+      }));
+      setCalibrationMode(false);
+      notify(`Calibration saved — ${acceptedAutoMatches.length} Auto-ready, ${reviewPlots.length} Review`);
+    } catch (errorValue) {
+      notify(errorValue instanceof Error ? errorValue.message : "Calibration save नहीं हुई");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function publishAutoMatches() {
+    const pending = acceptedAutoMatches.filter((match) => !match.plot.polygon);
+    if (!pending.length) return notify("Auto-matched new plots बाकी नहीं हैं");
+    if (!confirm(`${pending.length} matched plots को clickable 2D + 3D publish करें?`)) return;
+    setBusy(true);
+    try {
+      const payload = pending.map(({ plot, points: polygon }) => ({
+        ...plot,
+        polygon: JSON.stringify(
+          polygon.map(([x, y]) => [
+            Math.max(0, Math.min(1, x)),
+            Math.max(0, Math.min(1, y)),
+          ]),
+        ),
+      }));
+      const response = await fetch("/api/super-mapper", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectId, plots: payload }),
+      });
+      const result = await apiResult(response);
+      const saved = (result.plots || []) as Plot[];
+      const byId = new Map(saved.map((plot) => [plot.id, plot]));
+      setPlots((current) => current.map((plot) => byId.get(plot.id) || plot));
+      notify(`${saved.length} plots एक साथ 2D + 3D clickable publish हुए`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Auto publish नहीं हुआ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const currentPlot = plots.find((plot) => plot.id === plotId);
+  const currentCenter = points.length ? polygonCenter(points) : null;
+
   return (
-    <section className="mapper-shell guided-mapper">
-      <div className="card mapper-tools">
+    <section className="mapper-shell auto-cad-mapper">
+      <div className="card mapper-tools mapper-v2-head">
         <div className="section-title">
           <MousePointer2 />
           <div>
-            <h2>Guided Plot Mapper</h2>
-            <p>Upload → plot select → details → Confirm → अगला plot</p>
+            <h2>Rekixo Auto CAD Mapper</h2>
+            <p>Sources → CAD detect → calibrate → review → publish; manual precision fallback हमेशा available.</p>
           </div>
         </div>
 
-        <div className="mapper-steps" aria-label="Plot mapping workflow">
-          <span className={hasMasterplan ? "done" : "active"}><b>1</b>Masterplan</span>
-          <span className={phase === "select" && hasMasterplan ? "active" : boundaryReady ? "done" : ""}><b>2</b>Select plot</span>
-          <span className={phase === "details" ? "active" : ""}><b>3</b>Plot details</span>
-          <span><b>4</b>Next automatically</span>
+        <div className="mapper-v2-progress">
+          <span className={hasMasterplan ? "done" : "active"}><b>1</b> Sources</span>
+          <span className={cadGeometry ? "done" : hasCad ? "warn" : ""}><b>2</b> CAD detect</span>
+          <span className={liveMatrix ? "done" : cadGeometry ? "active" : ""}><b>3</b> Calibration</span>
+          <span className={autoMatches.length ? "done" : ""}><b>4</b> Auto match</span>
+          <span className={mappedPlots.length ? "done" : ""}><b>5</b> Publish / Review</span>
         </div>
 
-        <div className="mapper-upload-grid">
+        <div className="mapper-source-grid">
           <label className={`mapper-upload-card ${hasMasterplan ? "ready" : ""}`}>
             <span><ImagePlus /></span>
-            <div>
-              <b>{completedProject ? "Tiyansh masterplan locked" : hasMasterplan ? "Masterplan image ready" : "Upload masterplan image"}</b>
-              <small>{completedProject ? "Completed project सुरक्षित है" : settings.masterplanName || "JPG / PNG / WebP · auto normalized for 2D + 3D"}</small>
-            </div>
-            {!completedProject && <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "masterplan")} />}
+            <div><b>{hasMasterplan ? "Masterplan ready" : "1. Masterplan image"}</b><small>{settings.masterplanName || "High-resolution JPG/PNG/WebP"}</small></div>
             {hasMasterplan && <CheckCircle2 className="mapper-ready-icon" />}
+            <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || completedProject} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "masterplan")} />
+          </label>
+
+          <label className={`mapper-upload-card ${hasCad ? "ready" : ""}`}>
+            <span><FileText /></span>
+            <div><b>{hasCad ? "CAD source saved" : "2. DWG / DXF"}</b><small>{settings.sourceCadName || "Exact plot geometry source"}</small></div>
+            {hasCad && <CheckCircle2 className="mapper-ready-icon" />}
+            <input type="file" accept=".dwg,.dxf,application/acad,application/dxf,application/octet-stream" disabled={busy || completedProject} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "sourceCad")} />
+          </label>
+
+          <label className={`mapper-upload-card ${hasPlotSheet ? "ready" : ""}`}>
+            <span><FileText /></span>
+            <div><b>{hasPlotSheet ? `Plot inventory · ${plots.length}` : "3. Plot sheet"}</b><small>{settings.plotSheetName || "CSV/JSON: ID, sqft/sqm, dimensions, facing"}</small></div>
+            {hasPlotSheet && <CheckCircle2 className="mapper-ready-icon" />}
+            <input type="file" accept=".csv,.json,text/csv,application/json" disabled={busy || completedProject} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "plotSheet")} />
           </label>
 
           <label className={`mapper-upload-card ${hasPdf ? "ready" : ""}`}>
             <span><FileText /></span>
-            <div>
-              <b>{hasPdf ? "Technical PDF saved" : "Upload technical PDF"}</b>
-              <small>{settings.sourcePdfName || "Optional reference · up to 25 MB"}</small>
-            </div>
-            <input type="file" accept="application/pdf" disabled={busy} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "sourcePdf")} />
+            <div><b>{hasPdf ? "Technical PDF saved" : "4. PDF reference"}</b><small>{settings.sourcePdfName || "Original sanctioned/technical sheet"}</small></div>
             {hasPdf && <CheckCircle2 className="mapper-ready-icon" />}
+            <input type="file" accept="application/pdf,.pdf" disabled={busy} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "sourcePdf")} />
           </label>
         </div>
 
-        {hasPdf && (
-          <a className="mapper-pdf-link" href={assetUrl("sourcePdf")} target="_blank" rel="noreferrer">
-            <FileText /> Open technical PDF reference
-          </a>
-        )}
+        <div className="mapper-source-actions">
+          <button type="button" onClick={downloadPlotSheetTemplate}><FileText /> Download CSV template</button>
+          <small>Plot sheet re-import existing clickable boundary aur Booked/Sold status ko preserve karta hai.</small>
+        </div>
 
-        {!completedProject && hasMasterplan && (
-          <div className="guided-current-card">
-            <div className="guided-current-head">
-              <div>
-                <small>{editingId ? "EDITING PLOT" : `PLOT ${plots.length + 1}`}</small>
-                <h3>{plotId || "New plot"}</h3>
-              </div>
-              <em className={phase}>{phase === "select" ? "Boundary select करें" : "Details भरें और Confirm करें"}</em>
-            </div>
-
-            {phase === "select" ? (
-              <>
-                <div className="mapper-mode">
-                  <button className={shape === "rectangle" ? "active" : ""} onClick={() => { setShape("rectangle"); setPoints([]); }}>
-                    Rectangle · 2 taps
-                  </button>
-                  <button className={shape === "polygon" ? "active" : ""} onClick={() => { setShape("polygon"); setPoints([]); }}>
-                    Irregular · corner taps
-                  </button>
-                </div>
-                <div className="mapper-actions compact">
-                  <button disabled={!points.length} onClick={() => setPoints((current) => current.slice(0, -1))}><Undo2 />Undo</button>
-                  <button disabled={!points.length} onClick={() => setPoints([])}>Clear</button>
-                  {shape === "polygon" && <button className="primary" disabled={points.length < 3} onClick={() => setPhase("details")}><CheckCircle2 />Boundary complete</button>}
-                </div>
-                <small className="mapper-help">
-                  {shape === "rectangle" ? "Plot के 2 opposite corners tap करें। दूसरा tap होते ही details step खुल जाएगा।" : "Plot के हर corner पर क्रम से tap करें, फिर Boundary complete दबाएँ।"}
-                </small>
-              </>
-            ) : (
-              <>
-                <div className="mapper-fields guided-fields">
-                  <label><span>Plot number</span><input value={plotId} onChange={(event) => setPlotId(event.target.value)} placeholder="A-01" /></label>
-                  <label><span>Dimensions</span><input value={dimensions} onChange={(event) => setDimensions(event.target.value)} placeholder="40' × 85'" /></label>
-                  <label><span>Area (sq.ft)</span><input type="number" min="0" value={sqft} onChange={(event) => setSqft(event.target.value)} placeholder="3400" /></label>
-                  <label><span>Road access</span><input value={road} onChange={(event) => setRoad(event.target.value)} placeholder="40' wide road" /></label>
-                </div>
-                <div className="mapper-actions">
-                  <button onClick={() => setPhase("select")}><Pencil />Boundary बदलें</button>
-                  <button className="primary mapper-confirm" disabled={busy || !boundaryReady} onClick={confirmPlot}><Save />{busy ? "Saving…" : editingId ? `Update ${plotId || "plot"}` : `Confirm ${plotId || "plot"} & start next`}</button>
-                </div>
-                <small className="mapper-help">Confirm होते ही यह plot database में save होकर customer site के 2D map और 3D view दोनों में clickable हो जाएगा।</small>
-              </>
-            )}
-          </div>
-        )}
+        <div className="mapper-source-meta">
+          <span>Map: <b>{Math.round(mapWidth)} × {Math.round(mapHeight)}</b></span>
+          <span>Inventory: <b>{plots.length}</b></span>
+          <span>Mapped: <b>{mappedPlots.length}</b></span>
+          <span>Review: <b>{unmappedPlots.length}</b></span>
+        </div>
+        {settings.sourcePdfName && <a className="mapper-pdf-link" href={assetUrl("sourcePdf")} target="_blank" rel="noreferrer"><FileText /> Open technical PDF reference</a>}
+        {settings.cadParseError && <div className="mapper-warning">CAD source सुरक्षित है, लेकिन automatic geometry parse नहीं हुआ: {settings.cadParseError}. DXF export upload करें या Manual Precise fallback use करें.</div>}
       </div>
 
-      <div className="mapper-work">
-        <div ref={canvasRef} className={`mapper-canvas card ${navigate ? "pan-mode" : ""}`}>
+      {cadGeometry && !completedProject && (
+        <div className="card calibration-card">
+          <div className="calibration-head">
+            <div>
+              <small>AUTO CAD CALIBRATION</small>
+              <h3>{cadGeometry.candidates.length} closed CAD boundaries detected</h3>
+              <p>CAD और rendered masterplan के वही 4 दूर-दूर reference points pair करें. Extra 1–4 pairs accuracy और improve कर सकते हैं.</p>
+            </div>
+            <div className="calibration-count"><b>{calibrationPairs.length || (savedMatrix ? 4 : 0)}</b><span>pairs</span></div>
+          </div>
+
+          <div className="calibration-actions">
+            <button className={calibrationMode ? "primary" : ""} onClick={() => { setCalibrationMode((value) => !value); setPendingCadPoint(null); }}>
+              {calibrationMode ? "Calibration ON" : savedMatrix ? "Recalibrate" : "Start calibration"}
+            </button>
+            <button disabled={!calibrationPairs.length} onClick={() => { setCalibrationPairs((current) => current.slice(0, -1)); setPendingCadPoint(null); }}><Undo2 />Undo pair</button>
+            <button disabled={!calibrationPairs.length} onClick={() => { setCalibrationPairs([]); setPendingCadPoint(null); }}>Reset pairs</button>
+            <button className="primary" disabled={calibrationPairs.length < 4 || !liveMatrix || busy} onClick={saveCalibration}><Save />Save calibration</button>
+          </div>
+
+          <div className="calibration-grid">
+            <div className="cad-preview-wrap">
+              <div className="preview-label"><b>A. CAD reference</b><span>{pendingCadPoint ? "Selected ✓ — now tap image" : calibrationMode ? "Tap reference point" : "Preview"}</span></div>
+              <svg className="cad-preview" viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerUp={cadTap}>
+                {cadGeometry.candidates.map((candidate) => <polygon key={candidate.key} points={candidate.points.map(([x,y]) => `${x * 1000},${y * 1000}`).join(" ")} />)}
+                {cadGeometry.labels.slice(0, 600).map((label, index) => <text key={`${label.text}-${index}`} x={label.point[0] * 1000} y={label.point[1] * 1000}>{label.text}</text>)}
+                {calibrationPairs.map((pair, index) => <g key={`cad-pair-${index}`}><circle cx={pair.source[0] * 1000} cy={pair.source[1] * 1000} r="14"/><text className="pair-number" x={pair.source[0] * 1000} y={pair.source[1] * 1000}>{index + 1}</text></g>)}
+                {pendingCadPoint && <circle className="pending" cx={pendingCadPoint[0] * 1000} cy={pendingCadPoint[1] * 1000} r="18" />}
+              </svg>
+            </div>
+            <div className="calibration-instructions">
+              <b>Best anchors</b>
+              <p>Site boundary / road intersection जैसे साफ points चुनें — चारों corners में spread रखें. Plot-number text को anchor मत बनाएं.</p>
+              <div className="calibration-stats">
+                <span>CAD candidates <b>{cadGeometry.candidates.length}</b></span>
+                <span>CAD labels <b>{cadGeometry.labels.length}</b></span>
+                <span>Auto ready <b>{acceptedAutoMatches.length}</b></span>
+                <span>Area review <b>{areaReviewMatches.length}</b></span>
+                <span>Need review <b>{reviewPlots.length}</b></span>
+                <span>Area validation <b>{cadAreaScale ? "ON" : "—"}</b></span>
+              </div>
+              {liveMatrix && <label className="overlay-toggle"><input type="checkbox" checked={showCadOverlay} onChange={(event) => setShowCadOverlay(event.target.checked)} /> Show transformed CAD overlay on masterplan</label>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mapper-work mapper-v2-work">
+        <div ref={canvasRef} className="mapper-canvas card mapper-precision-canvas">
           <div className="mapper-zoombar">
-            <button className={!navigate ? "active" : ""} onClick={() => setNavigate(false)}><MousePointer2 />Select</button>
-            <button className={navigate ? "active" : ""} onClick={() => setNavigate(true)}><Hand />Move image</button>
+            <strong>{calibrationMode ? pendingCadPoint ? "Tap same point on image" : "Choose CAD point first" : manualPhase === "select" ? `Manual: select ${plotId}` : `Manual: ${plotId} details`}</strong>
             <span>{Math.round(zoom * 100)}%</span>
-            <input className="mapper-zoom-range" type="range" min="1" max="6" step="0.1" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} aria-label="Zoom level" />
+            <input className="mapper-zoom-range" type="range" min="1" max="8" step="0.1" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} aria-label="Zoom level" />
             <button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom((value) => Math.max(1, value - 0.5))}><ZoomOut /></button>
-            <button aria-label="Zoom in" disabled={zoom >= 6} onClick={() => setZoom((value) => Math.min(6, value + 0.5))}><ZoomIn /></button>
+            <button aria-label="Zoom in" disabled={zoom >= 8} onClick={() => setZoom((value) => Math.min(8, value + 0.5))}><ZoomIn /></button>
             <button aria-label="Reset zoom" onClick={() => setZoom(1)}><RotateCcw /></button>
             <button aria-label="Full screen" onClick={() => canvasRef.current?.requestFullscreen?.()}><Maximize2 /></button>
           </div>
 
-          {!imageReady && <div className="mapper-loading">{hasMasterplan ? "Masterplan load हो रहा है…" : "पहले masterplan image upload करें"}</div>}
-          <div className="mapper-image-wrap" style={{ width: `${zoom * 100}%`, maxWidth: "none" }}>
-            <img src={imageUrl} alt="Project masterplan" onLoad={() => setImageReady(true)} onError={() => setImageReady(false)} style={{ width: "100%", maxHeight: "none" }} />
+          {!imageReady && <div className="mapper-loading">{hasMasterplan ? "High-resolution masterplan load हो रहा है…" : "पहले masterplan image upload करें"}</div>}
+          <div className="mapper-pan-hint">Tap = point/select · finger drag = pan · zoom slider / + − = smooth zoom · yellow handle drag = exact correction · shared edges auto-snap</div>
+          <div ref={imageWrapRef} className="mapper-image-wrap mapper-image-v2" style={{ width: `${zoom * 100}%`, maxWidth: "none" }}>
+            <img
+              src={imageUrl}
+              alt="Project masterplan"
+              onLoad={() => setImageReady(true)}
+              onError={() => setImageReady(false)}
+              draggable={false}
+              style={{ width: "100%", maxHeight: "none" }}
+            />
             {imageReady && (
-              <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={navigate ? undefined : mapPoint}>
-                {plots.map((plot) => {
-                  let polygon: Point[] = [];
-                  try { polygon = JSON.parse(plot.polygon || "[]") as Point[]; } catch { return null; }
+              <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={handleImagePointerDown} onPointerUp={handleImagePointerUp}>
+                {mappedPlots.map((plot) => {
+                  const polygon = parsePolygon(plot);
                   if (polygon.length < 3) return null;
                   const center = polygonCenter(polygon);
                   return <g key={plot.id} className={editingId === plot.id ? "mapped-plot editing" : "mapped-plot"}>
@@ -488,26 +903,123 @@ export default function PlotMapper({
                     <text x={center[0] * 1000} y={center[1] * 1000}>{plot.id}</text>
                   </g>;
                 })}
-                {draft.length > 0 && <polygon className="draft" points={draft.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" ")} />}
+                {showCadOverlay && liveMatrix && cadTransformed.map(({ candidate, points: polygon }) => (
+                  <polygon key={`cad-${candidate.key}`} className="cad-transformed" points={polygon.map(([x,y]) => `${x * 1000},${y * 1000}`).join(" ")} />
+                ))}
+                {acceptedAutoMatches.map((match) => !match.plot.polygon && (
+                  <polygon key={`match-${match.plot.id}`} className="auto-match" points={match.points.map(([x,y]) => `${x * 1000},${y * 1000}`).join(" ")} />
+                ))}
+                {[...areaReviewMatches, ...excludedAutoMatches].map((match) => !match.plot.polygon && (
+                  <polygon key={`review-${match.plot.id}`} className="cad-review" points={match.points.map(([x,y]) => `${x * 1000},${y * 1000}`).join(" ")} />
+                ))}
+                {points.length >= 2 && <polygon className="draft" points={points.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" ")} />}
+                {calibrationPairs.map((pair, index) => <g key={`img-pair-${index}`} className="image-calibration-point"><circle cx={pair.target[0] * 1000} cy={pair.target[1] * 1000} r="12"/><text x={pair.target[0] * 1000} y={pair.target[1] * 1000}>{index + 1}</text></g>)}
               </svg>
             )}
-            {imageReady && points.map(([x, y], index) => <span className="mapper-point-handle" key={`${x}-${y}-${index}`} style={{ left: `${x * 100}%`, top: `${y * 100}%` }}>{index + 1}</span>)}
+            {!calibrationMode && imageReady && points.map(([x, y], index) => (
+              <button
+                type="button"
+                className="mapper-point-handle draggable"
+                key={`handle-${index}`}
+                style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
+                onPointerDown={(event) => dragHandle(event, index)}
+                onPointerMove={(event) => moveHandle(event, index)}
+                onPointerUp={endHandle}
+                onPointerCancel={endHandle}
+                aria-label={`Drag corner ${index + 1}`}
+              >{index + 1}</button>
+            ))}
+            {loupePoint && <div className="mapper-loupe" style={{ backgroundImage: `url(${imageUrl})`, backgroundSize: `${zoom * 400}% auto`, backgroundPosition: `${loupePoint[0] * 100}% ${loupePoint[1] * 100}%` }}><i /></div>}
           </div>
         </div>
 
-        <aside className="card mapper-list">
-          <h3>Confirmed plots <b>{plots.length}</b></h3>
-          {plots.length ? [...plots].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })).map((plot) => (
-            <article key={plot.id}>
-              <span><b>{plot.id}</b><small>{plot.dimensions || `${plot.sqft} sq.ft`}</small></span>
+        <aside className="card mapper-list mapper-review-list">
+          <h3>Project plots <b>{mappedPlots.length}/{plots.length || "—"}</b></h3>
+          <div className="review-summary">
+            <span className="ok">Mapped {mappedPlots.length}</span>
+            <span className="auto">Auto ready {acceptedAutoMatches.filter((match) => !match.plot.polygon).length}</span>
+            <span className="warn">Review {reviewPlots.length}</span>
+          </div>
+          {inventoryPlots.length ? inventoryPlots.map((plot) => {
+            const mapped = Boolean(plot.polygon);
+            const rawAuto = !mapped && autoMatches.some((match) => match.plot.id === plot.id);
+            const autoReady = !mapped && autoMatchIds.has(plot.id);
+            const areaReview = !mapped && areaReviewIds.has(plot.id);
+            return <article key={plot.id} className={mapped ? "mapped" : autoReady ? "auto-ready" : "needs-review"}>
+              <button className="plot-row-main" onClick={() => loadPlotDetails(plot, mapped)}>
+                <b>{plot.id}</b><small>{plot.dimensions || `${Number(plot.sqft).toFixed(0)} sq.ft`}</small>
+                <em>{mapped ? "Mapped" : autoReady ? "Auto" : areaReview ? "Area review" : "Review"}</em>
+              </button>
               {!completedProject && <div className="mapper-list-actions">
-                <button className="edit" onClick={() => editPlot(plot)} aria-label={`Edit ${plot.id}`}><Pencil /></button>
-                <button onClick={() => remove(plot)} aria-label={`Remove ${plot.id}`}><Trash2 /></button>
+                {mapped ? <>
+                  <button className="edit" onClick={() => loadPlotDetails(plot, true)} aria-label={`Edit ${plot.id}`}><Pencil /></button>
+                  <button onClick={() => remove(plot)} aria-label={`Remove ${plot.id}`}><Trash2 /></button>
+                </> : rawAuto ? <button
+                  className={autoReady ? "auto-toggle included" : "auto-toggle"}
+                  onClick={() => setExcludedAutoIds((current) => {
+                    const next = new Set(current);
+                    if (next.has(plot.id)) next.delete(plot.id); else next.add(plot.id);
+                    return next;
+                  })}
+                  aria-label={autoReady ? `Move ${plot.id} to review` : `Use auto match for ${plot.id}`}
+                >{autoReady ? "Auto ✓" : "Use Auto"}</button> : null}
               </div>}
-            </article>
-          )) : <p>अभी कोई plot confirm नहीं हुआ।</p>}
+            </article>;
+          }) : <p>Plot sheet import करें या manual plot number से शुरू करें.</p>}
         </aside>
       </div>
+
+      {!completedProject && (
+        <div className="card auto-publish-card">
+          <div>
+            <small>AUTO MATCH REVIEW</small>
+            <h3>{acceptedAutoMatches.length} Auto-ready · {reviewPlots.length} Review</h3>
+            <p>Unique exact Plot ID के साथ CAD area भी project-wide inventory scale से verify होता है. {areaReviewMatches.length} area-mismatch match yellow Review में रोके गए हैं. Blue Auto row को भी tap करके Review में भेज सकते हैं — कोई geometry silently publish नहीं होती.</p>
+          </div>
+          <button className="primary" disabled={busy || !liveMatrix || !acceptedAutoMatches.some((match) => !match.plot.polygon)} onClick={publishAutoMatches}><CheckCircle2 /> Publish {acceptedAutoMatches.filter((match) => !match.plot.polygon).length} reviewed Auto plots</button>
+        </div>
+      )}
+
+      {!completedProject && hasMasterplan && (
+        <div className="card manual-fallback-card">
+          <div className="manual-fallback-head">
+            <div><small>PRECISE MANUAL FALLBACK</small><h3>{currentPlot ? `Plot ${currentPlot.id}` : `Plot ${plotId}`}</h3><p>CAD match miss होने पर ही use करें. Perspective layout के लिए 4-corner quadrilateral default है.</p></div>
+            <select value={plotId} onChange={(event) => {
+              const id = event.target.value;
+              const plot = plots.find((item) => item.id === id);
+              if (plot) loadPlotDetails(plot, Boolean(plot.polygon));
+              else setPlotId(id);
+            }}>
+              {plots.length ? inventoryPlots.map((plot) => <option key={plot.id} value={plot.id}>{plot.id} · {plot.polygon ? "mapped" : autoMatchIds.has(plot.id) ? "auto" : "review"}</option>) : <option value={plotId}>{plotId}</option>}
+            </select>
+          </div>
+
+          {manualPhase === "select" ? <>
+            <div className="mapper-mode">
+              <button className={shape === "quad" ? "active" : ""} onClick={() => { setShape("quad"); setPoints([]); }}>Perspective plot · 4 corners</button>
+              <button className={shape === "polygon" ? "active" : ""} onClick={() => { setShape("polygon"); setPoints([]); }}>Irregular · corner taps</button>
+            </div>
+            <div className="mapper-actions compact">
+              <button disabled={!points.length} onClick={() => setPoints((current) => current.slice(0, -1))}><Undo2 />Undo</button>
+              <button disabled={!points.length} onClick={() => setPoints([])}>Clear</button>
+              {shape === "polygon" && <button className="primary" disabled={points.length < 3} onClick={() => setManualPhase("details")}><CheckCircle2 />Boundary complete</button>}
+            </div>
+            <small className="mapper-help">Image पर clockwise corners tap करें. Existing plot vertex/edge के पास tap करने पर automatic snap होगा. Corner marker को drag करके exact correction करें.</small>
+          </> : <>
+            <div className="mapper-fields guided-fields">
+              <label><span>Plot number</span><input value={plotId} readOnly={Boolean(currentPlot)} onChange={(event) => setPlotId(event.target.value)} /></label>
+              <label><span>Dimensions</span><input value={dimensions} onChange={(event) => setDimensions(event.target.value)} placeholder="12.00 × 9.00 m" /></label>
+              <label><span>Area (sq.ft)</span><input type="number" min="0" value={sqft} onChange={(event) => setSqft(event.target.value)} /></label>
+              <label><span>Facing / road</span><input value={road} onChange={(event) => setRoad(event.target.value)} placeholder="East face" /></label>
+            </div>
+            <div className="mapper-actions">
+              <button onClick={() => setManualPhase("select")}><Pencil />Boundary बदलें</button>
+              <button className="primary mapper-confirm" disabled={busy || points.length < 3} onClick={confirmPlot}><Save />{busy ? "Saving…" : editingId ? `Update ${plotId}` : `Confirm ${plotId} & open next`}</button>
+            </div>
+            {currentCenter && <small className="mapper-help">Boundary center {currentCenter[0].toFixed(4)}, {currentCenter[1].toFixed(4)} · normalized geometry यही 2D और 3D दोनों use करेंगे.</small>}
+          </>}
+        </div>
+      )}
     </section>
   );
 }
