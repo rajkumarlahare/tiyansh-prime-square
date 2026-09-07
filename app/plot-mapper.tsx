@@ -260,8 +260,9 @@ export default function PlotMapper({
   const [busy, setBusy] = useState(false);
   const [lastVerifiedId, setLastVerifiedId] = useState("");
   const [zoom, setZoom] = useState(1);
-  const [flipX, setFlipX] = useState(false);
-  const [flipY, setFlipY] = useState(false);
+  // 0/1/2/3 = 0°/90°/180°/270° clockwise. Rotation is mapping-view only:
+  // persistent plot geometry always remains in the original masterplan coordinate space.
+  const [rotation, setRotation] = useState<0 | 1 | 2 | 3>(0);
   const [toolMode, setToolMode] = useState<"pan" | "select">("pan");
 
   // Primary precision image mapper.
@@ -330,6 +331,15 @@ export default function PlotMapper({
 
   useEffect(() => {
     reload().catch(() => notify("Project mapper data load नहीं हुआ"));
+    // Restore this device's preferred mapping orientation for the project.
+    try {
+      const saved = Number(window.localStorage.getItem(`rekixo:mapper-rotation:${projectId}`));
+      if (saved === 0 || saved === 1 || saved === 2 || saved === 3)
+        setRotation(saved as 0 | 1 | 2 | 3);
+      else setRotation(0);
+    } catch {
+      setRotation(0);
+    }
     // projectId remounts the component in Super Admin.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -674,21 +684,45 @@ export default function PlotMapper({
   }
 
   function displayPoint(point: MapperPoint): MapperPoint {
-    return [
-      flipX ? 1 - point[0] : point[0],
-      flipY ? 1 - point[1] : point[1],
-    ];
+    const [x, y] = point;
+    if (rotation === 1) return [1 - y, x];
+    if (rotation === 2) return [1 - x, 1 - y];
+    if (rotation === 3) return [y, 1 - x];
+    return [x, y];
   }
 
-  function toggleFlip(axis: "x" | "y") {
-    if (axis === "x") setFlipX((value) => !value);
-    else setFlipY((value) => !value);
+  function sourcePointFromDisplay(point: MapperPoint): MapperPoint {
+    const [x, y] = point;
+    // Exact inverse of displayPoint. A tap made on a rotated view is converted
+    // back to source-image coordinates before snap/save, so live SVG/2D/3D stay correct.
+    if (rotation === 1) return [y, 1 - x];
+    if (rotation === 2) return [1 - x, 1 - y];
+    if (rotation === 3) return [1 - y, x];
+    return [x, y];
+  }
+
+  function rotateMapperView(direction: -1 | 1) {
+    setRotation((current) => {
+      const next = ((current + direction + 4) % 4) as 0 | 1 | 2 | 3;
+      try {
+        window.localStorage.setItem(`rekixo:mapper-rotation:${projectId}`, String(next));
+      } catch {
+        // Device preference persistence is optional; mapping must keep working.
+      }
+      return next;
+    });
+    // A quarter turn changes portrait/landscape bounds. Fit once, then user can zoom again.
+    setZoom(1);
   }
 
   function resetMapperView() {
     setZoom(1);
-    setFlipX(false);
-    setFlipY(false);
+    setRotation(0);
+    try {
+      window.localStorage.setItem(`rekixo:mapper-rotation:${projectId}`, "0");
+    } catch {
+      // Ignore private-mode/localStorage failures.
+    }
   }
 
   function svgPointFromClient(clientX: number, clientY: number): MapperPoint | null {
@@ -700,9 +734,9 @@ export default function PlotMapper({
       Math.max(0, Math.min(1, (clientX - box.left) / box.width)),
       Math.max(0, Math.min(1, (clientY - box.top) / box.height)),
     ];
-    // Flip is view-only. Convert visual coordinates back to the original
-    // masterplan coordinate space before snapping/saving.
-    return displayPoint(visual);
+    // Rotation is view-only. Convert the visible portrait/landscape coordinates
+    // back into the original masterplan coordinate system before snapping/saving.
+    return sourcePointFromDisplay(visual);
   }
 
   function precisePoint(raw: MapperPoint) {
@@ -997,6 +1031,16 @@ export default function PlotMapper({
   const currentCenter = points.length ? polygonCenter(points) : null;
   const shapeInvalid = points.length >= 4 && polygonSelfIntersects(points);
   const shapeReady = points.length >= 3 && (shape === "polygon" || points.length === 4) && !shapeInvalid;
+  const rotationDegrees = rotation * 90;
+  const rotationSwapsAxes = rotation === 1 || rotation === 3;
+  const mapperAspectRatio = rotationSwapsAxes
+    ? `${mapHeight} / ${mapWidth}`
+    : `${mapWidth} / ${mapHeight}`;
+  // Before a 90° CSS rotation, the source image must use the future visual height
+  // as its width. This fills the swapped portrait/landscape wrapper without crop.
+  const rotatedSourceWidth = rotationSwapsAxes
+    ? `${(mapWidth / mapHeight) * 100}%`
+    : "100%";
 
   return (
     <section className="mapper-shell auto-cad-mapper" onContextMenu={(event) => event.preventDefault()}>
@@ -1151,30 +1195,31 @@ export default function PlotMapper({
             <button aria-label="Zoom in" disabled={zoom >= 16} onClick={() => setZoom((value) => Math.min(16, value + 0.5))}><ZoomIn /></button>
             <button
               type="button"
-              className={flipX ? "active" : ""}
-              aria-pressed={flipX}
-              aria-label="Flip masterplan horizontally"
-              title="Horizontal flip — mapping view only"
-              onClick={() => toggleFlip("x")}
-            >↔ Flip H</button>
+              aria-label="Rotate masterplan left 90 degrees"
+              title="Rotate 90° left — portrait/landscape mapping view"
+              onClick={() => rotateMapperView(-1)}
+            >↺ 90°</button>
             <button
               type="button"
-              className={flipY ? "active" : ""}
-              aria-pressed={flipY}
-              aria-label="Flip masterplan vertically"
-              title="Vertical flip — mapping view only"
-              onClick={() => toggleFlip("y")}
-            >↕ Flip V</button>
-            <button aria-label="Reset zoom and flips" title="Reset view" onClick={resetMapperView}><RotateCcw /></button>
+              aria-label="Rotate masterplan right 90 degrees"
+              title="Rotate 90° right — portrait/landscape mapping view"
+              onClick={() => rotateMapperView(1)}
+            >↻ 90°</button>
+            <button aria-label="Reset zoom and rotation" title="Reset orientation" onClick={resetMapperView}><RotateCcw /></button>
             <button aria-label="Toggle mapping focus/fullscreen" onClick={toggleMapperFullscreen}><Maximize2 />Focus</button>
           </div>
 
           {!imageReady && <div className="mapper-loading">{hasMasterplan ? "High-resolution masterplan load हो रहा है…" : "पहले masterplan image upload करें"}</div>}
-          <div className="mapper-pan-hint">{toolMode === "pan" ? "PAN mode: pinch/zoom aur image move करें. Plot बड़ा दिखने पर SELECT दबाएँ." : "SELECT mode: corners clockwise tap करें. Yellow numbered handle drag = exact correction; nearby mapped edge/vertex auto-snap."}</div>
+          <div className="mapper-pan-hint">{toolMode === "pan" ? `PAN mode: pinch/zoom aur image move करें. ↺/↻ 90° से map को खड़ा/लेटा करें. Current: ${rotationDegrees}°.` : `SELECT mode: corners clockwise tap करें. Rotation ${rotationDegrees}° सिर्फ view है; saved geometry original image coordinates में रहती है.`}</div>
           <div
             ref={imageWrapRef}
             className="mapper-image-wrap mapper-image-v2"
-            style={{ width: `${zoom * 100}%`, maxWidth: "none" }}
+            style={{
+              width: `${zoom * 100}%`,
+              maxWidth: "none",
+              aspectRatio: mapperAspectRatio,
+              overflow: "hidden",
+            }}
             onContextMenu={(event) => event.preventDefault()}
             onDragStart={(event) => event.preventDefault()}
           >
@@ -1185,9 +1230,14 @@ export default function PlotMapper({
               onError={() => setImageReady(false)}
               draggable={false}
               style={{
-                width: "100%",
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                width: rotatedSourceWidth,
+                height: "auto",
+                maxWidth: "none",
                 maxHeight: "none",
-                transform: `scaleX(${flipX ? -1 : 1}) scaleY(${flipY ? -1 : 1})`,
+                transform: `translate(-50%, -50%) rotate(${rotationDegrees}deg)`,
                 transformOrigin: "center center",
               }}
             />
@@ -1256,7 +1306,7 @@ export default function PlotMapper({
               backgroundImage: `url(${imageUrl})`,
               backgroundSize: `${zoom * 400}% auto`,
               backgroundPosition: `${loupePoint[0] * 100}% ${loupePoint[1] * 100}%`,
-              transform: `scaleX(${flipX ? -1 : 1}) scaleY(${flipY ? -1 : 1})`,
+              transform: `rotate(${rotationDegrees}deg)`,
             }}><i /></div>}
           </div>
           {!completedProject && (
