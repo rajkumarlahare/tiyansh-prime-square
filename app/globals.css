@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
 
-.mapper-fields select{min-width:0;height:44px;border:1px solid #2d3d58;border-radius:9px;background:#071221;color:#fff;padding:0 11px}.mapper-image-wrap polygon.block-draft{fill:#20ce7938;stroke:#ffe077;stroke-dasharray:none}
+.mapper-fields select{min-width:0;height:44px;border:1px solid #2d3d58;border-radius:9px;background:#071221;color:#fff;padding:0 11px}.mapper-image-wrap polygon.block-draft{fill:#20ce7938;stroke:#ffe077;stroke-dasharray:none}.mapper-zoombar{position:sticky;z-index:5;top:0;display:flex;align-items:center;gap:7px;width:max-content;min-width:100%;padding:8px;margin-bottom:8px;background:#091425ed;backdrop-filter:blur(8px);border-bottom:1px solid #263753}.mapper-zoombar button{height:38px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #30415e;border-radius:9px;background:#101e34;color:#c4cee0;padding:0 10px;font-weight:800}.mapper-zoombar button.active{border-color:#22c77b;color:#58e4a8;background:#12382e}.mapper-zoombar button:disabled{opacity:.4}.mapper-zoombar button svg{width:17px}.mapper-zoombar span{min-width:48px;text-align:center;color:#8f9db4;font-size:13px;font-weight:800}.mapper-canvas.pan-mode{cursor:grab;overscroll-behavior:contain}.mapper-canvas.pan-mode .mapper-image-wrap svg{pointer-events:none}.mapper-canvas.pan-mode .mapper-image-wrap{touch-action:pan-x pan-y}.mapper-image-wrap{transition:width .22s ease;transform-origin:top left}@media(max-width:520px){.mapper-zoombar button{padding:0 8px;font-size:0}.mapper-zoombar button:first-child,.mapper-zoombar button:nth-child(2){font-size:11px}.mapper-zoombar{gap:5px;padding-left:4px;padding-right:4px}}
 
 @utility scrollbar-thin {
   scrollbar-width: thin;

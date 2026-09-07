@@ -3,10 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText,
   ImagePlus,
+  Hand,
   MousePointer2,
+  RotateCcw,
   Save,
   Trash2,
   Undo2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 
 type Point = [number, number];
@@ -123,6 +127,8 @@ export default function PlotMapper({
     [road, setRoad] = useState(""),
     [blockCount, setBlockCount] = useState("6"),
     [numberStep, setNumberStep] = useState<1 | -1>(1),
+    [zoom, setZoom] = useState(1),
+    [navigate, setNavigate] = useState(false),
     [imageUrl, setImageUrl] = useState(() => assetUrl("masterplan")),
     [imageReady, setImageReady] = useState(false),
     [busy, setBusy] = useState(false),
@@ -453,25 +459,34 @@ export default function PlotMapper({
         </small>
       </div>
       <div className="mapper-work">
-        <div className="mapper-canvas card">
+        <div className={`mapper-canvas card ${navigate ? "pan-mode" : ""}`}>
+          <div className="mapper-zoombar">
+            <button className={!navigate ? "active" : ""} onClick={()=>setNavigate(false)}><MousePointer2/>Map points</button>
+            <button className={navigate ? "active" : ""} onClick={()=>setNavigate(true)}><Hand/>Move image</button>
+            <span>{Math.round(zoom*100)}%</span>
+            <button aria-label="Zoom out" disabled={zoom<=1} onClick={()=>setZoom(value=>Math.max(1,value-.5))}><ZoomOut/></button>
+            <button aria-label="Zoom in" disabled={zoom>=6} onClick={()=>setZoom(value=>Math.min(6,value+.5))}><ZoomIn/></button>
+            <button aria-label="Reset zoom" onClick={()=>setZoom(1)}><RotateCcw/></button>
+          </div>
           {!imageReady && (
             <div className="mapper-loading">
               Masterplan upload करें या image load होने दें…
             </div>
           )}
-          <div className="mapper-image-wrap">
+          <div className="mapper-image-wrap" style={{width:`${zoom*100}%`,maxWidth:"none"}}>
             <img
               ref={imageRef}
               src={imageUrl}
               alt="Project masterplan"
               onLoad={() => setImageReady(true)}
               onError={() => setImageReady(false)}
+              style={{width:"100%",maxHeight:"none"}}
             />
             {imageReady && (
               <svg
                 viewBox="0 0 1000 1000"
                 preserveAspectRatio="none"
-                onPointerDown={point}
+                onPointerDown={navigate ? undefined : point}
               >
                 {plots.map((plot) => {
                   const p = JSON.parse(plot.polygon || "[]") as Point[];

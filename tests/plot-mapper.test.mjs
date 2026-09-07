@@ -15,6 +15,9 @@ test("plot mapper is owner-only and stores normalized project boundaries",async(
   assert.match(mapper,/Block Auto: 4 taps/);
   assert.match(mapper,/function splitBlock/);
   assert.match(mapper,/plots: batch/);
+  assert.match(mapper,/Math\.min\(6/);
+  assert.match(mapper,/Move image/);
+  assert.match(mapper,/onPointerDown=\{navigate \? undefined : point\}/);
   assert.match(api,/requireSuperAdmin/);
   assert.match(legacyApi,/status:403/);
   assert.match(api,/projects\/\$\{projectId\}\/mapper/);
