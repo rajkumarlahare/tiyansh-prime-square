@@ -15,7 +15,7 @@ test("multiple staff admins do not disable or delete the whole project",async()=
 
 test("client mutations are tenant scoped and audited",async()=>{
   const [data,gallery]=await Promise.all([source("../app/api/data/route.ts"),source("../app/api/gallery/route.ts")]);
-  assert.match(data,/projectId=session\.projectId/);
+  assert.match(data,/projectId\s*=\s*session\.projectId/);
   assert.match(data,/project\.plot_updated/);
   assert.match(data,/project\.settings_updated/);
   assert.match(gallery,/projects\/\$\{projectId\}\/gallery/);

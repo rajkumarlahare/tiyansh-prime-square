@@ -1973,3 +1973,311 @@ body {
     line-height: 1.5;
   }
 }
+
+/* Guided sequential mapper ------------------------------------------------ */
+.mapper-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 18px 0;
+}
+.mapper-steps span {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #283a55;
+  border-radius: 11px;
+  background: #091424;
+  color: #7f8ea8;
+  padding: 9px 11px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.mapper-steps span b {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid #39506f;
+  color: #b8c6dc;
+}
+.mapper-steps span.active {
+  border-color: #d5a72b;
+  background: #2c2512;
+  color: #ffe18a;
+}
+.mapper-steps span.active b {
+  border-color: #f0b323;
+  background: #f0b323;
+  color: #08111f;
+}
+.mapper-steps span.done {
+  border-color: #24704f;
+  background: #0d2c23;
+  color: #6ce4ad;
+}
+.mapper-steps span.done b {
+  border-color: #27c57d;
+  background: #1ea96b;
+  color: #fff;
+}
+.mapper-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.mapper-upload-card {
+  position: relative;
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px dashed #3a4e6d;
+  border-radius: 13px;
+  background: #0a1526;
+  padding: 13px 42px 13px 13px;
+  cursor: pointer;
+}
+.mapper-upload-card:hover {
+  border-color: #6282ad;
+  background: #0d1a2d;
+}
+.mapper-upload-card.ready {
+  border-style: solid;
+  border-color: #246a4c;
+  background: #0c261f;
+}
+.mapper-upload-card > span {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #12243c;
+  color: #84b5ff;
+}
+.mapper-upload-card.ready > span {
+  background: #14392e;
+  color: #57dca1;
+}
+.mapper-upload-card svg {
+  width: 20px;
+}
+.mapper-upload-card div {
+  min-width: 0;
+}
+.mapper-upload-card b,
+.mapper-upload-card small {
+  display: block;
+}
+.mapper-upload-card small {
+  margin-top: 4px;
+  color: #8191aa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mapper-upload-card input {
+  display: none;
+}
+.mapper-ready-icon {
+  position: absolute;
+  right: 13px;
+  color: #38d48e;
+}
+.mapper-pdf-link {
+  width: fit-content;
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #83b3ff;
+  font-size: 12px;
+  font-weight: 800;
+}
+.mapper-pdf-link svg {
+  width: 16px;
+}
+.guided-current-card {
+  margin-top: 16px;
+  border: 1px solid #2a3c57;
+  border-radius: 14px;
+  background: #071220;
+  padding: 15px;
+}
+.guided-current-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.guided-current-head small {
+  color: #7486a4;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .14em;
+}
+.guided-current-head h3 {
+  margin: 4px 0 0;
+  color: #fff;
+  font-size: 22px;
+}
+.guided-current-head em {
+  border-radius: 999px;
+  padding: 8px 11px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+.guided-current-head em.select {
+  background: #1b2940;
+  color: #94baff;
+}
+.guided-current-head em.details {
+  background: #382d13;
+  color: #ffd45e;
+}
+.guided-fields {
+  margin-top: 15px;
+}
+.guided-fields label span {
+  display: block;
+  margin: 0 0 6px 2px;
+  color: #8494ad;
+  font-size: 11px;
+  font-weight: 800;
+}
+.mapper-actions.compact {
+  margin-top: 12px;
+}
+.mapper-confirm {
+  min-width: 245px;
+}
+.mapper-zoombar {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  padding: 6px;
+  margin-bottom: 8px;
+  border: 1px solid #273a55;
+  border-radius: 10px;
+  background: #071322ee;
+  backdrop-filter: blur(8px);
+}
+.mapper-zoombar button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #2b3e59;
+  border-radius: 8px;
+  background: #0c1a2c;
+  color: #aab9d0;
+  padding: 0 9px;
+}
+.mapper-zoombar button.active {
+  border-color: #2d8d67;
+  background: #113329;
+  color: #65dca8;
+}
+.mapper-zoombar button svg {
+  width: 15px;
+}
+.mapper-zoombar > span {
+  min-width: 42px;
+  text-align: center;
+  color: #8fb7fa;
+  font-size: 12px;
+  font-weight: 900;
+}
+.mapper-zoom-range {
+  width: 120px;
+}
+.mapper-image-wrap .mapped-plot polygon {
+  fill: rgba(29, 199, 118, .18);
+  stroke: #28d184;
+}
+.mapper-image-wrap .mapped-plot.editing polygon {
+  fill: rgba(255, 194, 44, .27);
+  stroke: #ffd154;
+}
+.mapper-image-wrap .mapped-plot text {
+  fill: #ffffff;
+  stroke: #07101c;
+  stroke-width: 4px;
+  paint-order: stroke;
+  font-size: 20px;
+  font-weight: 950;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+.mapper-point-handle {
+  position: absolute;
+  z-index: 5;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #f2b82d;
+  color: #07111f;
+  box-shadow: 0 3px 12px #0009;
+  font-size: 10px;
+  font-weight: 950;
+  pointer-events: none;
+}
+.mapper-list-actions {
+  display: flex;
+  gap: 6px;
+}
+.mapper-list article .mapper-list-actions button.edit {
+  background: #173047;
+  color: #7ebcff;
+}
+.mapper-canvas.pan-mode .mapper-image-wrap svg {
+  pointer-events: none;
+  cursor: grab;
+}
+
+@media (max-width: 760px) {
+  .mapper-steps {
+    grid-template-columns: 1fr 1fr;
+  }
+  .mapper-upload-grid {
+    grid-template-columns: 1fr;
+  }
+  .guided-current-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .mapper-confirm {
+    min-width: 0;
+  }
+}
+
+.mapper-preview-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  border: 1px solid #31527b;
+  border-radius: 10px;
+  background: #10233b;
+  color: #9ec8ff;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+}
+.mapper-preview-link svg { width: 16px; }

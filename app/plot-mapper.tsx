@@ -1,11 +1,14 @@
 "use client";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  CheckCircle2,
   FileText,
-  ImagePlus,
   Hand,
+  ImagePlus,
   Maximize2,
   MousePointer2,
+  Pencil,
   RotateCcw,
   Save,
   Trash2,
@@ -28,52 +31,74 @@ type Plot = {
   polygon?: string;
 };
 
+type MapperSettings = {
+  masterplanName?: string;
+  sourcePdfName?: string;
+};
+
 const MAX_MASTERPLAN_BYTES = 900_000;
 const COMPLETED_PROJECT_ID = "tiyansh-prime-square";
+const MAP_WIDTH = 1200;
+const MAP_HEIGHT = 2133;
+
 async function apiResult(response: Response) {
   const raw = await response.text();
   let result: Record<string, unknown> = {};
   try {
     result = raw ? JSON.parse(raw) : {};
   } catch {
-    /* Cloudflare can return a plain-text 413 page. */
+    /* Cloudflare can return plain-text errors. */
   }
-  if (!response.ok)
+  if (!response.ok) {
     throw new Error(
       typeof result.error === "string"
         ? result.error
         : response.status === 413
-          ? "Image बहुत बड़ी है। छोटी image चुनें या screenshot upload करें।"
+          ? "File बहुत बड़ी है। छोटी file चुनें।"
           : raw.trim() || `Request failed (${response.status})`,
     );
+  }
   return result;
 }
-async function optimizeMasterplan(file: File) {
-  if (file.size <= MAX_MASTERPLAN_BYTES) return file;
-  const bitmap = await createImageBitmap(file),
-    pixelScale = Math.sqrt(4_000_000 / (bitmap.width * bitmap.height)),
-    scale = Math.min(
-      1,
-      2200 / Math.max(bitmap.width, bitmap.height),
-      pixelScale,
-    ),
-    canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+
+/**
+ * Every editable customer masterplan is normalized to the same 1200x2133
+ * coordinate surface used by the public 2D/3D engine. The source image keeps
+ * its aspect ratio and is letterboxed instead of stretched.
+ */
+async function normalizeMasterplan(file: File) {
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = MAP_WIDTH;
+  canvas.height = MAP_HEIGHT;
   const context = canvas.getContext("2d");
   if (!context) {
     bitmap.close();
-    throw new Error("Image optimize नहीं हो पाई");
+    throw new Error("Image process नहीं हो पाई");
   }
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, MAP_WIDTH, MAP_HEIGHT);
+  const scale = Math.min(MAP_WIDTH / bitmap.width, MAP_HEIGHT / bitmap.height);
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const x = Math.round((MAP_WIDTH - width) / 2);
+  const y = Math.round((MAP_HEIGHT - height) / 2);
+  context.drawImage(bitmap, x, y, width, height);
   bitmap.close();
+
   const encode = (quality: number) =>
     new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/webp", quality),
     );
-  let blob = await encode(0.82);
-  if (blob && blob.size > MAX_MASTERPLAN_BYTES) blob = await encode(0.66);
+
+  let blob = await encode(0.84);
+  for (const quality of [0.72, 0.6, 0.5]) {
+    if (!blob || blob.size <= MAX_MASTERPLAN_BYTES) break;
+    blob = await encode(quality);
+  }
   if (!blob) throw new Error("इस image format को browser process नहीं कर पाया");
+
   return new File(
     [blob],
     `${file.name.replace(/\.[^.]+$/, "") || "masterplan"}.webp`,
@@ -81,34 +106,27 @@ async function optimizeMasterplan(file: File) {
   );
 }
 
-function numberedId(start: string, offset: number) {
-  const match = start
-    .trim()
-    .toUpperCase()
-    .match(/^(.*?)(\d+)$/);
-  if (!match)
-    return offset
-      ? `${start.trim().toUpperCase()}-${offset + 1}`
-      : start.trim().toUpperCase();
-  const value = Math.max(0, Number(match[2]) + offset);
-  return `${match[1]}${String(value).padStart(match[2].length, "0")}`;
+function nextPlotId(value: string) {
+  const source = value.trim().toUpperCase();
+  const match = source.match(/^(.*?)(\d+)$/);
+  if (!match) return source ? `${source}-2` : "A-01";
+  return `${match[1]}${String(Number(match[2]) + 1).padStart(match[2].length, "0")}`;
 }
-function splitBlock(points: Point[], count: number) {
-  if (points.length !== 4 || count < 2) return [];
-  const mix = (a: Point, b: Point, t: number): Point => [
-    a[0] + (b[0] - a[0]) * t,
-    a[1] + (b[1] - a[1]) * t,
-  ];
-  return Array.from({ length: count }, (_, index) => {
-    const from = index / count,
-      to = (index + 1) / count;
-    return [
-      mix(points[0], points[1], from),
-      mix(points[0], points[1], to),
-      mix(points[3], points[2], to),
-      mix(points[3], points[2], from),
-    ] as Point[];
-  });
+
+function suggestedPlotId(plots: Plot[]) {
+  if (!plots.length) return "A-01";
+  const ordered = [...plots].sort((a, b) =>
+    a.id.localeCompare(b.id, undefined, { numeric: true }),
+  );
+  return nextPlotId(ordered[ordered.length - 1].id);
+}
+
+function polygonCenter(points: Point[]) {
+  if (!points.length) return [0.5, 0.5] as Point;
+  return [
+    points.reduce((sum, point) => sum + point[0], 0) / points.length,
+    points.reduce((sum, point) => sum + point[1], 0) / points.length,
+  ] as Point;
 }
 
 export default function PlotMapper({
@@ -123,513 +141,371 @@ export default function PlotMapper({
     completedProject && kind === "masterplan"
       ? "/project/masterplan.jpg"
       : `/api/project-asset/${kind}?projectId=${encodeURIComponent(projectId)}`;
-  const [plots, setPlots] = useState<Plot[]>([]),
-    [points, setPoints] = useState<Point[]>([]),
-    [mode, setMode] = useState<"block" | "rectangle" | "polygon">("block"),
-    [plotId, setPlotId] = useState(""),
-    [dimensions, setDimensions] = useState(""),
-    [sqft, setSqft] = useState(""),
-    [road, setRoad] = useState(""),
-    [blockCount, setBlockCount] = useState("6"),
-    [numberStep, setNumberStep] = useState<1 | -1>(1),
-    [zoom, setZoom] = useState(1),
-    [navigate, setNavigate] = useState(false),
-    [imageUrl, setImageUrl] = useState(() => assetUrl("masterplan")),
-    [imageReady, setImageReady] = useState(false),
-    [busy, setBusy] = useState(false),
-    [pdfName, setPdfName] = useState("");
-  const imageRef = useRef<HTMLImageElement | null>(null);
+
+  const [plots, setPlots] = useState<Plot[]>([]);
+  const [settings, setSettings] = useState<MapperSettings>({});
+  const [points, setPoints] = useState<Point[]>([]);
+  const [shape, setShape] = useState<"rectangle" | "polygon">("rectangle");
+  const [phase, setPhase] = useState<"select" | "details">("select");
+  const [editingId, setEditingId] = useState("");
+  const [plotId, setPlotId] = useState("A-01");
+  const [dimensions, setDimensions] = useState("");
+  const [sqft, setSqft] = useState("");
+  const [road, setRoad] = useState("");
+  const [zoom, setZoom] = useState(1);
+  const [navigate, setNavigate] = useState(false);
+  const [imageUrl, setImageUrl] = useState(() => assetUrl("masterplan"));
+  const [imageReady, setImageReady] = useState(false);
+  const [busy, setBusy] = useState(false);
   const canvasRef = useRef<HTMLDivElement | null>(null);
-  // projectId is also the component key, so switching projects remounts this editor.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   useEffect(() => {
+    let active = true;
+    setImageReady(false);
     fetch(`/api/super-mapper?projectId=${encodeURIComponent(projectId)}`, {
       cache: "no-store",
     })
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((data) => {
-        setPlots((data.plots || []).filter((p: Plot) => p.polygon));
-        setPdfName(data.settings?.sourcePdfName || "");
+        if (!active) return;
+        const mapped = (data.plots || []).filter((plot: Plot) => plot.polygon);
+        const nextSettings = (data.settings || {}) as MapperSettings;
+        setPlots(mapped);
+        setSettings(nextSettings);
+        setPlotId(suggestedPlotId(mapped));
+        setImageUrl(assetUrl("masterplan"));
       })
       .catch(() => notify("Project mapper data load नहीं हुआ"));
+    return () => {
+      active = false;
+    };
+    // projectId is also the component key in the Super Admin dashboard.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
-  const draft = useMemo(
-    () =>
-      mode === "rectangle" && points.length === 2
-        ? ([
-            [points[0][0], points[0][1]],
-            [points[1][0], points[0][1]],
-            points[1],
-            [points[0][0], points[1][1]],
-          ] as Point[])
-        : points,
-    [mode, points],
-  );
-  const blockDrafts = useMemo(
-    () =>
-      mode === "block"
-        ? splitBlock(points, Math.min(50, Math.max(2, Number(blockCount) || 2)))
-        : [],
-    [mode, points, blockCount],
-  );
-  function point(event: React.PointerEvent<SVGSVGElement>) {
-    const box = event.currentTarget.getBoundingClientRect(),
-      p: [number, number] = [
-        (event.clientX - box.left) / box.width,
-        (event.clientY - box.top) / box.height,
-      ];
-    if (mode === "block") {
-      setPoints((current) => (current.length >= 4 ? [p] : [...current, p]));
-    } else if (mode === "rectangle") {
-      setPoints((current) => (current.length >= 2 ? [p] : [...current, p]));
-    } else
-      setPoints((current) => (current.length < 80 ? [...current, p] : current));
+
+  const draft = useMemo(() => {
+    if (shape === "rectangle" && points.length === 2) {
+      return [
+        [points[0][0], points[0][1]],
+        [points[1][0], points[0][1]],
+        [points[1][0], points[1][1]],
+        [points[0][0], points[1][1]],
+      ] as Point[];
+    }
+    return points;
+  }, [points, shape]);
+
+  const hasMasterplan = completedProject || Boolean(settings.masterplanName);
+  const hasPdf = Boolean(settings.sourcePdfName);
+  const boundaryReady = draft.length >= 3;
+
+  function mapPoint(event: React.PointerEvent<SVGSVGElement>) {
+    if (navigate || phase !== "select" || !imageReady || completedProject) return;
+    const box = event.currentTarget.getBoundingClientRect();
+    const point: Point = [
+      Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)),
+      Math.max(0, Math.min(1, (event.clientY - box.top) / box.height)),
+    ];
+
+    if (shape === "rectangle") {
+      setPoints((current) => {
+        if (!current.length) return [point];
+        setPhase("details");
+        return [current[0], point];
+      });
+      return;
+    }
+    setPoints((current) => (current.length < 80 ? [...current, point] : current));
   }
+
+  function resetCurrent(nextId = plotId) {
+    setPoints([]);
+    setPhase("select");
+    setEditingId("");
+    setPlotId(nextId);
+    setDimensions("");
+    setSqft("");
+    setRoad("");
+    setNavigate(false);
+  }
+
   async function upload(file: File, kind: "masterplan" | "sourcePdf") {
     setBusy(true);
     try {
+      if (kind === "sourcePdf" && file.size > 25 * 1024 * 1024) {
+        throw new Error("PDF 25 MB से छोटी रखें");
+      }
       const uploadFile =
-        kind === "masterplan" ? await optimizeMasterplan(file) : file;
-      if (kind === "sourcePdf" && file.size > 8_000_000)
-        throw new Error("PDF 8 MB से छोटी रखें");
+        kind === "masterplan" ? await normalizeMasterplan(file) : file;
       const data = new FormData();
       data.append("projectId", projectId);
       data.append("kind", kind);
       data.append("file", uploadFile);
-      const r = await fetch("/api/super-mapper", {
-          method: "POST",
-          body: data,
-        }),
-        j = await apiResult(r);
+      const response = await fetch("/api/super-mapper", {
+        method: "POST",
+        body: data,
+      });
+      const result = await apiResult(response);
       if (kind === "masterplan") {
         setImageReady(false);
-        setImageUrl(String(j.url));
-      } else setPdfName(file.name);
-      notify(
-        kind === "masterplan"
-          ? "Masterplan optimize होकर तैयार है"
-          : "Technical PDF reference save हो गया",
-      );
+        setImageUrl(String(result.url));
+        setSettings((current) => ({
+          ...current,
+          masterplanName: file.name,
+        }));
+        resetCurrent(suggestedPlotId(plots));
+        notify("Masterplan तैयार है — अब पहला plot select करें");
+      } else {
+        setSettings((current) => ({ ...current, sourcePdfName: file.name }));
+        notify("Technical PDF reference save हो गया");
+      }
     } catch (error) {
       notify(error instanceof Error ? error.message : "Upload नहीं हुआ");
     } finally {
       setBusy(false);
     }
   }
-  async function save() {
+
+  async function confirmPlot() {
     const id = plotId.trim().toUpperCase();
-    if (mode === "block") {
-      if (!id || blockDrafts.length < 2) {
-        notify("पहला plot number दें और block के चारों outer corners tap करें");
-        return;
-      }
-      const area = Number(sqft) || 0;
-      const batch = blockDrafts.map((polygon, index): Plot => ({
-        id: numberedId(id, index * numberStep),
-        sqft: area,
-        sqm: area / 10.7639,
-        sqyd: area / 9,
-        dimensions: dimensions.trim(),
-        road: road.trim(),
-        status: "available",
-        polygon: JSON.stringify(polygon),
-      }));
-      setBusy(true);
-      try {
-        const response = await fetch("/api/super-mapper", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ projectId, plots: batch }),
-          }),
-          result = await apiResult(response),
-          saved = result.plots as Plot[];
-        setPlots((current) => [
-          ...current.filter(
-            (item) => !saved.some((plot) => plot.id === item.id),
-          ),
-          ...saved,
-        ]);
-        setPoints([]);
-        setPlotId(numberedId(id, batch.length * numberStep));
-        notify(`${batch.length} plots एक साथ clickable बन गए`);
-      } catch (error) {
-        notify(error instanceof Error ? error.message : "Block save नहीं हुआ");
-      } finally {
-        setBusy(false);
-      }
+    const area = Number(sqft);
+    if (!id) {
+      notify("Plot number जरूरी है");
       return;
     }
-    if (!id || draft.length < 3) {
-      notify("Plot number और पूरी boundary जरूरी है");
+    if (!boundaryReady) {
+      notify("पहले plot की पूरी boundary select करें");
       return;
     }
-    const area = Number(sqft) || 0,
-      plot: Plot = {
-        id,
-        sqft: area,
-        sqm: area / 10.7639,
-        sqyd: area / 9,
-        dimensions: dimensions.trim(),
-        road: road.trim(),
-        status: "available",
-        polygon: JSON.stringify(draft),
-      };
+    if (!Number.isFinite(area) || area <= 0) {
+      notify("Plot area sq.ft में भरें");
+      return;
+    }
+    if (!dimensions.trim()) {
+      notify("Plot dimensions भरें");
+      return;
+    }
+    if (!editingId && plots.some((plot) => plot.id === id)) {
+      notify(`${id} पहले से mapped है। List से Edit चुनें।`);
+      return;
+    }
+
+    const plot: Plot = {
+      id,
+      sqft: area,
+      sqm: area / 10.7639,
+      sqyd: area / 9,
+      dimensions: dimensions.trim(),
+      road: road.trim(),
+      status: plots.find((item) => item.id === editingId)?.status || "available",
+      polygon: JSON.stringify(draft),
+    };
+
     setBusy(true);
     try {
-      const r = await fetch("/api/super-mapper", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ projectId, plot }),
-        }),
-        j = await apiResult(r);
+      const response = await fetch("/api/super-mapper", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectId, plot }),
+      });
+      const result = await apiResult(response);
+      const saved = result.plot as Plot;
       setPlots((current) => [
-        ...current.filter((p) => p.id !== id),
-        j.plot as Plot,
+        ...current.filter((item) => item.id !== editingId && item.id !== saved.id),
+        saved,
       ]);
-      setPoints([]);
-      setPlotId("");
-      setDimensions("");
-      setSqft("");
-      setRoad("");
-      notify(`Plot ${id} clickable बन गया`);
+      const nextId = nextPlotId(saved.id);
+      resetCurrent(nextId);
+      notify(`Plot ${saved.id} confirm — site पर clickable + 3D ready. अब ${nextId} select करें`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Plot save नहीं हुआ");
     } finally {
       setBusy(false);
     }
   }
+
+  function editPlot(plot: Plot) {
+    try {
+      const polygon = JSON.parse(plot.polygon || "[]") as Point[];
+      if (!Array.isArray(polygon) || polygon.length < 3) throw new Error();
+      setEditingId(plot.id);
+      setPlotId(plot.id);
+      setDimensions(plot.dimensions || "");
+      setSqft(String(plot.sqft || ""));
+      setRoad(plot.road || "");
+      setShape("polygon");
+      setPoints(polygon);
+      setPhase("details");
+      setNavigate(false);
+      notify(`Plot ${plot.id} edit mode`);
+      canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch {
+      notify("इस plot की boundary edit नहीं हो पाई");
+    }
+  }
+
   async function remove(plot: Plot) {
     if (!confirm(`Plot ${plot.id} की clickable boundary हटाएँ?`)) return;
     const cleared = { ...plot, polygon: "" };
     setBusy(true);
     try {
-      const r = await fetch("/api/super-mapper", {
+      const response = await fetch("/api/super-mapper", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ projectId, plot: cleared }),
       });
-      if (!r.ok) throw new Error();
-      setPlots((current) => current.filter((p) => p.id !== plot.id));
-      notify("Boundary हटा दी गई");
-    } catch {
-      notify("Boundary नहीं हटी");
+      await apiResult(response);
+      const remaining = plots.filter((item) => item.id !== plot.id);
+      setPlots(remaining);
+      resetCurrent(suggestedPlotId(remaining));
+      notify(`Plot ${plot.id} boundary हट गई`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Boundary नहीं हटी");
     } finally {
       setBusy(false);
     }
   }
+
   return (
-    <section className="mapper-shell">
+    <section className="mapper-shell guided-mapper">
       <div className="card mapper-tools">
         <div className="section-title">
           <MousePointer2 />
           <div>
-            <h2>Plot Mapper Engine</h2>
-            <p>Masterplan पर tap करके clickable plots बनाइए</p>
+            <h2>Guided Plot Mapper</h2>
+            <p>Upload → plot select → details → Confirm → अगला plot</p>
           </div>
         </div>
-        <div className="mapper-upload-row">
-          <label className="mapper-upload">
-            <ImagePlus />
-            {completedProject
-              ? "Completed masterplan locked"
-              : busy
-                ? "Processing…"
-                : "3D masterplan"}
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              disabled={busy || completedProject}
-              onChange={(e) =>
-                e.target.files?.[0] && upload(e.target.files[0], "masterplan")
-              }
-            />
-          </label>
-          <label className="mapper-upload">
-            <FileText />
-            Technical PDF
-            <input
-              type="file"
-              accept="application/pdf"
-              disabled={busy}
-              onChange={(e) =>
-                e.target.files?.[0] && upload(e.target.files[0], "sourcePdf")
-              }
-            />
-          </label>
-          {pdfName && (
-            <a href={assetUrl("sourcePdf")} target="_blank" rel="noreferrer">
-              Open {pdfName}
-            </a>
-          )}
+
+        <div className="mapper-steps" aria-label="Plot mapping workflow">
+          <span className={hasMasterplan ? "done" : "active"}><b>1</b>Masterplan</span>
+          <span className={phase === "select" && hasMasterplan ? "active" : boundaryReady ? "done" : ""}><b>2</b>Select plot</span>
+          <span className={phase === "details" ? "active" : ""}><b>3</b>Plot details</span>
+          <span><b>4</b>Next automatically</span>
         </div>
-        <div className="mapper-mode">
-          <button
-            className={mode === "block" ? "active" : ""}
-            onClick={() => {
-              setMode("block");
-              setPoints([]);
-            }}
-          >
-            Block Auto: 4 taps
-          </button>
-          <button
-            className={mode === "rectangle" ? "active" : ""}
-            onClick={() => {
-              setMode("rectangle");
-              setPoints([]);
-            }}
-          >
-            Rectangle: 2 taps
-          </button>
-          <button
-            className={mode === "polygon" ? "active" : ""}
-            onClick={() => {
-              setMode("polygon");
-              setPoints([]);
-            }}
-          >
-            Polygon: corner taps
-          </button>
-        </div>
-        <div className="mapper-fields">
-          <input
-            value={plotId}
-            onChange={(e) => setPlotId(e.target.value)}
-            placeholder="Plot no. A-01"
-          />
-          <input
-            value={dimensions}
-            onChange={(e) => setDimensions(e.target.value)}
-            placeholder="Dimensions 40×85"
-          />
-          <input
-            type="number"
-            value={sqft}
-            onChange={(e) => setSqft(e.target.value)}
-            placeholder="Area sq.ft"
-          />
-          <input
-            value={road}
-            onChange={(e) => setRoad(e.target.value)}
-            placeholder="Road access"
-          />
-          {mode === "block" && (
-            <>
-              <input
-                type="number"
-                min="2"
-                max="50"
-                value={blockCount}
-                onChange={(e) => setBlockCount(e.target.value)}
-                placeholder="Plots in block"
-                aria-label="Plots in block"
-              />
-              <select
-                value={numberStep}
-                onChange={(e) =>
-                  setNumberStep(Number(e.target.value) as 1 | -1)
-                }
-                aria-label="Number direction"
-              >
-                <option value="1">Numbering +1</option>
-                <option value="-1">Numbering −1</option>
-              </select>
-            </>
-          )}
-        </div>
-        <div className="mapper-actions">
-          <button
-            disabled={!points.length}
-            onClick={() => setPoints((current) => current.slice(0, -1))}
-          >
-            <Undo2 />
-            Undo point
-          </button>
-          <button disabled={!points.length} onClick={() => setPoints([])}>
-            Clear
-          </button>
-          <button
-            className="primary"
-            disabled={
-              busy ||
-              (mode === "block" ? blockDrafts.length < 2 : draft.length < 3)
-            }
-            onClick={save}
-          >
-            <Save />
-            {mode === "block"
-              ? `Save ${blockDrafts.length || Number(blockCount) || 0} plots together`
-              : "Save clickable plot"}
-          </button>
-        </div>
-        <small className="mapper-help">
-          {mode === "block"
-            ? "Block Auto: numbering जिस दिशा में चाहिए, उस block के start-left → end-left → end-right → start-right corners tap करें।"
-            : "Rectangle mode में 2 opposite corners tap करें। Irregular plot के लिए Polygon mode चुनें।"}
-        </small>
-      </div>
-      <div className="mapper-work">
-        <div
-          ref={canvasRef}
-          className={`mapper-canvas card ${navigate ? "pan-mode" : ""}`}
-        >
-          <div className="mapper-zoombar">
-            <select
-              value={mode}
-              onChange={(event) => {
-                setMode(event.target.value as typeof mode);
-                setPoints([]);
-              }}
-              aria-label="Mapping mode"
-            >
-              <option value="block">Block Auto</option>
-              <option value="rectangle">Rectangle</option>
-              <option value="polygon">Polygon</option>
-            </select>
-            <button
-              className={!navigate ? "active" : ""}
-              onClick={() => setNavigate(false)}
-            >
-              <MousePointer2 />
-              Map points
-            </button>
-            <button
-              className={navigate ? "active" : ""}
-              onClick={() => setNavigate(true)}
-            >
-              <Hand />
-              Move image
-            </button>
-            <span>{Math.round(zoom * 100)}%</span>
-            <input
-              className="mapper-zoom-range"
-              type="range"
-              min="1"
-              max="6"
-              step="0.1"
-              value={zoom}
-              onChange={(event) => setZoom(Number(event.target.value))}
-              aria-label="Zoom level"
-            />
-            <button
-              aria-label="Zoom out"
-              disabled={zoom <= 1}
-              onClick={() => setZoom((value) => Math.max(1, value - 0.5))}
-            >
-              <ZoomOut />
-            </button>
-            <button
-              aria-label="Zoom in"
-              disabled={zoom >= 6}
-              onClick={() => setZoom((value) => Math.min(6, value + 0.5))}
-            >
-              <ZoomIn />
-            </button>
-            <button aria-label="Reset zoom" onClick={() => setZoom(1)}>
-              <RotateCcw />
-            </button>
-            <button
-              aria-label="Full screen"
-              onClick={() => canvasRef.current?.requestFullscreen?.()}
-            >
-              <Maximize2 />
-            </button>
-          </div>
-          {!imageReady && (
-            <div className="mapper-loading">
-              Masterplan upload करें या image load होने दें…
+
+        <div className="mapper-upload-grid">
+          <label className={`mapper-upload-card ${hasMasterplan ? "ready" : ""}`}>
+            <span><ImagePlus /></span>
+            <div>
+              <b>{completedProject ? "Tiyansh masterplan locked" : hasMasterplan ? "Masterplan image ready" : "Upload masterplan image"}</b>
+              <small>{completedProject ? "Completed project सुरक्षित है" : settings.masterplanName || "JPG / PNG / WebP · auto normalized for 2D + 3D"}</small>
             </div>
-          )}
-          <div
-            className="mapper-image-wrap"
-            style={{ width: `${zoom * 100}%`, maxWidth: "none" }}
-          >
-            <img
-              ref={imageRef}
-              src={imageUrl}
-              alt="Project masterplan"
-              onLoad={() => setImageReady(true)}
-              onError={() => setImageReady(false)}
-              style={{ width: "100%", maxHeight: "none" }}
-            />
+            {!completedProject && <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "masterplan")} />}
+            {hasMasterplan && <CheckCircle2 className="mapper-ready-icon" />}
+          </label>
+
+          <label className={`mapper-upload-card ${hasPdf ? "ready" : ""}`}>
+            <span><FileText /></span>
+            <div>
+              <b>{hasPdf ? "Technical PDF saved" : "Upload technical PDF"}</b>
+              <small>{settings.sourcePdfName || "Optional reference · up to 25 MB"}</small>
+            </div>
+            <input type="file" accept="application/pdf" disabled={busy} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "sourcePdf")} />
+            {hasPdf && <CheckCircle2 className="mapper-ready-icon" />}
+          </label>
+        </div>
+
+        {hasPdf && (
+          <a className="mapper-pdf-link" href={assetUrl("sourcePdf")} target="_blank" rel="noreferrer">
+            <FileText /> Open technical PDF reference
+          </a>
+        )}
+
+        {!completedProject && hasMasterplan && (
+          <div className="guided-current-card">
+            <div className="guided-current-head">
+              <div>
+                <small>{editingId ? "EDITING PLOT" : `PLOT ${plots.length + 1}`}</small>
+                <h3>{plotId || "New plot"}</h3>
+              </div>
+              <em className={phase}>{phase === "select" ? "Boundary select करें" : "Details भरें और Confirm करें"}</em>
+            </div>
+
+            {phase === "select" ? (
+              <>
+                <div className="mapper-mode">
+                  <button className={shape === "rectangle" ? "active" : ""} onClick={() => { setShape("rectangle"); setPoints([]); }}>
+                    Rectangle · 2 taps
+                  </button>
+                  <button className={shape === "polygon" ? "active" : ""} onClick={() => { setShape("polygon"); setPoints([]); }}>
+                    Irregular · corner taps
+                  </button>
+                </div>
+                <div className="mapper-actions compact">
+                  <button disabled={!points.length} onClick={() => setPoints((current) => current.slice(0, -1))}><Undo2 />Undo</button>
+                  <button disabled={!points.length} onClick={() => setPoints([])}>Clear</button>
+                  {shape === "polygon" && <button className="primary" disabled={points.length < 3} onClick={() => setPhase("details")}><CheckCircle2 />Boundary complete</button>}
+                </div>
+                <small className="mapper-help">
+                  {shape === "rectangle" ? "Plot के 2 opposite corners tap करें। दूसरा tap होते ही details step खुल जाएगा।" : "Plot के हर corner पर क्रम से tap करें, फिर Boundary complete दबाएँ।"}
+                </small>
+              </>
+            ) : (
+              <>
+                <div className="mapper-fields guided-fields">
+                  <label><span>Plot number</span><input value={plotId} onChange={(event) => setPlotId(event.target.value)} placeholder="A-01" /></label>
+                  <label><span>Dimensions</span><input value={dimensions} onChange={(event) => setDimensions(event.target.value)} placeholder="40' × 85'" /></label>
+                  <label><span>Area (sq.ft)</span><input type="number" min="0" value={sqft} onChange={(event) => setSqft(event.target.value)} placeholder="3400" /></label>
+                  <label><span>Road access</span><input value={road} onChange={(event) => setRoad(event.target.value)} placeholder="40' wide road" /></label>
+                </div>
+                <div className="mapper-actions">
+                  <button onClick={() => setPhase("select")}><Pencil />Boundary बदलें</button>
+                  <button className="primary mapper-confirm" disabled={busy || !boundaryReady} onClick={confirmPlot}><Save />{busy ? "Saving…" : editingId ? `Update ${plotId || "plot"}` : `Confirm ${plotId || "plot"} & start next`}</button>
+                </div>
+                <small className="mapper-help">Confirm होते ही यह plot database में save होकर customer site के 2D map और 3D view दोनों में clickable हो जाएगा।</small>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mapper-work">
+        <div ref={canvasRef} className={`mapper-canvas card ${navigate ? "pan-mode" : ""}`}>
+          <div className="mapper-zoombar">
+            <button className={!navigate ? "active" : ""} onClick={() => setNavigate(false)}><MousePointer2 />Select</button>
+            <button className={navigate ? "active" : ""} onClick={() => setNavigate(true)}><Hand />Move image</button>
+            <span>{Math.round(zoom * 100)}%</span>
+            <input className="mapper-zoom-range" type="range" min="1" max="6" step="0.1" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} aria-label="Zoom level" />
+            <button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom((value) => Math.max(1, value - 0.5))}><ZoomOut /></button>
+            <button aria-label="Zoom in" disabled={zoom >= 6} onClick={() => setZoom((value) => Math.min(6, value + 0.5))}><ZoomIn /></button>
+            <button aria-label="Reset zoom" onClick={() => setZoom(1)}><RotateCcw /></button>
+            <button aria-label="Full screen" onClick={() => canvasRef.current?.requestFullscreen?.()}><Maximize2 /></button>
+          </div>
+
+          {!imageReady && <div className="mapper-loading">{hasMasterplan ? "Masterplan load हो रहा है…" : "पहले masterplan image upload करें"}</div>}
+          <div className="mapper-image-wrap" style={{ width: `${zoom * 100}%`, maxWidth: "none" }}>
+            <img src={imageUrl} alt="Project masterplan" onLoad={() => setImageReady(true)} onError={() => setImageReady(false)} style={{ width: "100%", maxHeight: "none" }} />
             {imageReady && (
-              <svg
-                viewBox="0 0 1000 1000"
-                preserveAspectRatio="none"
-                onPointerDown={navigate ? undefined : point}
-              >
+              <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={navigate ? undefined : mapPoint}>
                 {plots.map((plot) => {
-                  const p = JSON.parse(plot.polygon || "[]") as Point[];
-                  return (
-                    <polygon
-                      key={plot.id}
-                      points={p
-                        .map(([x, y]) => `${x * 1000},${y * 1000}`)
-                        .join(" ")}
-                    >
-                      <title>{plot.id}</title>
-                    </polygon>
-                  );
+                  let polygon: Point[] = [];
+                  try { polygon = JSON.parse(plot.polygon || "[]") as Point[]; } catch { return null; }
+                  if (polygon.length < 3) return null;
+                  const center = polygonCenter(polygon);
+                  return <g key={plot.id} className={editingId === plot.id ? "mapped-plot editing" : "mapped-plot"}>
+                    <polygon points={polygon.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" ")} />
+                    <text x={center[0] * 1000} y={center[1] * 1000}>{plot.id}</text>
+                  </g>;
                 })}
-                {blockDrafts.map((shape, index) => (
-                  <polygon
-                    key={`block-${index}`}
-                    className="draft block-draft"
-                    points={shape
-                      .map(([x, y]) => `${x * 1000},${y * 1000}`)
-                      .join(" ")}
-                  >
-                    <title>{numberedId(plotId, index * numberStep)}</title>
-                  </polygon>
-                ))}
-                {mode !== "block" && draft.length > 0 && (
-                  <polygon
-                    className="draft"
-                    points={draft
-                      .map(([x, y]) => `${x * 1000},${y * 1000}`)
-                      .join(" ")}
-                  />
-                )}
+                {draft.length > 0 && <polygon className="draft" points={draft.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" ")} />}
               </svg>
             )}
-            {imageReady &&
-              points.map(([x, y], index) => (
-                <span
-                  className="mapper-point-handle"
-                  key={index}
-                  style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
-                >
-                  {index + 1}
-                </span>
-              ))}
+            {imageReady && points.map(([x, y], index) => <span className="mapper-point-handle" key={`${x}-${y}-${index}`} style={{ left: `${x * 100}%`, top: `${y * 100}%` }}>{index + 1}</span>)}
           </div>
         </div>
+
         <aside className="card mapper-list">
-          <h3>
-            Mapped plots <b>{plots.length}</b>
-          </h3>
-          {plots.length ? (
-            plots
-              .sort((a, b) =>
-                a.id.localeCompare(b.id, undefined, { numeric: true }),
-              )
-              .map((plot) => (
-                <article key={plot.id}>
-                  <span>
-                    <b>{plot.id}</b>
-                    <small>{plot.dimensions || `${plot.sqft} sq.ft`}</small>
-                  </span>
-                  <button
-                    onClick={() => remove(plot)}
-                    aria-label={`Remove ${plot.id}`}
-                  >
-                    <Trash2 />
-                  </button>
-                </article>
-              ))
-          ) : (
-            <p>अभी कोई clickable plot नहीं है।</p>
-          )}
+          <h3>Confirmed plots <b>{plots.length}</b></h3>
+          {plots.length ? [...plots].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true })).map((plot) => (
+            <article key={plot.id}>
+              <span><b>{plot.id}</b><small>{plot.dimensions || `${plot.sqft} sq.ft`}</small></span>
+              {!completedProject && <div className="mapper-list-actions">
+                <button className="edit" onClick={() => editPlot(plot)} aria-label={`Edit ${plot.id}`}><Pencil /></button>
+                <button onClick={() => remove(plot)} aria-label={`Remove ${plot.id}`}><Trash2 /></button>
+              </div>}
+            </article>
+          )) : <p>अभी कोई plot confirm नहीं हुआ।</p>}
         </aside>
       </div>
     </section>
