@@ -683,13 +683,6 @@ export default function PlotMapper({
     }
   }
 
-  function displayPoint(point: MapperPoint): MapperPoint {
-    const [x, y] = point;
-    if (rotation === 1) return [1 - y, x];
-    if (rotation === 2) return [1 - x, 1 - y];
-    if (rotation === 3) return [y, 1 - x];
-    return [x, y];
-  }
 
   function sourcePointFromDisplay(point: MapperPoint): MapperPoint {
     const [x, y] = point;
@@ -743,7 +736,11 @@ export default function PlotMapper({
     const wrap = imageWrapRef.current;
     if (!wrap) return raw;
     const box = wrap.getBoundingClientRect();
-    return snapPoint(raw, mappedPolygons, box.width, box.height, 18).point;
+    // Snap math runs in canonical SOURCE coordinates. At 90°/270° the source X
+    // axis is rendered along the visible height and source Y along visible width.
+    const sourceRenderedWidth = rotation === 1 || rotation === 3 ? box.height : box.width;
+    const sourceRenderedHeight = rotation === 1 || rotation === 3 ? box.width : box.height;
+    return snapPoint(raw, mappedPolygons, sourceRenderedWidth, sourceRenderedHeight, 18).point;
   }
 
   function imageTap(point: MapperPoint) {
@@ -1036,11 +1033,20 @@ export default function PlotMapper({
   const mapperAspectRatio = rotationSwapsAxes
     ? `${mapHeight} / ${mapWidth}`
     : `${mapWidth} / ${mapHeight}`;
-  // Before a 90° CSS rotation, the source image must use the future visual height
-  // as its width. This fills the swapped portrait/landscape wrapper without crop.
-  const rotatedSourceWidth = rotationSwapsAxes
+
+  // At zoom=100%, the WHOLE rotated image must fit inside the mapper canvas.
+  // mapper-canvas itself is capped near 75vh, so reserve room for current-plot,
+  // toolbar and help rows. Zoom >100% intentionally grows from this contain-fit base.
+  const visualAspect = rotationSwapsAxes ? mapHeight / mapWidth : mapWidth / mapHeight;
+  const mapperViewportWidth =
+    `min(${zoom * 100}%, ${(zoom * 58 * visualAspect).toFixed(4)}vh)`;
+
+  // One canonical source scene contains image + every overlay + handles.
+  // For a quarter turn, pre-rotation scene width equals the future visible height.
+  const sourceSceneWidth = rotationSwapsAxes
     ? `${(mapWidth / mapHeight) * 100}%`
     : "100%";
+  const sourceSceneAspectRatio = `${mapWidth} / ${mapHeight}`;
 
   return (
     <section className="mapper-shell auto-cad-mapper" onContextMenu={(event) => event.preventDefault()}>
@@ -1215,93 +1221,93 @@ export default function PlotMapper({
             ref={imageWrapRef}
             className="mapper-image-wrap mapper-image-v2"
             style={{
-              width: `${zoom * 100}%`,
+              width: mapperViewportWidth,
               maxWidth: "none",
               aspectRatio: mapperAspectRatio,
               overflow: "hidden",
+              marginInline: "auto",
+              flex: "0 0 auto",
             }}
             onContextMenu={(event) => event.preventDefault()}
             onDragStart={(event) => event.preventDefault()}
           >
-            <img
-              src={imageUrl}
-              alt="Project masterplan"
-              onLoad={() => setImageReady(true)}
-              onError={() => setImageReady(false)}
-              draggable={false}
+            <div
+              className="mapper-rotated-scene"
+              data-rotation={rotationDegrees}
               style={{
                 position: "absolute",
                 left: "50%",
                 top: "50%",
-                width: rotatedSourceWidth,
-                height: "auto",
-                maxWidth: "none",
-                maxHeight: "none",
+                width: sourceSceneWidth,
+                aspectRatio: sourceSceneAspectRatio,
                 transform: `translate(-50%, -50%) rotate(${rotationDegrees}deg)`,
                 transformOrigin: "center center",
               }}
-            />
-            {imageReady && (
-              <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={handleImagePointerDown} onPointerUp={handleImagePointerUp}>
-                {mappedPlots.map((plot) => {
-                  const polygon = parsePolygon(plot);
-                  if (polygon.length < 3) return null;
-                  const center = polygonCenter(polygon);
-                  return <g key={plot.id} className={editingId === plot.id ? "mapped-plot editing" : "mapped-plot"}>
-                    <polygon points={polygon.map((point) => {
-                      const [x, y] = displayPoint(point);
-                      return `${x * 1000},${y * 1000}`;
-                    }).join(" ")} />
-                    {(() => {
-                      const [x, y] = displayPoint(center);
-                      return <text x={x * 1000} y={y * 1000}>{plot.id}</text>;
-                    })()}
-                  </g>;
-                })}
-                {showCadOverlay && liveMatrix && cadTransformed.map(({ candidate, points: polygon }) => (
-                  <polygon key={`cad-${candidate.key}`} className="cad-transformed" points={polygon.map((point) => {
-                    const [x, y] = displayPoint(point);
-                    return `${x * 1000},${y * 1000}`;
-                  }).join(" ")} />
-                ))}
-                {acceptedAutoMatches.map((match) => !match.plot.polygon && (
-                  <polygon key={`match-${match.plot.id}`} className="auto-match" points={match.points.map((point) => {
-                    const [x, y] = displayPoint(point);
-                    return `${x * 1000},${y * 1000}`;
-                  }).join(" ")} />
-                ))}
-                {[...areaReviewMatches, ...excludedAutoMatches].map((match) => !match.plot.polygon && (
-                  <polygon key={`review-${match.plot.id}`} className="cad-review" points={match.points.map((point) => {
-                    const [x, y] = displayPoint(point);
-                    return `${x * 1000},${y * 1000}`;
-                  }).join(" ")} />
-                ))}
-                {points.length >= 2 && <polygon className="draft" points={points.map((point) => {
-                  const [x, y] = displayPoint(point);
-                  return `${x * 1000},${y * 1000}`;
-                }).join(" ")} />}
-                {calibrationPairs.map((pair, index) => {
-                  const [x, y] = displayPoint(pair.target);
-                  return <g key={`img-pair-${index}`} className="image-calibration-point"><circle cx={x * 1000} cy={y * 1000} r="12"/><text x={x * 1000} y={y * 1000}>{index + 1}</text></g>;
-                })}
-              </svg>
-            )}
-            {!calibrationMode && imageReady && points.map((point, index) => {
-              const [x, y] = displayPoint(point);
-              return (
+            >
+              <img
+                src={imageUrl}
+                alt="Project masterplan"
+                onLoad={() => setImageReady(true)}
+                onError={() => setImageReady(false)}
+                draggable={false}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  maxWidth: "none",
+                  maxHeight: "none",
+                  objectFit: "fill",
+                  transform: "none",
+                }}
+              />
+              {imageReady && (
+                <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={handleImagePointerDown} onPointerUp={handleImagePointerUp}>
+                  {mappedPlots.map((plot) => {
+                    const polygon = parsePolygon(plot);
+                    if (polygon.length < 3) return null;
+                    const center = polygonCenter(polygon);
+                    return <g key={plot.id} className={editingId === plot.id ? "mapped-plot editing" : "mapped-plot"}>
+                      <polygon points={polygon.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" ")} />
+                      <text x={center[0] * 1000} y={center[1] * 1000}>{plot.id}</text>
+                    </g>;
+                  })}
+                  {showCadOverlay && liveMatrix && cadTransformed.map(({ candidate, points: polygon }) => (
+                    <polygon key={`cad-${candidate.key}`} className="cad-transformed" points={polygon.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" ")} />
+                  ))}
+                  {acceptedAutoMatches.map((match) => !match.plot.polygon && (
+                    <polygon key={`match-${match.plot.id}`} className="auto-match" points={match.points.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" ")} />
+                  ))}
+                  {[...areaReviewMatches, ...excludedAutoMatches].map((match) => !match.plot.polygon && (
+                    <polygon key={`review-${match.plot.id}`} className="cad-review" points={match.points.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" ")} />
+                  ))}
+                  {points.length >= 2 && <polygon className="draft" points={points.map(([x, y]) => `${x * 1000},${y * 1000}`).join(" ")} />}
+                  {calibrationPairs.map((pair, index) => (
+                    <g key={`img-pair-${index}`} className="image-calibration-point">
+                      <circle cx={pair.target[0] * 1000} cy={pair.target[1] * 1000} r="12"/>
+                      <text x={pair.target[0] * 1000} y={pair.target[1] * 1000}>{index + 1}</text>
+                    </g>
+                  ))}
+                </svg>
+              )}
+              {!calibrationMode && imageReady && points.map(([x, y], index) => (
                 <button
                   type="button"
                   className="mapper-point-handle draggable"
                   key={`handle-${index}`}
-                  style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
+                  style={{
+                    left: `${x * 100}%`,
+                    top: `${y * 100}%`,
+                    transform: `translate(-50%, -50%) rotate(${-rotationDegrees}deg)`,
+                  }}
                   onPointerDown={(event) => dragHandle(event, index)}
                   onPointerMove={(event) => moveHandle(event, index)}
                   onPointerUp={endHandle}
                   onPointerCancel={endHandle}
                   aria-label={`Drag corner ${index + 1}`}
                 >{index + 1}</button>
-              );
-            })}
+              ))}
+            </div>
             {loupePoint && <div className="mapper-loupe" style={{
               backgroundImage: `url(${imageUrl})`,
               backgroundSize: `${zoom * 400}% auto`,

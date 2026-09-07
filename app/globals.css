@@ -2406,3 +2406,22 @@ body {
   .rekixo-domain-rows>div{flex-wrap:wrap}.rekixo-domain-rows>div>span{flex-basis:100%}
   .rekixo-publish-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+/* Rekixo Mapper V5.2 — one transformed source scene prevents image/SVG drift */
+.mapper-image-wrap.mapper-image-v2 {
+  contain: layout paint;
+}
+.mapper-rotated-scene {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.mapper-rotated-scene > img {
+  pointer-events: none;
+}
+.mapper-rotated-scene > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
