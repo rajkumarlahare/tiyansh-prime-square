@@ -2425,3 +2425,9 @@ body {
   width: 100%;
   height: 100%;
 }
+
+/* Rekixo Mapper V5.3B — never distort the masterplan image */
+.mapper-rotated-scene > img {
+  object-fit: contain !important;
+  object-position: center center !important;
+}

@@ -257,6 +257,9 @@ export default function PlotMapper({
   const [cadGeometry, setCadGeometry] = useState<CadGeometry | null>(null);
   const [imageUrl, setImageUrl] = useState(() => assetUrl("masterplan"));
   const [imageReady, setImageReady] = useState(false);
+  // Actual decoded image dimensions are the final display truth. This prevents
+  // metadata/CSS mismatch from ever stretching the masterplan.
+  const [naturalImageSize, setNaturalImageSize] = useState<{ width: number; height: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [lastVerifiedId, setLastVerifiedId] = useState("");
   const [zoom, setZoom] = useState(1);
@@ -300,6 +303,7 @@ export default function PlotMapper({
     setCadGeometry((data.cadGeometry || null) as CadGeometry | null);
     setImageUrl(assetUrl("masterplan"));
     setImageReady(false);
+    setNaturalImageSize(null);
     const firstUnmapped = [...nextPlots].sort(plotSort).find((plot) => !plot.polygon);
     if (firstUnmapped) loadPlotDetails(firstUnmapped, false);
     else if (nextPlots.length) setPlotId(nextPlotId([...nextPlots].sort(plotSort).at(-1)?.id || "1"));
@@ -1030,23 +1034,33 @@ export default function PlotMapper({
   const shapeReady = points.length >= 3 && (shape === "polygon" || points.length === 4) && !shapeInvalid;
   const rotationDegrees = rotation * 90;
   const rotationSwapsAxes = rotation === 1 || rotation === 3;
-  const mapperAspectRatio = rotationSwapsAxes
-    ? `${mapHeight} / ${mapWidth}`
-    : `${mapWidth} / ${mapHeight}`;
 
-  // At zoom=100%, the WHOLE rotated image must fit inside the mapper canvas.
-  // mapper-canvas itself is capped near 75vh, so reserve room for current-plot,
-  // toolbar and help rows. Zoom >100% intentionally grows from this contain-fit base.
-  const visualAspect = rotationSwapsAxes ? mapHeight / mapWidth : mapWidth / mapHeight;
+  // Prefer dimensions decoded from the ACTUAL displayed mapping image. Stored
+  // original dimensions are fallback only; mapping dimensions are final fallback.
+  const sourceWidth =
+    naturalImageSize?.width ||
+    settingsNumber(settings.masterplanOriginalWidth, mapWidth);
+  const sourceHeight =
+    naturalImageSize?.height ||
+    settingsNumber(settings.masterplanOriginalHeight, mapHeight);
+  const sourceAspect = sourceWidth / sourceHeight;
+
+  const mapperAspectRatio = rotationSwapsAxes
+    ? `${sourceHeight} / ${sourceWidth}`
+    : `${sourceWidth} / ${sourceHeight}`;
+
+  // 100% = complete undistorted image fit. Zoom only scales this base; it never
+  // changes proportions. For 90/270 the OUTER viewport swaps axes.
+  const visualAspect = rotationSwapsAxes ? 1 / sourceAspect : sourceAspect;
   const mapperViewportWidth =
     `min(${zoom * 100}%, ${(zoom * 58 * visualAspect).toFixed(4)}vh)`;
 
-  // One canonical source scene contains image + every overlay + handles.
-  // For a quarter turn, pre-rotation scene width equals the future visible height.
+  // Image, SVG, saved polygons and handles all live on the exact same natural-ratio
+  // source plane. Quarter-turn rotation changes orientation, never geometry ratio.
   const sourceSceneWidth = rotationSwapsAxes
-    ? `${(mapWidth / mapHeight) * 100}%`
+    ? `${sourceAspect * 100}%`
     : "100%";
-  const sourceSceneAspectRatio = `${mapWidth} / ${mapHeight}`;
+  const sourceSceneAspectRatio = `${sourceWidth} / ${sourceHeight}`;
 
   return (
     <section className="mapper-shell auto-cad-mapper" onContextMenu={(event) => event.preventDefault()}>
@@ -1247,8 +1261,20 @@ export default function PlotMapper({
               <img
                 src={imageUrl}
                 alt="Project masterplan"
-                onLoad={() => setImageReady(true)}
-                onError={() => setImageReady(false)}
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+                    setNaturalImageSize({
+                      width: image.naturalWidth,
+                      height: image.naturalHeight,
+                    });
+                  }
+                  setImageReady(true);
+                }}
+                onError={() => {
+                  setNaturalImageSize(null);
+                  setImageReady(false);
+                }}
                 draggable={false}
                 style={{
                   position: "absolute",
@@ -1257,7 +1283,8 @@ export default function PlotMapper({
                   height: "100%",
                   maxWidth: "none",
                   maxHeight: "none",
-                  objectFit: "fill",
+                  objectFit: "contain",
+                  objectPosition: "center",
                   transform: "none",
                 }}
               />

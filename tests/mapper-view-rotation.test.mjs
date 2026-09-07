@@ -11,12 +11,16 @@ const css = await readFile(
   "utf8",
 );
 
-test("90 degree mapper uses a full-image contain-fit base inside capped canvas", () => {
-  assert.match(source, /const visualAspect = rotationSwapsAxes \? mapHeight \/ mapWidth : mapWidth \/ mapHeight/);
+test("90 degree mapper uses actual image aspect for full contain-fit inside capped canvas", () => {
+  assert.match(source, /const sourceAspect = sourceWidth \/ sourceHeight/);
+  assert.match(source, /const visualAspect = rotationSwapsAxes \? 1 \/ sourceAspect : sourceAspect/);
   assert.match(source, /zoom \* 58 \* visualAspect/);
   assert.match(source, /width: mapperViewportWidth/);
   assert.match(source, /aspectRatio: mapperAspectRatio/);
   assert.match(source, /marginInline: "auto"/);
+  assert.match(source, /sourceSceneAspectRatio = `\$\{sourceWidth\} \/ \$\{sourceHeight\}`/);
+  assert.doesNotMatch(source, /objectFit: "fill"/);
+  assert.match(source, /objectFit: "contain"/);
 });
 
 test("image, saved SVG, draft, CAD and handles live in ONE rotated source scene", () => {
