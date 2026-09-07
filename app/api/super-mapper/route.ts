@@ -284,7 +284,7 @@ export async function POST(request: Request) {
       const imageTypes = ["image/jpeg", "image/png", "image/webp"];
       if (
         originalFile instanceof File &&
-        (!imageTypes.includes(originalFile.type) || originalFile.size > 20 * 1024 * 1024)
+        (!imageTypes.includes(originalFile.type) || originalFile.size > 40 * 1024 * 1024)
       )
         return Response.json({ error: "Original masterplan invalid hai" }, { status: 400 });
       if (

@@ -2324,3 +2324,59 @@ body {
   .mapper-v4-canvas:fullscreen .mapper-v4-toolbar{top:61px!important}
   .cad-assistant-card>summary{padding:13px}
 }
+
+
+/* Rekixo Plot Mapper V4.1 — touch-safe focus + coarse-pointer layout */
+.mapper-v4-canvas,
+.mapper-v4-canvas *:not(input):not(textarea) {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+.mapper-v4-canvas img {
+  -webkit-user-drag: none !important;
+  user-select: none !important;
+  pointer-events: none;
+}
+.mapper-v4-canvas button,
+.mapper-v4-canvas select {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  touch-action: manipulation;
+}
+.mapper-v4-canvas .mapper-point-handle.draggable {
+  touch-action: none !important;
+}
+.mapper-v4-canvas.select-mode .mapper-image-v2,
+.mapper-v4-canvas.select-mode .mapper-image-v2 svg {
+  touch-action: none !important;
+}
+.mapper-v4-canvas:fullscreen {
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  background: #050b15;
+}
+@media (any-pointer: coarse), (hover: none) {
+  .mapper-v4-work {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .mapper-v4-work > .mapper-review-list {
+    display: none !important;
+  }
+  .mapper-v4-canvas {
+    width: 100% !important;
+    max-width: none !important;
+  }
+  .mapper-v4-current,
+  .mapper-v4-toolbar,
+  .mapper-v4-bottom-bar {
+    -webkit-touch-callout: none !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
+  }
+}

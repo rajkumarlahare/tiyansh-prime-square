@@ -258,6 +258,7 @@ export default function PlotMapper({
   const [imageUrl, setImageUrl] = useState(() => assetUrl("masterplan"));
   const [imageReady, setImageReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [lastVerifiedId, setLastVerifiedId] = useState("");
   const [zoom, setZoom] = useState(1);
   const [toolMode, setToolMode] = useState<"pan" | "select">("pan");
 
@@ -556,6 +557,33 @@ export default function PlotMapper({
     if (target) loadPlotDetails(target, Boolean(target.polygon));
   }
 
+  function toggleMapperFullscreen() {
+    if (typeof document === "undefined") return;
+    if (document.fullscreenElement) {
+      const exit = document.exitFullscreen?.();
+      if (exit) exit.catch(() => {});
+      return;
+    }
+    const request = canvasRef.current?.requestFullscreen?.();
+    if (request) request.catch(() => {});
+  }
+
+  function enableSelectMode() {
+    setToolMode("select");
+    setCalibrationMode(false);
+    // On a real touch device, SELECT is also the mapping focus action.
+    // Fullscreen removes Chrome browser chrome/menus from the tapping area.
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(any-pointer: coarse)").matches &&
+      typeof document !== "undefined" &&
+      !document.fullscreenElement
+    ) {
+      const request = canvasRef.current?.requestFullscreen?.();
+      if (request) request.catch(() => {});
+    }
+  }
+
   function clearCurrentPoints() {
     setPoints([]);
     setManualPhase("select");
@@ -696,11 +724,15 @@ export default function PlotMapper({
 
   function handleImagePointerDown(event: React.PointerEvent<SVGSVGElement>) {
     if (!calibrationMode && toolMode !== "select") return;
+    event.preventDefault();
+    event.stopPropagation();
     tapStartRef.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
   }
 
   function handleImagePointerUp(event: React.PointerEvent<SVGSVGElement>) {
     if (!calibrationMode && toolMode !== "select") return;
+    event.preventDefault();
+    event.stopPropagation();
     const start = tapStartRef.current;
     tapStartRef.current = null;
     if (!start || start.id !== event.pointerId) return;
@@ -735,6 +767,36 @@ export default function PlotMapper({
   function endHandle() {
     setDraggingPoint(null);
     setLoupePoint(null);
+  }
+
+  async function verifyPlotPersistence(saved: Plot) {
+    const expected = parsePolygon(saved);
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const verifyResponse = await fetch(
+        `/api/super-mapper?projectId=${encodeURIComponent(projectId)}&verify=${Date.now()}`,
+        { cache: "no-store" },
+      );
+      const verifyData = await apiResult(verifyResponse);
+      const verifiedPlots = (verifyData.plots || []) as Plot[];
+      const persisted = verifiedPlots.find((item) => item.id === saved.id);
+      if (persisted) {
+        const actual = parsePolygon(persisted);
+        const sameGeometry =
+          expected.length === actual.length &&
+          expected.every(
+            (point, index) =>
+              Math.abs(point[0] - actual[index][0]) <= 1e-9 &&
+              Math.abs(point[1] - actual[index][1]) <= 1e-9,
+          );
+        if (sameGeometry) return { plot: persisted, plots: verifiedPlots };
+      }
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 180 * (attempt + 1)));
+      }
+    }
+    throw new Error(
+      `Plot ${saved.id} server read-back verify नहीं हुआ. Current shape screen/draft में सुरक्षित है; आगे नहीं बढ़ाया गया.`,
+    );
   }
 
   async function confirmPlot() {
@@ -783,18 +845,22 @@ export default function PlotMapper({
       });
       const result = await apiResult(response);
       const saved = result.plot as Plot;
-      setPlots((current) => [
-        ...current.filter((item) => item.id !== editingId && item.id !== saved.id),
-        saved,
-      ]);
+
+      // Never clear the draft or advance to the next plot until a second,
+      // no-cache server read confirms the exact polygon that was just written.
+      const verified = await verifyPlotPersistence(saved);
+      setPlots(verified.plots);
+      setLastVerifiedId(verified.plot.id);
       try {
-        window.localStorage.removeItem(mappingDraftKey(projectId, saved.id));
+        window.localStorage.removeItem(mappingDraftKey(projectId, verified.plot.id));
       } catch {
         // Ignore local draft cleanup failures.
       }
       setToolMode("pan");
-      selectNextPlot(saved.id);
-      notify(`Plot ${saved.id} exact SVG hotspot + 2D/3D ready — next plot open`);
+      selectNextPlot(verified.plot.id);
+      notify(
+        `Plot ${verified.plot.id} SERVER VERIFIED ✓ — live project data ready; next plot open`,
+      );
     } catch (error) {
       notify(error instanceof Error ? error.message : "Plot save नहीं हुआ");
     } finally {
@@ -910,7 +976,7 @@ export default function PlotMapper({
   const shapeReady = points.length >= 3 && (shape === "polygon" || points.length === 4) && !shapeInvalid;
 
   return (
-    <section className="mapper-shell auto-cad-mapper">
+    <section className="mapper-shell auto-cad-mapper" onContextMenu={(event) => event.preventDefault()}>
       <div className="card mapper-tools mapper-v2-head">
         <div className="section-title">
           <MousePointer2 />
@@ -969,6 +1035,7 @@ export default function PlotMapper({
           <span>Inventory: <b>{plots.length}</b></span>
           <span>Mapped: <b>{mappedPlots.length}</b></span>
           <span>Review: <b>{unmappedPlots.length}</b></span>
+          <span>Last server verify: <b>{lastVerifiedId ? `Plot ${lastVerifiedId} ✓` : "—"}</b></span>
         </div>
         {settings.sourcePdfName && <a className="mapper-pdf-link" href={assetUrl("sourcePdf")} target="_blank" rel="noreferrer"><FileText /> Open technical PDF reference</a>}
         {settings.cadParseError && <div className="mapper-warning">CAD source सुरक्षित है, लेकिन automatic geometry parse नहीं हुआ: {settings.cadParseError}. DXF export upload करें या Manual Precise fallback use करें.</div>}
@@ -1028,7 +1095,12 @@ export default function PlotMapper({
       )}
 
       <div className="mapper-work mapper-v4-work">
-        <div ref={canvasRef} className={`mapper-canvas card mapper-precision-canvas mapper-v4-canvas ${toolMode === "pan" ? "pan-mode" : "select-mode"}`}>
+        <div
+          ref={canvasRef}
+          className={`mapper-canvas card mapper-precision-canvas mapper-v4-canvas ${toolMode === "pan" ? "pan-mode" : "select-mode"}`}
+          onContextMenu={(event) => event.preventDefault()}
+          onDragStart={(event) => event.preventDefault()}
+        >
           <div className="mapper-v4-current">
             <button type="button" onClick={() => selectSiblingPlot(-1)} disabled={!inventoryPlots.length} aria-label="Previous plot"><ChevronLeft /></button>
             <label>
@@ -1048,19 +1120,25 @@ export default function PlotMapper({
           </div>
           <div className="mapper-zoombar mapper-v4-toolbar">
             <button className={toolMode === "pan" ? "active" : ""} type="button" onClick={() => { setToolMode("pan"); setCalibrationMode(false); }}><Hand />Pan</button>
-            <button className={toolMode === "select" ? "active" : ""} type="button" onClick={() => { setToolMode("select"); setCalibrationMode(false); }}><Target />Select</button>
+            <button className={toolMode === "select" ? "active" : ""} type="button" onClick={enableSelectMode}><Target />Select</button>
             <strong>{shape === "quad" ? `Plot ${plotId} · ${points.length}/4 corners` : `Plot ${plotId} · ${points.length} corners`}</strong>
             <span>{Math.round(zoom * 100)}%</span>
             <input className="mapper-zoom-range" type="range" min="1" max="16" step="0.1" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} aria-label="Zoom level" />
             <button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom((value) => Math.max(1, value - 0.5))}><ZoomOut /></button>
             <button aria-label="Zoom in" disabled={zoom >= 16} onClick={() => setZoom((value) => Math.min(16, value + 0.5))}><ZoomIn /></button>
             <button aria-label="Fit full image" onClick={() => setZoom(1)}><RotateCcw /></button>
-            <button aria-label="Open mapping fullscreen" onClick={() => canvasRef.current?.requestFullscreen?.()}><Maximize2 />Fullscreen</button>
+            <button aria-label="Toggle mapping focus/fullscreen" onClick={toggleMapperFullscreen}><Maximize2 />Focus</button>
           </div>
 
           {!imageReady && <div className="mapper-loading">{hasMasterplan ? "High-resolution masterplan load हो रहा है…" : "पहले masterplan image upload करें"}</div>}
           <div className="mapper-pan-hint">{toolMode === "pan" ? "PAN mode: pinch/zoom aur image move करें. Plot बड़ा दिखने पर SELECT दबाएँ." : "SELECT mode: corners clockwise tap करें. Yellow numbered handle drag = exact correction; nearby mapped edge/vertex auto-snap."}</div>
-          <div ref={imageWrapRef} className="mapper-image-wrap mapper-image-v2" style={{ width: `${zoom * 100}%`, maxWidth: "none" }}>
+          <div
+            ref={imageWrapRef}
+            className="mapper-image-wrap mapper-image-v2"
+            style={{ width: `${zoom * 100}%`, maxWidth: "none" }}
+            onContextMenu={(event) => event.preventDefault()}
+            onDragStart={(event) => event.preventDefault()}
+          >
             <img
               src={imageUrl}
               alt="Project masterplan"
