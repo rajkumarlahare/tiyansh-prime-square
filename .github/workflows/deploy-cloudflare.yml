@@ -32,6 +32,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Build-dependent tests (including rendered-html) must pass on Linux before
+      # any D1 migration or Worker deployment can start.
+      - name: Run full regression suite
+        run: node --test tests/*.test.mjs
+
       # Additive migrations run before the new V5 Workers. Existing legacy Worker
       # remains compatible while the columns/table are being added.
       - name: Apply D1 migrations

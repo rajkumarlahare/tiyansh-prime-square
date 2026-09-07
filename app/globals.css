@@ -2431,3 +2431,32 @@ body {
   object-fit: contain !important;
   object-position: center center !important;
 }
+
+
+/* Rekixo Mapper V5.4 — custom mobile pan + pinch gestures */
+.mapper-v4-canvas {
+  scroll-behavior: auto !important;
+  overscroll-behavior: none;
+}
+.mapper-v4-canvas .mapper-image-v2,
+.mapper-v4-canvas .mapper-image-v2 svg,
+.mapper-v4-canvas .mapper-rotated-scene {
+  touch-action: none !important;
+}
+.mapper-v4-canvas.pan-mode .mapper-image-v2 {
+  cursor: grab;
+}
+.mapper-v4-canvas.pan-mode .mapper-image-v2:active {
+  cursor: grabbing;
+}
+.mapper-v4-canvas.select-mode .mapper-image-v2 {
+  cursor: crosshair;
+}
+@media (any-pointer: coarse), (hover: none) {
+  .mapper-v4-canvas .mapper-point-handle.draggable {
+    width: 36px;
+    height: 36px;
+    font-size: 11px;
+    box-shadow: 0 3px 14px #000b, 0 0 0 2px #f2b82d55;
+  }
+}

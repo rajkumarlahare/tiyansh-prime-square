@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronLeft,
@@ -76,6 +76,31 @@ type AutoMatch = {
   points: MapperPoint[];
   candidate: CadGeometry["candidates"][number];
   areaErrorRatio: number | null;
+};
+
+type GesturePoint = { x: number; y: number };
+
+type PanGesture = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  lastX: number;
+  lastY: number;
+  moved: boolean;
+};
+
+type PinchGesture = {
+  startDistance: number;
+  startZoom: number;
+  lastCenterX: number;
+  lastCenterY: number;
+};
+
+type ZoomAnchor = {
+  clientX: number;
+  clientY: number;
+  visualX: number;
+  visualY: number;
 };
 
 const COMPLETED_PROJECT_ID = "tiyansh-prime-square";
@@ -290,6 +315,29 @@ export default function PlotMapper({
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const imageWrapRef = useRef<HTMLDivElement | null>(null);
   const tapStartRef = useRef<{ x: number; y: number; id: number } | null>(null);
+  const activeGesturePointersRef = useRef<Map<number, GesturePoint>>(new Map());
+  const panGestureRef = useRef<PanGesture | null>(null);
+  const pinchGestureRef = useRef<PinchGesture | null>(null);
+  const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
+  const suppressTapUntilRef = useRef(0);
+  const zoomRef = useRef(1);
+
+
+  useLayoutEffect(() => {
+    zoomRef.current = zoom;
+    const anchor = zoomAnchorRef.current;
+    if (!anchor) return;
+    zoomAnchorRef.current = null;
+    const canvas = canvasRef.current;
+    const wrap = imageWrapRef.current;
+    if (!canvas || !wrap) return;
+    const box = wrap.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const anchoredClientX = box.left + anchor.visualX * box.width;
+    const anchoredClientY = box.top + anchor.visualY * box.height;
+    canvas.scrollLeft += anchoredClientX - anchor.clientX;
+    canvas.scrollTop += anchoredClientY - anchor.clientY;
+  }, [zoom]);
 
   async function reload() {
     const response = await fetch(`/api/super-mapper?projectId=${encodeURIComponent(projectId)}`, {
@@ -334,6 +382,14 @@ export default function PlotMapper({
   }
 
   useEffect(() => {
+    activeGesturePointersRef.current.clear();
+    panGestureRef.current = null;
+    pinchGestureRef.current = null;
+    zoomAnchorRef.current = null;
+    tapStartRef.current = null;
+    suppressTapUntilRef.current = 0;
+    zoomRef.current = 1;
+    setZoom(1);
     reload().catch(() => notify("Project mapper data load नहीं हुआ"));
     // Restore this device's preferred mapping orientation for the project.
     try {
@@ -688,6 +744,293 @@ export default function PlotMapper({
   }
 
 
+  function clampMapperZoom(value: number) {
+    return Math.max(1, Math.min(16, value));
+  }
+
+  function setMapperZoom(nextValue: number, clientX?: number, clientY?: number) {
+    const next = clampMapperZoom(nextValue);
+    const wrap = imageWrapRef.current;
+    if (
+      wrap &&
+      typeof clientX === "number" &&
+      typeof clientY === "number"
+    ) {
+      const box = wrap.getBoundingClientRect();
+      if (box.width > 0 && box.height > 0) {
+        zoomAnchorRef.current = {
+          clientX,
+          clientY,
+          visualX: Math.max(0, Math.min(1, (clientX - box.left) / box.width)),
+          visualY: Math.max(0, Math.min(1, (clientY - box.top) / box.height)),
+        };
+      }
+    } else {
+      zoomAnchorRef.current = null;
+    }
+    if (Math.abs(next - zoomRef.current) < 0.0001) {
+      zoomAnchorRef.current = null;
+      return;
+    }
+    zoomRef.current = next;
+    setZoom(next);
+  }
+
+  function zoomAtCanvasCenter(nextValue: number) {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      setMapperZoom(nextValue);
+      return;
+    }
+    const box = canvas.getBoundingClientRect();
+    setMapperZoom(
+      nextValue,
+      box.left + box.width / 2,
+      box.top + box.height / 2,
+    );
+  }
+
+  function mapperGestureTargetIsHandle(target: EventTarget | null) {
+    return target instanceof Element && Boolean(target.closest(".mapper-point-handle"));
+  }
+
+  function currentTouchPair() {
+    const touchPoints = [...activeGesturePointersRef.current.values()];
+    if (touchPoints.length < 2) return null;
+    const [a, b] = touchPoints;
+    return {
+      distance: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+      centerX: (a.x + b.x) / 2,
+      centerY: (a.y + b.y) / 2,
+    };
+  }
+
+  function armPanGesture(pointerId: number, x: number, y: number) {
+    panGestureRef.current = {
+      pointerId,
+      startX: x,
+      startY: y,
+      lastX: x,
+      lastY: y,
+      moved: false,
+    };
+  }
+
+  function handleMapperGesturePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (!imageReady || mapperGestureTargetIsHandle(event.target)) return;
+
+    if (event.pointerType === "touch") {
+      activeGesturePointersRef.current.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+      const pair = currentTouchPair();
+      if (pair) {
+        // Once a second finger arrives, capture BOTH active pointers so pinch/pan
+        // remains stable even when fingers leave the visible image bounds.
+        for (const pointerId of activeGesturePointersRef.current.keys()) {
+          try {
+            event.currentTarget.setPointerCapture(pointerId);
+          } catch {
+            // An already-ended pointer simply cannot be captured.
+          }
+        }
+        pinchGestureRef.current = {
+          startDistance: pair.distance,
+          startZoom: zoomRef.current,
+          lastCenterX: pair.centerX,
+          lastCenterY: pair.centerY,
+        };
+        panGestureRef.current = null;
+        tapStartRef.current = null;
+        suppressTapUntilRef.current = Date.now() + 600;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      // In PAN mode one finger moves immediately. In SELECT mode we only start
+      // moving after a >10px drag, so a normal tap still creates an exact corner.
+      armPanGesture(event.pointerId, event.clientX, event.clientY);
+      if (toolMode === "pan" && !calibrationMode) {
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // Keep panning while the pointer remains inside if capture is unavailable.
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      // IMPORTANT: SELECT single-tap is deliberately NOT captured here. Its
+      // pointerup must still bubble to the SVG tap handler and create a corner.
+      return;
+    }
+
+    if (toolMode === "pan" && !calibrationMode && event.button === 0) {
+      armPanGesture(event.pointerId, event.clientX, event.clientY);
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Mouse/pen drag can continue without capture while inside the mapper.
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
+  function handleMapperGesturePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (mapperGestureTargetIsHandle(event.target)) return;
+
+    if (
+      event.pointerType === "touch" &&
+      activeGesturePointersRef.current.has(event.pointerId)
+    ) {
+      activeGesturePointersRef.current.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+    }
+
+    const pair = currentTouchPair();
+    if (pair) {
+      let pinch = pinchGestureRef.current;
+      if (!pinch) {
+        pinch = {
+          startDistance: pair.distance,
+          startZoom: zoomRef.current,
+          lastCenterX: pair.centerX,
+          lastCenterY: pair.centerY,
+        };
+        pinchGestureRef.current = pinch;
+      }
+
+      const canvas = canvasRef.current;
+      if (canvas) {
+        // Two fingers also pan together, including while SELECT mode is active.
+        canvas.scrollLeft += pinch.lastCenterX - pair.centerX;
+        canvas.scrollTop += pinch.lastCenterY - pair.centerY;
+      }
+      pinch.lastCenterX = pair.centerX;
+      pinch.lastCenterY = pair.centerY;
+
+      const nextZoom =
+        pinch.startZoom * (pair.distance / Math.max(1, pinch.startDistance));
+      tapStartRef.current = null;
+      suppressTapUntilRef.current = Date.now() + 600;
+      setMapperZoom(nextZoom, pair.centerX, pair.centerY);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    const pan = panGestureRef.current;
+    if (!pan || pan.pointerId !== event.pointerId) return;
+
+    const totalMovement = Math.hypot(
+      event.clientX - pan.startX,
+      event.clientY - pan.startY,
+    );
+    const shouldPan =
+      !calibrationMode &&
+      (
+        toolMode === "pan" ||
+        (event.pointerType === "touch" && totalMovement > 10)
+      );
+    if (!shouldPan) return;
+
+    // SELECT becomes a pan only after the movement threshold. Capture from this
+    // point onward so the drag keeps working outside the immediate plot image.
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may be unavailable for a pointer that just ended.
+    }
+
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.scrollLeft += pan.lastX - event.clientX;
+      canvas.scrollTop += pan.lastY - event.clientY;
+    }
+    pan.lastX = event.clientX;
+    pan.lastY = event.clientY;
+
+    if (!pan.moved) {
+      pan.moved = true;
+      tapStartRef.current = null;
+    }
+    suppressTapUntilRef.current = Date.now() + 350;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function handleMapperGesturePointerEnd(event: React.PointerEvent<HTMLDivElement>) {
+    if (mapperGestureTargetIsHandle(event.target)) return;
+
+    const pointerWasTracked =
+      event.pointerType === "touch" &&
+      activeGesturePointersRef.current.has(event.pointerId);
+    const wasPinching =
+      Boolean(pinchGestureRef.current) ||
+      activeGesturePointersRef.current.size >= 2;
+    const pan = panGestureRef.current;
+    const wasPanning =
+      Boolean(pan && pan.pointerId === event.pointerId && pan.moved);
+
+    if (pointerWasTracked) activeGesturePointersRef.current.delete(event.pointerId);
+
+    const blockTap =
+      wasPinching ||
+      wasPanning ||
+      Date.now() < suppressTapUntilRef.current;
+    if (blockTap) {
+      tapStartRef.current = null;
+      suppressTapUntilRef.current = Date.now() + 350;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if (activeGesturePointersRef.current.size < 2) {
+      pinchGestureRef.current = null;
+    }
+
+    const remaining = [...activeGesturePointersRef.current.entries()][0];
+    if (remaining) {
+      const [pointerId, point] = remaining;
+      armPanGesture(pointerId, point.x, point.y);
+    } else if (!pan || pan.pointerId === event.pointerId) {
+      panGestureRef.current = null;
+    }
+
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      // Nothing to release.
+    }
+  }
+
+  function handleMapperGesturePointerCancel(event: React.PointerEvent<HTMLDivElement>) {
+    if (mapperGestureTargetIsHandle(event.target)) return;
+    activeGesturePointersRef.current.delete(event.pointerId);
+    panGestureRef.current = null;
+    pinchGestureRef.current = null;
+    tapStartRef.current = null;
+    suppressTapUntilRef.current = Date.now() + 350;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function handleMapperLostPointerCapture(event: React.PointerEvent<HTMLDivElement>) {
+    activeGesturePointersRef.current.delete(event.pointerId);
+    if (panGestureRef.current?.pointerId === event.pointerId) {
+      panGestureRef.current = null;
+    }
+    if (activeGesturePointersRef.current.size < 2) {
+      pinchGestureRef.current = null;
+    }
+  }
+
   function sourcePointFromDisplay(point: MapperPoint): MapperPoint {
     const [x, y] = point;
     // Exact inverse of displayPoint. A tap made on a rotated view is converted
@@ -709,12 +1052,44 @@ export default function PlotMapper({
       return next;
     });
     // A quarter turn changes portrait/landscape bounds. Fit once, then user can zoom again.
+    activeGesturePointersRef.current.clear();
+    panGestureRef.current = null;
+    pinchGestureRef.current = null;
+    zoomAnchorRef.current = null;
+    tapStartRef.current = null;
+    suppressTapUntilRef.current = Date.now() + 250;
+    zoomRef.current = 1;
     setZoom(1);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.scrollLeft = 0;
+          canvas.scrollTop = 0;
+        }
+      });
+    });
   }
 
   function resetMapperView() {
+    activeGesturePointersRef.current.clear();
+    panGestureRef.current = null;
+    pinchGestureRef.current = null;
+    zoomAnchorRef.current = null;
+    tapStartRef.current = null;
+    suppressTapUntilRef.current = Date.now() + 250;
+    zoomRef.current = 1;
     setZoom(1);
     setRotation(0);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.scrollLeft = 0;
+          canvas.scrollTop = 0;
+        }
+      });
+    });
     try {
       window.localStorage.setItem(`rekixo:mapper-rotation:${projectId}`, "0");
     } catch {
@@ -789,6 +1164,12 @@ export default function PlotMapper({
 
   function handleImagePointerUp(event: React.PointerEvent<SVGSVGElement>) {
     if (!calibrationMode && toolMode !== "select") return;
+    if (Date.now() < suppressTapUntilRef.current) {
+      tapStartRef.current = null;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const start = tapStartRef.current;
@@ -1210,9 +1591,9 @@ export default function PlotMapper({
             <button className={toolMode === "select" ? "active" : ""} type="button" onClick={enableSelectMode}><Target />Select</button>
             <strong>{shape === "quad" ? `Plot ${plotId} · ${points.length}/4 corners` : `Plot ${plotId} · ${points.length} corners`}</strong>
             <span>{Math.round(zoom * 100)}%</span>
-            <input className="mapper-zoom-range" type="range" min="1" max="16" step="0.1" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} aria-label="Zoom level" />
-            <button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom((value) => Math.max(1, value - 0.5))}><ZoomOut /></button>
-            <button aria-label="Zoom in" disabled={zoom >= 16} onClick={() => setZoom((value) => Math.min(16, value + 0.5))}><ZoomIn /></button>
+            <input className="mapper-zoom-range" type="range" min="1" max="16" step="0.1" value={zoom} onChange={(event) => zoomAtCanvasCenter(Number(event.target.value))} aria-label="Zoom level" />
+            <button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => zoomAtCanvasCenter(zoomRef.current - 0.5)}><ZoomOut /></button>
+            <button aria-label="Zoom in" disabled={zoom >= 16} onClick={() => zoomAtCanvasCenter(zoomRef.current + 0.5)}><ZoomIn /></button>
             <button
               type="button"
               aria-label="Rotate masterplan left 90 degrees"
@@ -1230,7 +1611,7 @@ export default function PlotMapper({
           </div>
 
           {!imageReady && <div className="mapper-loading">{hasMasterplan ? "High-resolution masterplan load हो रहा है…" : "पहले masterplan image upload करें"}</div>}
-          <div className="mapper-pan-hint">{toolMode === "pan" ? `PAN mode: pinch/zoom aur image move करें. ↺/↻ 90° से map को खड़ा/लेटा करें. Current: ${rotationDegrees}°.` : `SELECT mode: corners clockwise tap करें. Rotation ${rotationDegrees}° सिर्फ view है; saved geometry original image coordinates में रहती है.`}</div>
+          <div className="mapper-pan-hint">{toolMode === "pan" ? `PAN: 1 finger drag = move · 2 fingers pinch = zoom + move · ↺/↻ 90° = rotate. Current: ${rotationDegrees}°.` : `SELECT: tap = corner · खाली जगह drag = move · 2 fingers pinch = zoom + move. Rotation ${rotationDegrees}° सिर्फ view है; saved geometry original image coordinates में रहती है.`}</div>
           <div
             ref={imageWrapRef}
             className="mapper-image-wrap mapper-image-v2"
@@ -1242,6 +1623,11 @@ export default function PlotMapper({
               marginInline: "auto",
               flex: "0 0 auto",
             }}
+            onPointerDownCapture={handleMapperGesturePointerDown}
+            onPointerMoveCapture={handleMapperGesturePointerMove}
+            onPointerUpCapture={handleMapperGesturePointerEnd}
+            onPointerCancelCapture={handleMapperGesturePointerCancel}
+            onLostPointerCapture={handleMapperLostPointerCapture}
             onContextMenu={(event) => event.preventDefault()}
             onDragStart={(event) => event.preventDefault()}
           >
