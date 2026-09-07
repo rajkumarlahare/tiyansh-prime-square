@@ -17,10 +17,12 @@ type LooseEntity = Record<string, unknown> & {
 };
 
 type XYLike = { x?: number; y?: number; location?: { x?: number; y?: number } };
+type RawLine = { start: [number, number]; end: [number, number] };
 
 const MAX_CANDIDATES = 3000;
 const MAX_POINTS = 80;
 const MAX_LINE_EDGES_FOR_FACE_DETECTION = 20_000;
+const MAX_INTERSECTION_CHECKS = 2_500_000;
 
 function finitePoint(value: unknown): [number, number] | null {
   const item = value as XYLike | null;
@@ -52,8 +54,7 @@ function cleanPolyline(points: [number, number][]) {
   return cleaned.filter((_, index) => index % step === 0).slice(0, MAX_POINTS);
 }
 
-function entityPolyline(entity: LooseEntity) {
-  if (!entity.isClosed) return null;
+function entityPathPoints(entity: LooseEntity) {
   const direct: [number, number][] = [];
   try {
     if (entity.vertices && Symbol.iterator in Object(entity.vertices)) {
@@ -65,18 +66,46 @@ function entityPolyline(entity: LooseEntity) {
   } catch {
     // Some CAD entities expose non-standard vertex collections; getPoints is fallback.
   }
-  if (direct.length >= 3) return cleanPolyline(direct);
+  if (direct.length >= 2) return cleanPolyline(direct);
   if (typeof entity.getPoints === "function") {
     try {
       const sampled = Array.from(entity.getPoints(32), finitePoint).filter(
         (point): point is [number, number] => Boolean(point),
       );
-      if (sampled.length >= 3) return cleanPolyline(sampled);
+      if (sampled.length >= 2) return cleanPolyline(sampled);
     } catch {
-      return null;
+      return [];
     }
   }
-  return null;
+  return [];
+}
+
+function entityPolyline(entity: LooseEntity) {
+  if (!entity.isClosed) return null;
+  const points = entityPathPoints(entity);
+  return points.length >= 3 ? points : null;
+}
+
+/**
+ * Return atomic-looking source segments from LINE and open/closed polyline-like
+ * entities. Many civil/site DWGs draw each plot row as long open polylines, so
+ * considering only entity.isClosed misses nearly every plot.
+ */
+function entitySegments(entity: LooseEntity): RawLine[] {
+  const start = finitePoint(entity.startPoint);
+  const end = finitePoint(entity.endPoint);
+  if (start && end) return [{ start, end }];
+
+  const points = entityPathPoints(entity);
+  if (points.length < 2) return [];
+  const segments: RawLine[] = [];
+  for (let index = 0; index < points.length - 1; index += 1) {
+    segments.push({ start: points[index], end: points[index + 1] });
+  }
+  if (entity.isClosed && points.length >= 3) {
+    segments.push({ start: points[points.length - 1], end: points[0] });
+  }
+  return segments;
 }
 
 function entityText(entity: LooseEntity) {
@@ -104,20 +133,149 @@ function boundsFor(points: [number, number][]) {
   };
 }
 
-type RawLine = { start: [number, number]; end: [number, number] };
+function cross(a: [number, number], b: [number, number]) {
+  return a[0] * b[1] - a[1] * b[0];
+}
+
+function lineBox(line: RawLine) {
+  return {
+    minX: Math.min(line.start[0], line.end[0]),
+    minY: Math.min(line.start[1], line.end[1]),
+    maxX: Math.max(line.start[0], line.end[0]),
+    maxY: Math.max(line.start[1], line.end[1]),
+  };
+}
+
+function pointAt(line: RawLine, t: number): [number, number] {
+  return [
+    line.start[0] + (line.end[0] - line.start[0]) * t,
+    line.start[1] + (line.end[1] - line.start[1]) * t,
+  ];
+}
 
 /**
- * Some civil drawings use individual LINE entities instead of closed plot
- * polylines. Build the bounded planar faces from a reasonably sized line
- * network so those projects still get automatic candidates. Crossings that do
- * not share endpoints intentionally remain unresolved and fall back to review.
+ * Build bounded planar faces from civil linework. Before face walking we split
+ * long LINE/open-polyline segments at real crossings and T-junctions. This is
+ * essential for site drawings where plot separators cross long row/road lines
+ * without CAD vertices at every intersection.
  */
 function lineNetworkFaces(lines: RawLine[]) {
   if (lines.length < 3 || lines.length > MAX_LINE_EDGES_FOR_FACE_DETECTION) return [];
   const endpoints = lines.flatMap((line) => [line.start, line.end]);
   const bounds = boundsFor(endpoints);
   const diagonal = Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) || 1;
-  const tolerance = Math.max(diagonal * 1e-7, 1e-8);
+  const tolerance = Math.max(diagonal * 1e-6, 1e-7);
+  const paramTolerance = 1e-8;
+
+  const source = lines.filter(
+    (line) => Math.hypot(line.end[0] - line.start[0], line.end[1] - line.start[1]) > tolerance,
+  );
+  const boxes = source.map(lineBox);
+  const splitParams = source.map(() => [0, 1]);
+  const addParam = (index: number, value: number) => {
+    if (!Number.isFinite(value) || value < -paramTolerance || value > 1 + paramTolerance) return;
+    splitParams[index].push(Math.max(0, Math.min(1, value)));
+  };
+
+  const paramForPoint = (line: RawLine, point: [number, number]) => {
+    const dx = line.end[0] - line.start[0];
+    const dy = line.end[1] - line.start[1];
+    const length2 = dx * dx + dy * dy;
+    if (!length2) return null;
+    const t = ((point[0] - line.start[0]) * dx + (point[1] - line.start[1]) * dy) / length2;
+    if (t < -paramTolerance || t > 1 + paramTolerance) return null;
+    const projected = pointAt(line, t);
+    return Math.hypot(projected[0] - point[0], projected[1] - point[1]) <= tolerance
+      ? Math.max(0, Math.min(1, t))
+      : null;
+  };
+
+  const splitAtIntersection = (leftIndex: number, rightIndex: number) => {
+    const left = source[leftIndex];
+    const right = source[rightIndex];
+    const r: [number, number] = [
+      left.end[0] - left.start[0],
+      left.end[1] - left.start[1],
+    ];
+    const s: [number, number] = [
+      right.end[0] - right.start[0],
+      right.end[1] - right.start[1],
+    ];
+    const qp: [number, number] = [
+      right.start[0] - left.start[0],
+      right.start[1] - left.start[1],
+    ];
+    const denominator = cross(r, s);
+    const scale = Math.max(Math.hypot(...r), Math.hypot(...s), 1);
+
+    if (Math.abs(denominator) > tolerance * scale) {
+      const t = cross(qp, s) / denominator;
+      const u = cross(qp, r) / denominator;
+      if (
+        t >= -paramTolerance &&
+        t <= 1 + paramTolerance &&
+        u >= -paramTolerance &&
+        u <= 1 + paramTolerance
+      ) {
+        addParam(leftIndex, t);
+        addParam(rightIndex, u);
+      }
+      return;
+    }
+
+    // Collinear/overlapping segments: split wherever one segment endpoint lies
+    // on the other. Duplicate pieces are removed after splitting.
+    if (Math.abs(cross(qp, r)) > tolerance * Math.max(Math.hypot(...r), 1)) return;
+    const rightStartOnLeft = paramForPoint(left, right.start);
+    const rightEndOnLeft = paramForPoint(left, right.end);
+    const leftStartOnRight = paramForPoint(right, left.start);
+    const leftEndOnRight = paramForPoint(right, left.end);
+    if (rightStartOnLeft !== null) addParam(leftIndex, rightStartOnLeft);
+    if (rightEndOnLeft !== null) addParam(leftIndex, rightEndOnLeft);
+    if (leftStartOnRight !== null) addParam(rightIndex, leftStartOnRight);
+    if (leftEndOnRight !== null) addParam(rightIndex, leftEndOnRight);
+  };
+
+  // Sweep by minX to avoid an unconditional O(n^2) intersection pass.
+  const order = source.map((_, index) => index).sort((a, b) => boxes[a].minX - boxes[b].minX);
+  let checks = 0;
+  let capped = false;
+  outer: for (let a = 0; a < order.length; a += 1) {
+    const leftIndex = order[a];
+    const leftBox = boxes[leftIndex];
+    for (let b = a + 1; b < order.length; b += 1) {
+      const rightIndex = order[b];
+      const rightBox = boxes[rightIndex];
+      if (rightBox.minX > leftBox.maxX + tolerance) break;
+      if (
+        rightBox.maxY < leftBox.minY - tolerance ||
+        rightBox.minY > leftBox.maxY + tolerance
+      ) {
+        continue;
+      }
+      checks += 1;
+      if (checks > MAX_INTERSECTION_CHECKS) {
+        capped = true;
+        break outer;
+      }
+      splitAtIntersection(leftIndex, rightIndex);
+    }
+  }
+
+  const atomic: RawLine[] = [];
+  for (let index = 0; index < source.length; index += 1) {
+    const ordered = [...splitParams[index]]
+      .sort((a, b) => a - b)
+      .filter((value, position, values) => position === 0 || Math.abs(value - values[position - 1]) > paramTolerance);
+    for (let cursor = 0; cursor < ordered.length - 1; cursor += 1) {
+      const start = pointAt(source[index], ordered[cursor]);
+      const end = pointAt(source[index], ordered[cursor + 1]);
+      if (Math.hypot(end[0] - start[0], end[1] - start[1]) > tolerance * 0.5) {
+        atomic.push({ start, end });
+      }
+    }
+  }
+
   const nodes = new Map<string, [number, number]>();
   const adjacency = new Map<string, Set<string>>();
   const keyFor = ([x, y]: [number, number]) =>
@@ -127,10 +285,15 @@ function lineNetworkFaces(lines: RawLine[]) {
     set.add(to);
     adjacency.set(from, set);
   };
-  for (const line of lines) {
+
+  const seenEdges = new Set<string>();
+  for (const line of atomic) {
     const a = keyFor(line.start);
     const b = keyFor(line.end);
     if (a === b) continue;
+    const edgeSignature = a < b ? `${a}|${b}` : `${b}|${a}`;
+    if (seenEdges.has(edgeSignature)) continue;
+    seenEdges.add(edgeSignature);
     if (!nodes.has(a)) nodes.set(a, line.start);
     if (!nodes.has(b)) nodes.set(b, line.end);
     addNeighbor(a, b);
@@ -163,7 +326,7 @@ function lineNetworkFaces(lines: RawLine[]) {
       let from = start;
       let to = first;
       let closed = false;
-      for (let guard = 0; guard < 240; guard += 1) {
+      for (let guard = 0; guard < 320; guard += 1) {
         const edgeKey = directedKey(from, to);
         if (visited.has(edgeKey) && !(from === start && to === first)) break;
         visited.add(edgeKey);
@@ -180,18 +343,19 @@ function lineNetworkFaces(lines: RawLine[]) {
         }
       }
       if (!closed || cycleKeys.length < 3 || cycleKeys.length > MAX_POINTS) continue;
-      const points = cleanPolyline(
-        cycleKeys.map((key) => nodes.get(key)!).filter(Boolean),
-      );
+      const points = cleanPolyline(cycleKeys.map((key) => nodes.get(key)!).filter(Boolean));
       if (points.length < 3) continue;
       const signedArea = polygonArea(points);
-      // The traversal also visits the unbounded exterior face in the reverse
-      // direction. Keep only counter-clockwise bounded faces.
-      if (!(signedArea > tolerance * tolerance)) continue;
+      // The traversal also visits the unbounded exterior face in reverse.
+      if (!(signedArea > tolerance * tolerance * 4)) continue;
       faces.push(points);
       if (faces.length >= MAX_CANDIDATES * 2) return faces;
     }
   }
+
+  // `capped` intentionally does not fail the upload: closed polylines plus the
+  // intersections already processed are still useful, and uncertain plots stay Review.
+  void capped;
   return faces;
 }
 
@@ -242,14 +406,11 @@ export async function parseCadGeometry(file: File): Promise<CadGeometry> {
   for (const item of document.entities as Iterable<unknown>) {
     entityCount += 1;
     const entity = item as LooseEntity;
-    const constructorName = entity.constructor?.name || "";
-    if (constructorName === "Line" || (entity.startPoint && entity.endPoint)) {
-      lineCount += 1;
-      const start = finitePoint(entity.startPoint);
-      const end = finitePoint(entity.endPoint);
-      if (start) allPoints.push(start);
-      if (end) allPoints.push(end);
-      if (start && end) rawLines.push({ start, end });
+    const segments = entitySegments(entity);
+    if (segments.length) {
+      lineCount += segments.length;
+      rawLines.push(...segments);
+      for (const segment of segments) allPoints.push(segment.start, segment.end);
     }
 
     const text = entityText(entity);
@@ -300,7 +461,7 @@ export async function parseCadGeometry(file: File): Promise<CadGeometry> {
     .filter((candidate) => candidate.area > 1e-8)
     .sort((a, b) => a.area - b.area);
 
-  // Remove exact/near duplicate closed polylines that often exist on multiple CAD layers.
+  // Remove exact/near duplicate closed polylines/faces that often exist on multiple CAD layers.
   const seen = new Set<string>();
   const candidates: CadCandidate[] = [];
   for (const candidate of normalized) {
