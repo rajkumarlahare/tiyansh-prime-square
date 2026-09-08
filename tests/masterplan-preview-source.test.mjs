@@ -11,19 +11,12 @@ const publicPage = await readFile(
   "utf8",
 );
 
-test("generic preview and public site use canonical mapped masterplan first", () => {
-  assert.match(
-    route,
-    /const canonicalKind = kind === "masterplan" \? "masterplan" : kind/,
-  );
-  assert.match(
-    route,
-    /env\.BUCKET\.get\(`projects\/\$\{projectId\}\/mapper\/\$\{canonicalKind\}`\)/,
-  );
-  assert.match(
-    route,
-    /if \(!object && kind === "masterplan"\)[\s\S]*masterplanPublic/,
-  );
+test("generic preview and public site can request optimized masterplan with canonical fallback", () => {
+  assert.match(route, /wantsPublicMasterplan/);
+  assert.match(route, /"masterplanPublic"/);
+  assert.match(route, /"public-optimized"/);
+  assert.match(route, /"canonical-fallback"/);
+  assert.match(route, /versionedRequest/);
   assert.doesNotMatch(
     route,
     /kind === "masterplan" && session\?\.role !== "super_admin"/,
@@ -33,7 +26,7 @@ test("generic preview and public site use canonical mapped masterplan first", ()
 test("authenticated preview never caches stale masterplan response", () => {
   assert.match(
     route,
-    /const previewRequest = new URL\(request\.url\)\.searchParams\.get\("preview"\) === "1"/,
+    /const previewRequest = requestUrl\.searchParams\.get\("preview"\) === "1"/,
   );
   assert.match(route, /session \|\| previewRequest[\s\S]*\? "no-store"/);
   assert.match(route, /x-rekixo-masterplan-source/);
@@ -42,7 +35,7 @@ test("authenticated preview never caches stale masterplan response", () => {
 test("public renderer rotates image and SVG together while keeping polygon storage canonical", () => {
   assert.match(
     publicPage,
-    /world\.style\.transform = `translate\(calc\(-50% \+ \$\{pan\.x\}px\),calc\(-50% \+ \$\{pan\.y\}px\)\) scale\(\$\{scale\}\) rotate\(\$\{publicRotation\*90\}deg\)`/,
+    /world\.style\.transform = `translate3d\(calc\(-50% \+ \$\{pan\.x\}px\),calc\(-50% \+ \$\{pan\.y\}px\),0\) scale\(\$\{scale\}\) rotate\(\$\{publicRotation\*90\}deg\)`/,
   );
   assert.match(publicPage, /publicRotation=normalizeQuarterTurn\(s\.publicRotation\)/);
   assert.match(publicPage, /const ctm=svg\.getScreenCTM\?\.\(\)/);

@@ -57,29 +57,47 @@ export async function GET(
   const projectId = await authorizedProjectId(request);
   if (!projectId) return new Response("Not found", { status: 404 });
 
-  // The mapping masterplan is the canonical visual source of truth.
-  // Do NOT silently swap generic/public clients to an independently generated
-  // derivative here: a stale/rotated derivative can make the visible image move
-  // away from the already-saved normalized SVG polygons. Correctness wins over
-  // bandwidth. masterplanPublic remains a disaster-recovery fallback only.
-  const canonicalKind = kind === "masterplan" ? "masterplan" : kind;
-  let object = await env.BUCKET.get(`projects/${projectId}/mapper/${canonicalKind}`);
-  let servedMasterplanSource = kind === "masterplan" ? "canonical" : canonicalKind;
+  const requestUrl = new URL(request.url);
+  const wantsPublicMasterplan =
+    kind === "masterplan" && requestUrl.searchParams.get("variant") === "public";
 
-  if (!object && kind === "masterplan") {
+  // The mapper always keeps the canonical high-detail object. Public/preview 2D
+  // may explicitly request the lighter derivative produced from the SAME upload.
+  // The browser checks its aspect ratio before exposing polygons and falls back to
+  // canonical if an old/stale derivative is ever encountered.
+  const objectKind = wantsPublicMasterplan
+    ? "masterplanPublic"
+    : kind === "masterplan"
+      ? "masterplan"
+      : kind;
+  let object = await env.BUCKET.get(`projects/${projectId}/mapper/${objectKind}`);
+  let servedMasterplanSource =
+    kind === "masterplan"
+      ? wantsPublicMasterplan
+        ? "public-optimized"
+        : "canonical"
+      : objectKind;
+
+  if (!object && wantsPublicMasterplan) {
+    object = await env.BUCKET.get(`projects/${projectId}/mapper/masterplan`);
+    servedMasterplanSource = "canonical-fallback";
+  } else if (!object && kind === "masterplan") {
     object = await env.BUCKET.get(`projects/${projectId}/mapper/masterplanPublic`);
     servedMasterplanSource = "public-fallback";
   }
   if (!object) return new Response("Not found", { status: 404 });
 
-  const previewRequest = new URL(request.url).searchParams.get("preview") === "1";
+  const previewRequest = requestUrl.searchParams.get("preview") === "1";
+  const versionedRequest = requestUrl.searchParams.has("v");
   const headers = new Headers({
     "content-type": object.httpMetadata?.contentType || "application/octet-stream",
     "cache-control":
       session || previewRequest
         ? "no-store"
-        : kind === "masterplan"
-          ? "public,max-age=0,must-revalidate"
+        : kind === "masterplan" && wantsPublicMasterplan && versionedRequest
+          ? "public,max-age=31536000,immutable"
+          : kind === "masterplan"
+            ? "public,max-age=0,must-revalidate"
           : kind === "logo"
             ? "public,max-age=31536000,immutable"
             : "private,no-store",

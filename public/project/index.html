@@ -41,9 +41,11 @@ html.rekixo-project-error body::after{content:"Project preview load nahi hua. Re
 .search{height:62px;margin-top:12px;border:1px solid #27334a;border-radius:17px;background:#101624;display:flex;align-items:center;padding:0 9px 0 17px;gap:12px}
 .search svg{width:21px;height:21px;stroke:#7687ae;fill:none;stroke-width:2}.search input{flex:1;min-width:0;height:100%;border:0;outline:0;background:transparent;color:white;font-size:17px;font-weight:600}
 .search input::placeholder{color:#667698}.go{height:46px;border:0;background:transparent;color:#89b7ff;font-weight:950;padding:0 10px}
-.map{position:relative;overflow:hidden;touch-action:none;background:#040812;cursor:grab}.map.dragging{cursor:grabbing}
-.world{position:absolute;left:50%;top:50%;width:var(--map-w,1200px);height:var(--map-h,2133px);transform-origin:center center;will-change:transform;user-select:none}
-.master,.hotspots{position:absolute;inset:0;width:var(--map-w,1200px);height:var(--map-h,2133px);display:block}.master{pointer-events:none;-webkit-user-drag:none}.hotspots{z-index:2;overflow:visible}
+.map{position:relative;overflow:hidden;touch-action:none;overscroll-behavior:none;background:#040812;cursor:grab;contain:layout paint}.map.dragging{cursor:grabbing}
+.map.master-loading::after{content:"Loading masterplan…";position:absolute;z-index:6;left:50%;top:50%;transform:translate(-50%,-50%);padding:10px 14px;border:1px solid #23304a;border-radius:999px;background:#07101fdd;color:#9db0d4;font-size:12px;font-weight:800;box-shadow:0 8px 28px #0008;pointer-events:none}
+.world{position:absolute;left:50%;top:50%;width:var(--map-w,1200px);height:var(--map-h,2133px);transform-origin:center center;will-change:transform;user-select:none;backface-visibility:hidden;contain:layout paint style;transform:translateZ(0)}
+.master,.hotspots{position:absolute;inset:0;width:var(--map-w,1200px);height:var(--map-h,2133px);display:block}.master{pointer-events:none;-webkit-user-drag:none;backface-visibility:hidden;transform:translateZ(0);image-rendering:auto}.hotspots{z-index:2;overflow:visible}
+.map.dragging .plot{transition:none}.map.dragging .plot.selected{filter:none}
 .plot{fill:rgba(32,225,125,.001);stroke:transparent;stroke-width:1.1;vector-effect:non-scaling-stroke;cursor:pointer;transition:fill .12s,stroke .12s,filter .12s}
 .plot.selected{fill:rgba(18,197,104,.22);stroke:#20e47e;stroke-width:1.45;filter:drop-shadow(0 0 3px rgba(37,236,132,.75))}
 .show-all .plot{stroke-width:.95}.show-all .plot[data-status="available"]{fill:rgba(27,188,103,.16);stroke:rgba(29,230,126,.68)}.show-all .plot[data-status="booked"]{fill:rgba(245,181,22,.27);stroke:rgba(255,203,44,.9)}.show-all .plot[data-status="sold"]{fill:rgba(240,49,76,.29);stroke:rgba(255,70,94,.92)}
@@ -266,6 +268,9 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
   .actions{gap:10px}.action{height:57px;border-radius:16px}
 }
 
+@media(max-width:700px){
+  .map-badge,.status-head,.pill{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+}
 </style>
 </head>
 <body>
@@ -293,7 +298,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
 <main class="map" id="viewport">
   <div class="three-host" id="threeHost"></div>
   <div class="world" id="world">
-    <img class="master" src="masterplan.jpg" width="1200" height="2133" alt="Project masterplan" decoding="async" fetchpriority="high">
+    <img class="master" width="1200" height="2133" alt="Project masterplan" decoding="async" fetchpriority="high" draggable="false">
     <svg class="hotspots show-all" id="hotspots" viewBox="0 0 1200 2133" width="1200" height="2133" aria-label="Interactive plot overlay"></svg>
   </div>
 
@@ -407,6 +412,8 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   const plots = GENERIC_BOOT ? [] : (Array.isArray(window.TIYANSH_PLOTS) ? window.TIYANSH_PLOTS : []);
   let ACTIVE_PROJECT_ID=GENERIC_BOOT?'':REKIXO_DEFAULT_PROJECT;
   const q = s => document.querySelector(s);
+  const initialMaster=q('.master');
+  if(initialMaster&&!GENERIC_BOOT)initialMaster.src='masterplan.jpg';
   const viewport = q('#viewport');
   const world = q('#world');
   const svg = q('#hotspots');
@@ -474,7 +481,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   function render(){
     clampPan();
     // Image + SVG rotate as one world; polygon coordinates remain canonical.
-    world.style.transform = `translate(calc(-50% + ${pan.x}px),calc(-50% + ${pan.y}px)) scale(${scale}) rotate(${publicRotation*90}deg)`;
+    world.style.transform = `translate3d(calc(-50% + ${pan.x}px),calc(-50% + ${pan.y}px),0) scale(${scale}) rotate(${publicRotation*90}deg)`;
     q('#percent').textContent = Math.round(scale/fit*100)+'%';
   }
   function scheduleRender(){if(!mapRaf)mapRaf=requestAnimationFrame(()=>{mapRaf=0;render()})}
@@ -536,6 +543,12 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   function zoomCenter(factor){const r=viewport.getBoundingClientRect();zoomAt(scale*factor,r.left+r.width/2,r.top+r.height/2)}
   function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
   function midpoint(a,b){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2}}
+  function latestPointerSample(e){
+    try{
+      const samples=typeof e.getCoalescedEvents==='function'?e.getCoalescedEvents():[];
+      return samples&&samples.length?samples[samples.length-1]:e;
+    }catch(_){return e}
+  }
 
   function pointInPolygon(x,y,pts){let inside=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const xi=pts[i][0],yi=pts[i][1],xj=pts[j][0],yj=pts[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi))inside=!inside}return inside}
   function distSeg(px,py,ax,ay,bx,by){const vx=bx-ax,vy=by-ay,wx=px-ax,wy=py-ay,c1=vx*wx+vy*wy;if(c1<=0)return Math.hypot(px-ax,py-ay);const c2=vx*vx+vy*vy;if(c2<=c1)return Math.hypot(px-bx,py-by);const t=c1/c2,qx=ax+t*vx,qy=ay+t*vy;return Math.hypot(px-qx,py-qy)}
@@ -598,7 +611,8 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
 
   viewport.addEventListener('pointermove',e=>{
     if(mode3D || !pointers.has(e.pointerId)) return;
-    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
+    const sample=latestPointerSample(e);
+    pointers.set(e.pointerId,{x:sample.clientX,y:sample.clientY,type:e.pointerType});
     if(pointers.size===2){
       const [a,b]=[...pointers.values()],m=midpoint(a,b);
       if(!gesture||gesture.type!=='pinch')gesture={type:'pinch',dist:Math.max(8,distance(a,b)),scale,mid:m,pan:{...pan},moved:true};
@@ -607,8 +621,8 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
       return;
     }
     if(pointers.size===1&&gesture?.type==='single'&&gesture.id===e.pointerId){
-      gesture.last={x:e.clientX,y:e.clientY};
-      const dx=e.clientX-gesture.start.x,dy=e.clientY-gesture.start.y,d=Math.hypot(dx,dy);
+      gesture.last={x:sample.clientX,y:sample.clientY};
+      const dx=sample.clientX-gesture.start.x,dy=sample.clientY-gesture.start.y,d=Math.hypot(dx,dy);
       if(!gesture.moved&&d<=gesture.slop) return; // don't move map during finger jitter
       if(!gesture.moved){
         gesture.moved=true; viewport.classList.add('dragging');
@@ -776,21 +790,101 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     const gallerySub=document.querySelector('.gallery-head p');if(gallerySub)gallerySub.textContent=[resolvedBrand||PROJECT_NAME,PROJECT_LOCATION].filter(Boolean).join(' · ').toUpperCase();
     const master=document.querySelector('.master');
     HAS_MASTERPLAN=isTiyansh||Boolean(s.masterplanName);
+    let preferredMasterUrl='',canonicalMasterUrl='';
     if(master){
-      if(isTiyansh){master.src='masterplan.jpg';master.style.visibility='visible'}
-      else if(s.masterplanName){master.src='/api/project-asset/masterplan'+(window.REKIXO_PROJECT_QUERY||'');master.style.visibility='visible'}
-      else {master.removeAttribute('src');master.style.visibility='hidden'}
+      if(isTiyansh){
+        master.src='masterplan.jpg';master.style.visibility='visible'
+      }else if(s.masterplanName){
+        const masterVersion=String(data.publishVersion||s.masterplanName||'1');
+        const baseParams=new URLSearchParams((window.REKIXO_PROJECT_QUERY||'').replace(/^\?/,''));
+        const publicParams=new URLSearchParams(baseParams);
+        publicParams.set('variant','public');
+        publicParams.set('v',masterVersion);
+        const canonicalParams=new URLSearchParams(baseParams);
+        canonicalParams.set('v',masterVersion);
+        preferredMasterUrl='/api/project-asset/masterplan?'+publicParams.toString();
+        canonicalMasterUrl='/api/project-asset/masterplan?'+canonicalParams.toString();
+        master.removeAttribute('src');master.style.visibility='visible'
+      }else{
+        master.removeAttribute('src');master.style.visibility='hidden'
+      }
       master.alt=PROJECT_NAME+' masterplan';
     }
     if(/^#[0-9a-f]{6}$/i.test(s.accentColor||''))document.documentElement.style.setProperty('--gold',s.accentColor);
     document.body.dataset.template=s.template||'plots';
     updateStatusCounts();
     if(selected){const fresh=plots.find(p=>p.id===selected.id);if(fresh){selected=fresh;if(drawer.classList.contains('open')){q('#sqm').textContent=Number(fresh.sqm).toLocaleString('en-IN')+' Sq.M';q('#sqft').textContent=Number(fresh.sqft).toLocaleString('en-IN')+' Sq.Ft';q('#sqyd').textContent=Number(fresh.sqyd).toLocaleString('en-IN')+' Sq.Yd';q('#dims').textContent=fresh.dimensions||'—';q('#road').textContent=fresh.road||'—';const st=plotStatus(fresh),statusEl=q('#plotStatusValue');statusEl.textContent=st.charAt(0).toUpperCase()+st.slice(1);statusEl.className=st}}}
-    let revealed=false;
-    const revealProject=()=>{if(revealed)return;revealed=true;PUBLIC_READY=true;world.style.visibility='visible';reset();document.documentElement.classList.remove('rekixo-project-loading','rekixo-project-error');engine3D?.setPlots?.(plots);if(master&&HAS_MASTERPLAN&&master.src)engine3D?.setImageSrc?.(master.src);engine3D?.setShowAll(showAll);engine3D?.setStatusFilter?.(statusFilter)};
-    const alignMasterAndReveal=()=>{if(revealed)return;if(!isTiyansh&&master&&master.naturalWidth>0&&master.naturalHeight>0){setMapDimensions(master.naturalWidth,master.naturalHeight);rescaleNormalizedPlots()}revealProject()};
-    const masterFailed=()=>{if(revealed)return;document.documentElement.classList.remove('rekixo-project-loading');document.documentElement.classList.add('rekixo-project-error')};
-    if(!isTiyansh&&master&&HAS_MASTERPLAN){master.addEventListener('load',alignMasterAndReveal,{once:true});master.addEventListener('error',masterFailed,{once:true});if(master.complete){queueMicrotask(()=>master.naturalWidth>0?alignMasterAndReveal():masterFailed())}}else revealProject();
+    let revealed=false,shellRevealed=false,masterFailures=0,usingCanonical=false;
+    const revealShell=()=>{
+      if(shellRevealed)return;
+      shellRevealed=true;
+      document.documentElement.classList.remove('rekixo-project-loading','rekixo-project-error');
+      if(!isTiyansh&&HAS_MASTERPLAN)viewport.classList.add('master-loading');
+      reset();
+    };
+    const revealProject=()=>{
+      if(revealed)return;
+      revealed=true;PUBLIC_READY=true;
+      viewport.classList.remove('master-loading');
+      world.style.visibility='visible';
+      reset();
+      engine3D?.setPlots?.(plots);
+      if(master&&HAS_MASTERPLAN&&master.src)engine3D?.setImageSrc?.(master.src);
+      engine3D?.setShowAll(showAll);engine3D?.setStatusFilter?.(statusFilter)
+    };
+    const loadMaster=(canonical=false,bust=false)=>{
+      if(!master)return;
+      usingCanonical=canonical;
+      const base=canonical?canonicalMasterUrl:preferredMasterUrl;
+      if(!base)return;
+      if(!bust){master.src=base;return}
+      const retryUrl=new URL(base,location.href);
+      retryUrl.searchParams.set('retry',String(Date.now()));
+      master.src=retryUrl.pathname+retryUrl.search;
+    };
+    const alignMasterAndReveal=()=>{
+      if(revealed||!master)return;
+      if(!isTiyansh&&master.naturalWidth>0&&master.naturalHeight>0){
+        const storedW=Number(s.mapWidth)||W,storedH=Number(s.mapHeight)||H;
+        const expectedAspect=storedW/Math.max(1,storedH);
+        const actualAspect=master.naturalWidth/Math.max(1,master.naturalHeight);
+        const aspectError=Math.abs(actualAspect/expectedAspect-1);
+        if(!usingCanonical&&aspectError>0.015){
+          masterFailures=0;
+          loadMaster(true,true);
+          return;
+        }
+        setMapDimensions(master.naturalWidth,master.naturalHeight);
+        rescaleNormalizedPlots()
+      }
+      revealProject()
+    };
+    const masterFailed=()=>{
+      if(revealed||!master)return;
+      masterFailures+=1;
+      if(!usingCanonical&&masterFailures<=2){
+        setTimeout(()=>loadMaster(false,true),180*masterFailures);
+        return
+      }
+      if(!usingCanonical){
+        masterFailures=0;
+        setTimeout(()=>loadMaster(true,true),120);
+        return
+      }
+      if(masterFailures<=2){
+        setTimeout(()=>loadMaster(true,true),220*masterFailures);
+        return
+      }
+      viewport.classList.remove('master-loading');
+      world.style.visibility='hidden';
+      toast('Masterplan load nahi hui — network check karke reload karein')
+    };
+    revealShell();
+    if(!isTiyansh&&master&&HAS_MASTERPLAN){
+      master.onload=alignMasterAndReveal;
+      master.onerror=masterFailed;
+      loadMaster(false,false)
+    }else revealProject();
   }
   window.TIYANSH_APPLY_PUBLIC_DATA=applyPublicData;
   reset();
