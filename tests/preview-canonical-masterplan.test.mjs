@@ -13,13 +13,14 @@ test("authenticated preview canonicalizes old short project ids before rendering
   assert.ok(preview.includes("redirect(`/preview/${encodeURIComponent(matches[0].id)}`)"));
 });
 
-test("preview uses canonical project masterplan while polygon geometry stays unrotated", async () => {
+test("preview uses canonical project masterplan with the saved public presentation rotation", async () => {
   const site = await source("../public/project/index.html");
   assert.ok(site.includes("ACTIVE_PROJECT_ID=data.projectId"));
   assert.ok(site.includes("canonicalForward.set('projectId',ACTIVE_PROJECT_ID)"));
   assert.ok(site.includes("window.REKIXO_PROJECT_QUERY=canonicalForward.toString()"));
   assert.ok(site.includes("canonicalForward.set('assetRev',String(Date.now()))"));
   assert.ok(site.includes("master.src='/api/project-asset/masterplan'+(window.REKIXO_PROJECT_QUERY||'')"));
-  assert.ok(site.includes("Canonical world: image + saved SVG geometry are never runtime-rotated"));
-  assert.ok(!site.includes("PUBLIC_ROTATION"));
+  assert.ok(site.includes("publicRotation=normalizeQuarterTurn(s.publicRotation)"));
+  assert.ok(site.includes("rotate(${publicRotation*90}deg)"));
+  assert.ok(site.includes("u=rotateOffset(dx,dy,(4-publicRotation)%4)"));
 });

@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("public 2D plot geometry can never inherit mapper rotation", async () => {
+test("public 2D rotates image and SVG together without rewriting canonical polygons", async () => {
   const [mapper, site] = await Promise.all([
     read("../app/plot-mapper.tsx"),
     read("../public/project/index.html"),
@@ -12,11 +12,12 @@ test("public 2D plot geometry can never inherit mapper rotation", async () => {
 
   assert.match(mapper, /mapper-rotated-scene/);
   assert.match(mapper, /rekixo:mapper-rotation:\$\{projectId\}/);
-  assert.doesNotMatch(mapper, /persistMapperSettings\(\{ publicRotation:/);
+  assert.match(mapper, /persistMapperSettings\(\{ publicRotation: String\(next\) \}\)/);
 
-  assert.match(site, /Canonical world: image \+ saved SVG geometry are never runtime-rotated/);
-  assert.doesNotMatch(site, /PUBLIC_ROTATION/);
-  assert.doesNotMatch(site, /world\.style\.transform[\s\S]{0,250}rotate\(/);
+  assert.match(site, /publicRotation=normalizeQuarterTurn\(s\.publicRotation\)/);
+  assert.match(site, /scale\(\$\{scale\}\) rotate\(\$\{publicRotation\*90\}deg\)/);
+  assert.match(site, /u=rotateOffset\(dx,dy,\(4-publicRotation\)%4\)/);
+  assert.match(site, /publicRotation%2\?\{w:H,h:W\}:\{w:W,h:H\}/);
 });
 
 test("repair workflow protects all 146 saved polygons before and after image replacement", async () => {

@@ -25,11 +25,11 @@ test("mapper repairs dimensions from decoded image without touching polygons", (
   assert.match(mapper, /rekixo:mapper-settings-updated/);
 });
 
-test("mapper display rotation stays device-local while canonical geometry remains unchanged", () => {
+test("mapper shares presentation rotation while canonical geometry remains unchanged", () => {
   assert.match(mapper, /rekixo:mapper-rotation:\$\{projectId\}/);
-  assert.doesNotMatch(mapper, /persistMapperSettings\(\{ publicRotation:/);
-  assert.match(mapper, /persistent plot geometry always remains in the original masterplan coordinate space/);
-  assert.match(mapper, /mapping-view only/);
+  assert.match(mapper, /persistMapperSettings\(\{ publicRotation: String\(next\) \}\)/);
+  assert.match(mapper, /Plot polygons always stay in canonical source-image coordinates/);
+  assert.match(mapper, /Rotation is presentation metadata only/);
 });
 
 test("generic preview cannot flash or bootstrap Tiyansh tenant data", () => {
@@ -40,14 +40,15 @@ test("generic preview cannot flash or bootstrap Tiyansh tenant data", () => {
   assert.doesNotMatch(publicPage, /PROJECT_LOCATION=s\.location\|\|PROJECT_LOCATION/);
 });
 
-test("generic public map contains the full natural masterplan and keeps hit testing aligned", () => {
+test("generic public map contains the full natural masterplan and keeps rotated hit testing aligned", () => {
   assert.match(publicPage, /function displaySize/);
   assert.match(publicPage, /legacyWidthFit/);
   assert.match(publicPage, /Math\.min\(fw,fh\)/);
   assert.match(publicPage, /function rescaleNormalizedPlots/);
   assert.match(publicPage, /master\.naturalWidth/);
-  assert.match(publicPage, /Canonical world: image \+ saved SVG geometry are never runtime-rotated/);
-  assert.doesNotMatch(publicPage, /PUBLIC_ROTATION/);
+  assert.match(publicPage, /publicRotation=normalizeQuarterTurn\(s\.publicRotation\)/);
+  assert.match(publicPage, /u=rotateOffset\(dx,dy,\(4-publicRotation\)%4\)/);
+  assert.match(publicPage, /rotate\(\$\{publicRotation\*90\}deg\)/);
 });
 
 test("publish readiness refreshes immediately after mapper metadata repair", () => {

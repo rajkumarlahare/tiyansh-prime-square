@@ -420,6 +420,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   let selected = null, showAll = false, statusExpanded = false, statusFilter = null;
   let toastTimer = null, mode3D = false, engine3D = null, mapRaf = 0, resizeRaf = 0;
   let PUBLIC_READY = false, HAS_MASTERPLAN = false;
+  let publicRotation = 0;
   world.style.visibility = 'hidden';
   let gesture = null;
   const pointers = new Map();
@@ -431,6 +432,18 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   const TAP_SLOP = e => isCoarse(e) ? 14 : 6;
   const HIT_PAD = e => isCoarse(e) ? 12 : 3; // CSS px, only for edge forgiveness
 
+  function normalizeQuarterTurn(value){
+    const n=Number(value);
+    return n===0||n===1||n===2||n===3?n:0;
+  }
+  function rotateOffset(x,y,turns){
+    const t=((turns%4)+4)%4;
+    if(t===1)return{x:y,y:-x};
+    if(t===2)return{x:-x,y:-y};
+    if(t===3)return{x:-y,y:x};
+    return{x,y};
+  }
+
   function setMapDimensions(width,height){
     const nextW=Math.max(100,Math.min(10000,Number(width)||1200)),nextH=Math.max(100,Math.min(10000,Number(height)||2133));
     W=nextW;H=nextH;
@@ -441,7 +454,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.setAttribute('width',String(W));svg.setAttribute('height',String(H));
   }
 
-  function displaySize(){return {w:W,h:H}}
+  function displaySize(){return publicRotation%2?{w:H,h:W}:{w:W,h:H}}
   function calcFit(){
     const mobile = window.matchMedia('(max-width:700px)').matches;
     const size=displaySize();
@@ -455,8 +468,8 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   function clampPan(){const l=limits();pan.x=clamp(pan.x,-l.x,l.x);pan.y=clamp(pan.y,-l.y,l.y)}
   function render(){
     clampPan();
-    // Canonical world: image + saved SVG geometry are never runtime-rotated.
-    world.style.transform = `translate(calc(-50% + ${pan.x}px),calc(-50% + ${pan.y}px)) scale(${scale})`;
+    // Image + SVG rotate as one world; polygon coordinates remain canonical.
+    world.style.transform = `translate(calc(-50% + ${pan.x}px),calc(-50% + ${pan.y}px)) scale(${scale}) rotate(${publicRotation*90}deg)`;
     q('#percent').textContent = Math.round(scale/fit*100)+'%';
   }
   function scheduleRender(){if(!mapRaf)mapRaf=requestAnimationFrame(()=>{mapRaf=0;render()})}
@@ -513,7 +526,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     lastPlotOpenAt=performance.now();
   }
   function close(){drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.classList.remove('open')}
-  function focusPlot(p){const target=Math.max(scale,fit*1.85);scale=Math.min(target,fit*4.5);pan.x=(W/2-p.center[0])*scale;pan.y=(H/2-p.center[1])*scale;render()}
+  function focusPlot(p){const target=Math.max(scale,fit*1.85);scale=Math.min(target,fit*4.5);const r=rotateOffset(p.center[0]-W/2,p.center[1]-H/2,publicRotation);pan.x=-r.x*scale;pan.y=-r.y*scale;render()}
   function zoomAt(newScale,sx,sy){newScale=clamp(newScale,fit,fit*4.5);const r=viewport.getBoundingClientRect(),mx=sx-r.left-r.width/2,my=sy-r.top-r.height/2,cx=(mx-pan.x)/scale,cy=(my-pan.y)/scale;pan.x=mx-cx*newScale;pan.y=my-cy*newScale;scale=newScale;render()}
   function zoomCenter(factor){const r=viewport.getBoundingClientRect();zoomAt(scale*factor,r.left+r.width/2,r.top+r.height/2)}
   function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
@@ -521,7 +534,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
 
   function pointInPolygon(x,y,pts){let inside=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const xi=pts[i][0],yi=pts[i][1],xj=pts[j][0],yj=pts[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi))inside=!inside}return inside}
   function distSeg(px,py,ax,ay,bx,by){const vx=bx-ax,vy=by-ay,wx=px-ax,wy=py-ay,c1=vx*wx+vy*wy;if(c1<=0)return Math.hypot(px-ax,py-ay);const c2=vx*vx+vy*vy;if(c2<=c1)return Math.hypot(px-bx,py-by);const t=c1/c2,qx=ax+t*vx,qy=ay+t*vy;return Math.hypot(px-qx,py-qy)}
-  function clientToPlan(x,y){const r=viewport.getBoundingClientRect(),dx=(x-r.left-r.width/2-pan.x)/scale,dy=(y-r.top-r.height/2-pan.y)/scale;return{x:dx+W/2,y:dy+H/2}}
+  function clientToPlan(x,y){const r=viewport.getBoundingClientRect(),dx=(x-r.left-r.width/2-pan.x)/scale,dy=(y-r.top-r.height/2-pan.y)/scale,u=rotateOffset(dx,dy,(4-publicRotation)%4);return{x:u.x+W/2,y:u.y+H/2}}
   function plotAtClient(x,y,padCss=0){
     const pt=clientToPlan(x,y);
     const exact=plots.find(p=>pointInPolygon(pt.x,pt.y,p.points));
@@ -676,9 +689,8 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
 
     const isTiyansh=ACTIVE_PROJECT_ID===REKIXO_DEFAULT_PROJECT;
     const s=data&&data.settings||{};
-    // Website never rotates persisted plot geometry. If an uploaded masterplan
-    // needs orientation repair, the IMAGE ASSET is rebuilt to canonical portrait
-    // bytes; SVG polygons remain exactly as selected/saved.
+    publicRotation=normalizeQuarterTurn(s.publicRotation);
+    // Saved polygons stay canonical. Only the shared presentation world rotates.
     setMapDimensions(isTiyansh?1200:(s.mapWidth||1200),isTiyansh?2133:(s.mapHeight||2133));
     if(!isTiyansh){
       plots.splice(0,plots.length);

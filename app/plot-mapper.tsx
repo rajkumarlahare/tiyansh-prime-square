@@ -250,6 +250,13 @@ function settingsNumber(value: string | undefined, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function normalizeQuarterTurn(value: unknown): 0 | 1 | 2 | 3 {
+  const parsed = Number(value);
+  return parsed === 0 || parsed === 1 || parsed === 2 || parsed === 3
+    ? (parsed as 0 | 1 | 2 | 3)
+    : 0;
+}
+
 function segmentDirection(a: MapperPoint, b: MapperPoint, c: MapperPoint) {
   return (c[0] - a[0]) * (b[1] - a[1]) - (b[0] - a[0]) * (c[1] - a[1]);
 }
@@ -399,9 +406,8 @@ export default function PlotMapper({
     const nextSettings = (data.settings || {}) as MapperSettings;
     setPlots(nextPlots);
     setSettings(nextSettings);
-    // Mapper rotation is intentionally device-local/view-only.
-    // Never hydrate it from a website setting: saved plot geometry and the
-    // public renderer must stay in canonical masterplan coordinates.
+    // Plot polygons always stay in canonical source-image coordinates.
+    // publicRotation only controls the shared Super Admin/public presentation angle.
     setSettingsReady(true);
     setCadGeometry((data.cadGeometry || null) as CadGeometry | null);
     setImageUrl(assetUrl("masterplan"));
@@ -473,8 +479,8 @@ export default function PlotMapper({
     projectId,
   ]);
 
-  // IMPORTANT: mapper rotation is never persisted to website/public geometry.
-  // The uploaded masterplan asset itself is normalized/oriented at ingestion/repair time.
+  // Rotation is presentation metadata only. Persisted polygon coordinates are
+  // never rewritten when the shared Super Admin/public angle changes.
 
   useEffect(() => {
     resetGestureFrameQueue();
@@ -499,6 +505,52 @@ export default function PlotMapper({
     // projectId remounts the component in Super Admin.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  useEffect(() => {
+    if (!settingsReady || completedProject) return;
+
+    const serverRotation = normalizeQuarterTurn(settings.publicRotation);
+    let localRotation: 0 | 1 | 2 | 3 | null = null;
+    try {
+      const raw = window.localStorage.getItem(`rekixo:mapper-rotation:${projectId}`);
+      if (raw !== null) {
+        const saved = Number(raw);
+        if (saved === 0 || saved === 1 || saved === 2 || saved === 3) {
+          localRotation = saved as 0 | 1 | 2 | 3;
+        }
+      }
+    } catch {
+      // Server setting remains authoritative when localStorage is unavailable.
+    }
+
+    // One-time compatibility bridge for projects created before public rotation
+    // was shared: preserve the existing non-zero mapper angle when the server is
+    // still at its legacy 0° default. Once a non-zero server value exists, it wins.
+    const migrateExistingLocalAngle =
+      serverRotation === 0 && localRotation !== null && localRotation !== 0;
+    const nextRotation = migrateExistingLocalAngle ? localRotation! : serverRotation;
+
+    setRotation(nextRotation);
+    try {
+      window.localStorage.setItem(
+        `rekixo:mapper-rotation:${projectId}`,
+        String(nextRotation),
+      );
+    } catch {
+      // Local preference is optional; project-level server rotation is durable.
+    }
+
+    if (migrateExistingLocalAngle) {
+      void persistMapperSettings({ publicRotation: String(nextRotation) }).catch((error) => {
+        notify(
+          error instanceof Error
+            ? error.message
+            : "Existing mapper rotation public site me sync nahi hui",
+        );
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsReady, completedProject, projectId, settings.publicRotation]);
 
   useEffect(() => {
     if (completedProject || !plotId || editingId || points.length) return;
@@ -1233,15 +1285,20 @@ export default function PlotMapper({
   }
 
   function rotateMapperView(direction: -1 | 1) {
-    setRotation((current) => {
-      const next = ((current + direction + 4) % 4) as 0 | 1 | 2 | 3;
-      try {
-        window.localStorage.setItem(`rekixo:mapper-rotation:${projectId}`, String(next));
-      } catch {
-        // Device preference persistence is optional; mapping must keep working.
-      }
-      return next;
-    });
+    const next = ((rotation + direction + 4) % 4) as 0 | 1 | 2 | 3;
+    setRotation(next);
+    try {
+      window.localStorage.setItem(`rekixo:mapper-rotation:${projectId}`, String(next));
+    } catch {
+      // Local preference is optional; mapping must keep working.
+    }
+    if (!completedProject) {
+      void persistMapperSettings({ publicRotation: String(next) }).catch((error) => {
+        notify(
+          error instanceof Error ? error.message : "Public rotation save nahi hui",
+        );
+      });
+    }
     // A quarter turn changes portrait/landscape bounds. Fit once, then user can zoom again.
     resetGestureFrameQueue();
     activeGesturePointersRef.current.clear();
@@ -1274,6 +1331,13 @@ export default function PlotMapper({
     zoomRef.current = 1;
     setZoom(1);
     setRotation(0);
+    if (!completedProject) {
+      void persistMapperSettings({ publicRotation: "0" }).catch((error) => {
+        notify(
+          error instanceof Error ? error.message : "Public rotation reset nahi hui",
+        );
+      });
+    }
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const canvas = canvasRef.current;

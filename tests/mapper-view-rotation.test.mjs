@@ -57,12 +57,14 @@ test("snapping swaps rendered source axes at quarter-turn rotations", () => {
   assert.match(source, /snapPoint\(\s*raw,\s*mappedPolygons,\s*sourceRenderedWidth,\s*sourceRenderedHeight,\s*snapThresholdPx,\s*\)/s);
 });
 
-test("rotation remains project-device scoped, reset-safe and never controls website geometry", () => {
+test("rotation stays geometry-safe, reset-safe and syncs the public presentation angle", () => {
   assert.match(source, /rekixo:mapper-rotation:\$\{projectId\}/);
   assert.match(source, /↺ 90°/);
   assert.match(source, /↻ 90°/);
   assert.match(source, /setZoom\(1\)/);
   assert.match(source, /setRotation\(0\)/);
-  assert.doesNotMatch(source, /persistMapperSettings\(\{ publicRotation:/);
+  assert.match(source, /persistMapperSettings\(\{ publicRotation: String\(next\) \}\)/);
+  assert.match(source, /persistMapperSettings\(\{ publicRotation: "0" \}\)/);
+  assert.match(source, /serverRotation === 0 && localRotation !== null && localRotation !== 0/);
   assert.match(source, /Mapper view:/);
 });
