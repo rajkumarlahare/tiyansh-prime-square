@@ -30,7 +30,7 @@ export function legacyFallbackHost() {
 }
 
 export function clientPlatformHost() {
-  return normalizeHost(cfg().CLIENT_PLATFORM_HOST || "sites.rekixo.com");
+  return normalizeHost(cfg().CLIENT_PLATFORM_HOST || "");
 }
 
 export function sharedAdminHost() {

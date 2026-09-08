@@ -14,8 +14,7 @@ const workersSubdomain =
   String(process.env.REKIXO_WORKERS_SUBDOMAIN || "").trim() || "ai-8f3";
 const genericHost = `rekixo-client-sites.${workersSubdomain}.workers.dev`;
 const legacyHost = `tiyansh-prime-square.${workersSubdomain}.workers.dev`;
-const platformHost =
-  String(process.env.REKIXO_PLATFORM_HOST || "").trim() || "sites.rekixo.com";
+const platformHost = String(process.env.REKIXO_PLATFORM_HOST || "").trim();
 const sharedAdminHost = String(
   process.env.REKIXO_SHARED_ADMIN_HOST || "",
 ).trim();

@@ -43,7 +43,7 @@ function links(slug: string, publicHost?: string | null, adminHost?: string | nu
       : platform
         ? `https://${platform}/p/${encodeURIComponent(slug)}`
         : fallback
-          ? `https://${fallback}/p/${encodeURIComponent(slug)}`
+          ? `https://${fallback}/projects/${encodeURIComponent(slug)}`
           : "",
     adminUrl: adminHost
       ? `https://${adminHost}/admin/login`
