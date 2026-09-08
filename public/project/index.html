@@ -431,7 +431,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   const coarseMQ = window.matchMedia('(pointer:coarse)');
   const isCoarse = e => e?.pointerType === 'touch' || coarseMQ.matches;
   const TAP_SLOP = e => isCoarse(e) ? 14 : 6;
-  const HIT_PAD = e => isCoarse(e) ? 12 : 3; // CSS px, only for edge forgiveness
+  const HIT_PAD = e => isCoarse(e) ? 5 : 2; // CSS px; accuracy first, only tiny edge forgiveness
 
   function normalizeQuarterTurn(value){
     const n=Number(value);
@@ -439,9 +439,11 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   }
   function rotateOffset(x,y,turns){
     const t=((turns%4)+4)%4;
-    if(t===1)return{x:y,y:-x};
+    // Match CSS rotate(+90deg) in screen coordinates (Y grows downward).
+    // 90° clockwise: (x,y) -> (-y,x); 270°: (x,y) -> (y,-x).
+    if(t===1)return{x:-y,y:x};
     if(t===2)return{x:-x,y:-y};
-    if(t===3)return{x:-y,y:x};
+    if(t===3)return{x:y,y:-x};
     return{x,y};
   }
 
@@ -536,8 +538,33 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
 
   function pointInPolygon(x,y,pts){let inside=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const xi=pts[i][0],yi=pts[i][1],xj=pts[j][0],yj=pts[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi))inside=!inside}return inside}
   function distSeg(px,py,ax,ay,bx,by){const vx=bx-ax,vy=by-ay,wx=px-ax,wy=py-ay,c1=vx*wx+vy*wy;if(c1<=0)return Math.hypot(px-ax,py-ay);const c2=vx*vx+vy*vy;if(c2<=c1)return Math.hypot(px-bx,py-by);const t=c1/c2,qx=ax+t*vx,qy=ay+t*vy;return Math.hypot(px-qx,py-qy)}
-  function clientToPlan(x,y){const r=viewport.getBoundingClientRect(),dx=(x-r.left-r.width/2-pan.x)/scale,dy=(y-r.top-r.height/2-pan.y)/scale,u=rotateOffset(dx,dy,(4-publicRotation)%4);return{x:u.x+W/2,y:u.y+H/2}}
+  function clientToPlan(x,y){
+    // Browser CTM is the source of truth: it includes the real CSS rotation,
+    // scale, centering, pan, SVG viewBox and device layout in one matrix.
+    const ctm=svg.getScreenCTM?.();
+    if(ctm){
+      try{
+        const point=svg.createSVGPoint();
+        point.x=x;point.y=y;
+        const local=point.matrixTransform(ctm.inverse());
+        if(Number.isFinite(local.x)&&Number.isFinite(local.y))return{x:local.x,y:local.y};
+      }catch(_){ }
+    }
+    // Conservative fallback for browsers where getScreenCTM is unavailable.
+    const r=viewport.getBoundingClientRect(),dx=(x-r.left-r.width/2-pan.x)/scale,dy=(y-r.top-r.height/2-pan.y)/scale,u=rotateOffset(dx,dy,(4-publicRotation)%4);
+    return{x:u.x+W/2,y:u.y+H/2};
+  }
+  function nativePlotAtClient(x,y){
+    const target=document.elementFromPoint(x,y);
+    const el=target?.closest?.('.plot');
+    if(!el||!svg.contains(el))return null;
+    return plots.find(p=>p.id===el.dataset.plotId)||null;
+  }
   function plotAtClient(x,y,padCss=0){
+    // Prefer the browser's exact transformed SVG hit target. Geometry fallback
+    // exists for edge taps and pointer-capture retargeting only.
+    const native=nativePlotAtClient(x,y);
+    if(native)return native;
     const pt=clientToPlan(x,y);
     const exact=plots.find(p=>pointInPolygon(pt.x,pt.y,p.points));
     if(exact) return exact;
@@ -596,8 +623,11 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     const wasTap=single&&!g.moved&&!cancelled;
     let hit=null;
     if(wasTap){
-      // Prefer release point, then press point. This survives SVG retargeting/pointer capture quirks.
-      hit=plotAtClient(e.clientX,e.clientY,HIT_PAD(e)) || (g.startPlot?plots.find(p=>p.id===g.startPlot):null);
+      // A no-drag tap belongs to the plot where the finger went down. Prefer
+      // that stable start hit; release-point geometry is only a fallback.
+      const startHit=g.startPlot?plots.find(p=>p.id===g.startPlot):null;
+      const releaseHit=plotAtClient(e.clientX,e.clientY,HIT_PAD(e));
+      hit=startHit||releaseHit;
     }
     pointers.delete(e.pointerId);
     try{if(viewport.hasPointerCapture?.(e.pointerId))viewport.releasePointerCapture(e.pointerId)}catch(_){ }
