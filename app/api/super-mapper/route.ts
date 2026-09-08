@@ -464,6 +464,8 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as {
     projectId?: string;
+    action?: "clear_all_polygons";
+    confirmation?: string;
     plot?: Record<string, unknown>;
     plots?: Record<string, unknown>[];
     settings?: Record<string, unknown>;
@@ -473,6 +475,39 @@ export async function POST(request: Request) {
     return Response.json({ error: "Project नहीं मिला" }, { status: 404 });
   if (projectId === COMPLETED_PROJECT_ID)
     return Response.json({ error: "Completed Tiyansh mapper locked है" }, { status: 409 });
+
+  if (body.action === "clear_all_polygons") {
+    if (body.confirmation !== `CLEAR ${projectId}`) {
+      return Response.json({ error: "Clear all confirmation invalid है" }, { status: 400 });
+    }
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS total FROM plots WHERE project_id=? AND TRIM(COALESCE(polygon,''))<>''",
+    )
+      .bind(projectId)
+      .first<{ total: number }>();
+    const cleared = Number(count?.total || 0);
+    if (!cleared) return Response.json({ ok: true, cleared: 0 });
+
+    const now = new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE plots SET polygon='',updated_at=? WHERE project_id=? AND TRIM(COALESCE(polygon,''))<>''",
+      ).bind(now, projectId),
+      env.DB.prepare(
+        "INSERT INTO audit_logs (id,actor_id,actor_email,action,project_id,target_id,details,created_at) VALUES (?,?,?,?,?,?,?,?)",
+      ).bind(
+        crypto.randomUUID(),
+        actor.id,
+        actor.email,
+        "mapper.all_boundaries_removed",
+        projectId,
+        null,
+        JSON.stringify({ count: cleared }),
+        now,
+      ),
+    ]);
+    return Response.json({ ok: true, cleared });
+  }
 
   if (body.settings && typeof body.settings === "object") {
     const entries = Object.entries(body.settings).filter(([key]) => SETTINGS_WHITELIST.has(key));
