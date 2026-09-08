@@ -24,6 +24,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       DB_NAME: tiyansh-production
+      DB_ID: "ac37f422-3065-4bda-9f9c-16c4b818cacd"
       BUCKET: tiyansh-gallery-production
       TARGET_PROJECT_ID: "904"
       MAPPER_SOURCE_PROJECT_ID: tiyansh-prime-square
@@ -56,6 +57,26 @@ jobs:
           TMP="$(mktemp -d)"
           trap 'rm -rf "$TMP"' EXIT
 
+          # Pin recovery to the exact D1 database_id used by deployed Workers.
+          cat > "$TMP/wrangler.recovery.json" <<EOF
+          {
+            "name": "rekixo-rpk-v58-recovery",
+            "compatibility_date": "2026-09-08",
+            "d1_databases": [
+              {
+                "binding": "DB",
+                "database_name": "${DB_NAME}",
+                "database_id": "${DB_ID}"
+              }
+            ],
+            "r2_buckets": [
+              {
+                "binding": "BUCKET",
+                "bucket_name": "${BUCKET}"
+              }
+            ]
+          }
+          EOF
           STATE_SQL="SELECT p.id,p.name,p.public_status AS publicStatus,\
           (SELECT COUNT(*) FROM plots x WHERE x.project_id=p.id) AS total,\
           (SELECT COUNT(*) FROM plots x WHERE x.project_id=p.id AND TRIM(COALESCE(x.polygon,''))<>'') AS mapped,\
@@ -67,9 +88,14 @@ jobs:
           PLOTS_SQL="SELECT id,sqft,sqm,sqyd,dimensions,road,status,notes,featured,polygon \
           FROM plots WHERE project_id='${TARGET_PROJECT_ID}' ORDER BY id;"
 
-          "${W[@]}" d1 execute "$DB_NAME" --remote --json --command "$STATE_SQL" > "$TMP/state-before.json"
-          "${W[@]}" d1 execute "$DB_NAME" --remote --json --command "$PLOTS_SQL" > "$TMP/plots-before.json"
+          # Read-only preflight: prove project 904 exists in the exact production D1
+          # before any R2 backup or write can happen.
+          "${W[@]}" d1 execute DB --config "$TMP/wrangler.recovery.json" --remote --json \
+            --command "SELECT id,name,status,public_status AS publicStatus FROM projects ORDER BY updated_at DESC LIMIT 50;" \
+            > "$TMP/projects-probe.json"
 
+          "${W[@]}" d1 execute DB --config "$TMP/wrangler.recovery.json" --remote --json --command "$STATE_SQL" > "$TMP/state-before.json"
+          "${W[@]}" d1 execute DB --config "$TMP/wrangler.recovery.json" --remote --json --command "$PLOTS_SQL" > "$TMP/plots-before.json"
           cat > "$TMP/tools.py" <<'PY'
           import hashlib, json, struct, sys
           from pathlib import Path
@@ -166,6 +192,36 @@ jobs:
               raise SystemExit("unknown mode")
           PY
 
+          python3 - "$TMP/projects-probe.json" "${TARGET_PROJECT_ID}" <<'PY2'
+          import json, sys
+          from pathlib import Path
+
+          obj = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          target = sys.argv[2]
+          rows = []
+
+          def walk(v):
+              if isinstance(v, dict):
+                  if isinstance(v.get("results"), list):
+                      rows.extend(x for x in v["results"] if isinstance(x, dict))
+                  for x in v.values():
+                      walk(x)
+              elif isinstance(v, list):
+                  for x in v:
+                      walk(x)
+
+          walk(obj)
+          matches = [r for r in rows if str(r.get("id")) == target]
+          if len(matches) != 1:
+              print("D1 project probe rows:", file=sys.stderr)
+              for r in rows:
+                  print(f"  id={r.get('id')} name={r.get('name')} status={r.get('status')} public={r.get('publicStatus')}", file=sys.stderr)
+              raise SystemExit(f"TARGET project {target} expected exactly once in exact production D1; got {len(matches)}")
+          if str(matches[0].get("status")) != "active":
+              raise SystemExit(f"TARGET project {target} is not active: {matches[0].get('status')}")
+          print(f"Exact D1 target verified: {target}")
+          PY2
+
           read -r MAP_W MAP_H < <(python3 "$TMP/tools.py" state "$TMP/state-before.json")
           PLOTS_HASH_BEFORE="$(python3 "$TMP/tools.py" hash "$TMP/plots-before.json")"
           echo "D1 verified: 146/146 · map ${MAP_W}x${MAP_H}"
@@ -239,8 +295,8 @@ jobs:
           [[ "$(sha256sum "$TMP/canonical-after.bin" | awk '{print $1}')" == "$SRC_SHA" ]]
           [[ "$(sha256sum "$TMP/public-after.bin" | awk '{print $1}')" == "$SRC_SHA" ]]
 
-          "${W[@]}" d1 execute "$DB_NAME" --remote --json --command "$STATE_SQL" > "$TMP/state-after.json"
-          "${W[@]}" d1 execute "$DB_NAME" --remote --json --command "$PLOTS_SQL" > "$TMP/plots-after.json"
+          "${W[@]}" d1 execute DB --config "$TMP/wrangler.recovery.json" --remote --json --command "$STATE_SQL" > "$TMP/state-after.json"
+          "${W[@]}" d1 execute DB --config "$TMP/wrangler.recovery.json" --remote --json --command "$PLOTS_SQL" > "$TMP/plots-after.json"
           python3 "$TMP/tools.py" state "$TMP/state-after.json" >/dev/null
           PLOTS_HASH_AFTER="$(python3 "$TMP/tools.py" hash "$TMP/plots-after.json")"
           [[ "$PLOTS_HASH_AFTER" == "$PLOTS_HASH_BEFORE" ]] || {
