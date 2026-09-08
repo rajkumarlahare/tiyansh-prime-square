@@ -30,6 +30,9 @@ const PUBLIC_SETTING_KEYS = new Set([
   "publicRotation",
   "logoName",
   "logoVersion",
+  "shareTitle",
+  "shareDescription",
+  "shareImage",
 ]);
 
 async function previewProjectId(request: Request) {

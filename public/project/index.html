@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=yes">
 <meta name="theme-color" content="#050914">
-<title>Tiyansh — The Prime Square</title>
+<title>Project</title>
 <script>
 (() => {
   const params = new URLSearchParams(location.search);
@@ -291,18 +291,6 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
 
 </style>
 
-<!-- Rekixo RPK share meta start -->
-<meta name="description" content="Shree Banashankari Nagara - premium residential plots at Beside Housing Board Colony, Ring Road, Huvinahadagali-583219, Vijayanagara Dist. Contact +91 95386 02461.">
-<meta property="og:type" content="website">
-<meta property="og:title" content="Shree Banashankari Nagara">
-<meta property="og:description" content="Premium residential plots • Beside Housing Board Colony, Ring Road, Huvinahadagali-583219, Vijayanagara Dist. • Contact +91 95386 02461">
-<meta property="og:image" content="/rpk-share-card.png">
-<meta property="og:image:alt" content="RPK Builders & Developers - Shree Banashankari Nagara promotional card">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Shree Banashankari Nagara">
-<meta name="twitter:description" content="Premium residential plots • Huvinahadagali, Vijayanagara • Contact +91 95386 02461">
-<meta name="twitter:image" content="/rpk-share-card.png">
-<!-- Rekixo RPK share meta end -->
 </head>
 <body>
 <div class="app">
@@ -974,23 +962,23 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
 })();
 </script>
 
-<script id="rekixo-rpk-contact-share-enhancer">
+<script id="rekixo-project-contact-share-enhancer">
 (()=>{
-  if(window.__rekixoRpkEnhancerApplied) return;
-  window.__rekixoRpkEnhancerApplied = true;
+  if(window.__rekixoProjectEnhancerApplied) return;
+  window.__rekixoProjectEnhancerApplied = true;
 
   const FALLBACK = {
-    projectName: "Shree Banashankari Nagara",
-    brandName: "RPK Builders & Developers",
-    location: "HUVINAHADAGALI, VIJAYANAGARA",
-    address: "Beside Housing Board Colony, Ring Road, Huvinahadagali-583219, Vijayanagara Dist.",
-    phone1: "+91 95386 02461",
+    projectName: "Project",
+    brandName: "",
+    location: "",
+    address: "",
+    phone1: "",
     phone2: "",
-    whatsapp: "+91 95386 02461",
-    shareTitle: "Shree Banashankari Nagara",
-    shareDescription: "Premium residential plots at Beside Housing Board Colony, Ring Road, Huvinahadagali-583219, Vijayanagara Dist. Contact +91 95386 02461.",
-    shareImage: "/rpk-share-card.png"
-  };
+    whatsapp: "",
+    shareTitle: "",
+    shareDescription: "",
+    shareImage: ""
+  }
 
   const normalizeDigits = (value)=>String(value||"").replace(/D+/g, "");
   const safeText = (value, fallback="") => String(value ?? fallback).trim();
