@@ -193,7 +193,7 @@ html.rekixo-project-error body::after{content:"Project preview load nahi hua. Re
   .status-option{transform:translateY(46px);opacity:0;transition:transform .48s cubic-bezier(.22,1,.36,1),opacity .22s ease}
   .status.expanded .status-option{transform:translateY(0);opacity:1}
   .status.expanded .status-option:nth-child(3){transition-delay:.02s}.status.expanded .status-option:nth-child(2){transition-delay:.07s}.status.expanded .status-option:nth-child(1){transition-delay:.12s}
-  .bottom-links{right:51px;bottom:68px}
+  .bottom-links{right:51px;bottom:14px}
   .status-option,.status-option.active{background:transparent!important;box-shadow:none!important}
   .status-option{position:relative;isolation:isolate;overflow:hidden;-webkit-tap-highlight-color:transparent;touch-action:none}
   .status-option>span,.status-option>b{position:relative;z-index:2}
@@ -249,7 +249,8 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
 @media(max-width:700px){
   .header{padding:8px 10px 10px;border-bottom-width:2px}
   .brandrow{gap:9px}.brandmark{width:44px;height:44px;border-radius:11px}.brandmark .monogram{width:35px;height:35px}
-  .brand b{font-size:14px}.brand small{color:#8191b0;margin-top:4px}
+  .brand b{font-size:14px}
+  .brand small{color:#9cabc8;margin-top:3px;font-size:8px;line-height:1.2;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
   .icon{width:43px;height:43px;border-radius:13px}
   .search{height:48px;margin-top:9px;border-radius:14px;padding-left:14px}.search input{font-size:14px}
   .compass{box-shadow:inset 0 1px rgba(255,255,255,.06),0 8px 24px rgba(0,0,0,.4)}
@@ -292,7 +293,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
   <div class="three-host" id="threeHost"></div>
   <div class="world" id="world">
     <img class="master" src="masterplan.jpg" width="1200" height="2133" alt="Project masterplan" decoding="async" fetchpriority="high">
-    <svg class="hotspots" id="hotspots" viewBox="0 0 1200 2133" width="1200" height="2133" aria-label="Interactive plot overlay"></svg>
+    <svg class="hotspots show-all" id="hotspots" viewBox="0 0 1200 2133" width="1200" height="2133" aria-label="Interactive plot overlay"></svg>
   </div>
 
   <div class="map-badge compass" aria-hidden="true">
@@ -308,8 +309,8 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
   <button class="map-badge view-mode" id="view3d">3D</button>
   <div class="map-badge mini-logo" aria-label="TPS 3D"><strong>TPS</strong><span>3D</span></div>
 
-  <div class="status" id="statusCard">
-    <div class="status-head"><span>STATUS</span><button type="button" class="toggle" id="outlineToggle" aria-label="Expand status filters" aria-expanded="false"></button></div>
+  <div class="status expanded" id="statusCard">
+    <div class="status-head"><span>STATUS</span><button type="button" class="toggle on" id="outlineToggle" aria-label="Expand status filters" aria-expanded="true"></button></div>
     <div class="status-body" id="statusBody">
       <button type="button" class="status-line status-option available" data-status-filter="available"><span><i class="sdot"></i>Available</span><b id="countAvailable">0</b></button>
       <button type="button" class="status-line status-option booked" data-status-filter="booked"><span><i class="sdot"></i>Booked</span><b id="countBooked">0</b></button>
@@ -417,7 +418,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   const imageLightbox = q('#imageLightbox'),lightboxImage=q('#lightboxImage'),lightboxCaption=q('#lightboxCaption');
 
   let fit = 1, scale = 1, pan = {x:0,y:0};
-  let selected = null, showAll = false, statusExpanded = false, statusFilter = null;
+  let selected = null, showAll = true, statusExpanded = true, statusFilter = null;
   let toastTimer = null, mode3D = false, engine3D = null, mapRaf = 0, resizeRaf = 0;
   let PUBLIC_READY = false, HAS_MASTERPLAN = false;
   let publicRotation = 0;
@@ -460,8 +461,9 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     const size=displaySize();
     const fw = viewport.clientWidth / size.w;
     const fh = viewport.clientHeight / size.h;
-    const legacyWidthFit=ACTIVE_PROJECT_ID===REKIXO_DEFAULT_PROJECT&&mobile;
-    fit = legacyWidthFit ? fw : Math.min(fw,fh);
+    // Mobile uses full width. Image + SVG remain in one uniformly-scaled world,
+    // so side gutters disappear without stretching or changing polygon coordinates.
+    fit = mobile ? fw : Math.min(fw,fh);
     if(!Number.isFinite(fit) || fit <= 0) fit = .3;
   }
   function limits(){const size=displaySize();return {x:Math.max(0,(size.w*scale-viewport.clientWidth)/2),y:Math.max(0,(size.h*scale-viewport.clientHeight)/2)}}
@@ -713,6 +715,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     else {PHONE=String(s.whatsapp||s.phone1||PHONE).replace(/\D/g,'')||PHONE;MAP_URL=s.mapUrl||MAP_URL}
     const resolvedName=String(s.projectName||data.projectName||(isTiyansh?'Tiyansh — The Prime Square':'Project')).trim()||'Project';
     const resolvedLocation=String(s.location||(isTiyansh?'Raigarh, Chhattisgarh':'')).trim();
+    const resolvedAddress=String(s.address||resolvedLocation).trim();
     const words=resolvedName.split(/\s+/).filter(Boolean);
     const fallbackShort=(words.map(word=>word.charAt(0)).join('').replace(/[^A-Za-z0-9]/g,'').slice(0,3)||'PRJ').toUpperCase();
     const resolvedShort=String(s.brandShort||(isTiyansh?'TPS':fallbackShort)).slice(0,4).toUpperCase();
@@ -723,8 +726,8 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     const small=document.querySelector('.monogram small');if(small)small.textContent=resolvedBrand;
     const mono=document.querySelector('.monogram');if(mono&&mono.firstChild)mono.firstChild.textContent=resolvedShort;
     const badge=document.querySelector('.mini-logo strong');if(badge)badge.textContent=resolvedShort;
-    const location=document.querySelector('.brand small');if(location)location.textContent=PROJECT_LOCATION.toUpperCase();
-    const sub=document.querySelector('.dhead .sub');if(sub)sub.textContent=PROJECT_LOCATION.toUpperCase();
+    const location=document.querySelector('.brand small');if(location)location.textContent=(resolvedAddress||PROJECT_LOCATION).toUpperCase();
+    const sub=document.querySelector('.dhead .sub');if(sub)sub.textContent=(resolvedAddress||PROJECT_LOCATION).toUpperCase();
     const gallerySub=document.querySelector('.gallery-head p');if(gallerySub)gallerySub.textContent=[resolvedBrand||PROJECT_NAME,PROJECT_LOCATION].filter(Boolean).join(' · ').toUpperCase();
     const master=document.querySelector('.master');
     HAS_MASTERPLAN=isTiyansh||Boolean(s.masterplanName);

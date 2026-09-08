@@ -42,7 +42,7 @@ test("generic preview cannot flash or bootstrap Tiyansh tenant data", () => {
 
 test("generic public map contains the full natural masterplan and keeps rotated hit testing aligned", () => {
   assert.match(publicPage, /function displaySize/);
-  assert.match(publicPage, /legacyWidthFit/);
+  assert.match(publicPage, /fit = mobile \? fw : Math\.min\(fw,fh\)/);
   assert.match(publicPage, /Math\.min\(fw,fh\)/);
   assert.match(publicPage, /function rescaleNormalizedPlots/);
   assert.match(publicPage, /master\.naturalWidth/);
