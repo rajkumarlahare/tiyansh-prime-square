@@ -22,7 +22,11 @@ test("auto CAD mapper is owner-only, project-native and keeps precise manual fal
   assert.match(mapper, /Main masterplan image/);
   assert.match(mapper, /toolMode/);
   assert.match(mapper, /"pan" \| "select"/);
-  assert.match(mapper, /max="16"/);
+  assert.match(mapper, /MAX_MAPPER_ZOOM = 18/);
+  assert.match(mapper, /max=\{MAX_MAPPER_ZOOM\}/);
+  assert.match(mapper, /clearAllSelections/);
+  assert.match(mapper, /action: "clear_all_polygons"/);
+  assert.match(mapper, /verifyAllBoundariesCleared/);
   assert.match(mapper, /polygonSelfIntersects/);
   assert.match(mapper, /mappingDraftKey/);
   assert.match(mapper, /Clone prev/);
@@ -52,6 +56,9 @@ test("auto CAD mapper is owner-only, project-native and keeps precise manual fal
   assert.match(api, /mapHeight/);
   assert.match(api, /preserveGeometry/);
   assert.match(api, /Completed Tiyansh mapper locked/);
+  assert.match(api, /body\.action === "clear_all_polygons"/);
+  assert.match(api, /mapper\.all_boundaries_removed/);
+  assert.match(api, /UPDATE plots SET polygon='',updated_at=\?/);
   assert.match(schema, /polygon:text\("polygon"\)/);
 
   assert.match(website, /setMapDimensions/);

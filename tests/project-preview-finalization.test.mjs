@@ -25,10 +25,11 @@ test("mapper repairs dimensions from decoded image without touching polygons", (
   assert.match(mapper, /rekixo:mapper-settings-updated/);
 });
 
-test("mapper display rotation syncs to website while canonical geometry remains unchanged", () => {
-  assert.match(mapper, /publicRotation: String\(rotation\)/);
-  assert.match(mapper, /saved geometry original image coordinates/);
-  assert.match(mapper, /Website view:/);
+test("mapper display rotation stays device-local while canonical geometry remains unchanged", () => {
+  assert.match(mapper, /rekixo:mapper-rotation:\$\{projectId\}/);
+  assert.doesNotMatch(mapper, /persistMapperSettings\(\{ publicRotation:/);
+  assert.match(mapper, /persistent plot geometry always remains in the original masterplan coordinate space/);
+  assert.match(mapper, /mapping-view only/);
 });
 
 test("generic preview cannot flash or bootstrap Tiyansh tenant data", () => {
@@ -45,8 +46,8 @@ test("generic public map contains the full natural masterplan and keeps hit test
   assert.match(publicPage, /Math\.min\(fw,fh\)/);
   assert.match(publicPage, /function rescaleNormalizedPlots/);
   assert.match(publicPage, /master\.naturalWidth/);
-  assert.match(publicPage, /PUBLIC_ROTATION\*90/);
-  assert.match(publicPage, /function clientToPlan[\s\S]*PUBLIC_ROTATION===1/);
+  assert.match(publicPage, /Canonical world: image \+ saved SVG geometry are never runtime-rotated/);
+  assert.doesNotMatch(publicPage, /PUBLIC_ROTATION/);
 });
 
 test("publish readiness refreshes immediately after mapper metadata repair", () => {
