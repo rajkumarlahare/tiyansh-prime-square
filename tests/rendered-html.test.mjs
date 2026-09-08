@@ -22,12 +22,27 @@ test("build emits a Cloudflare Worker and client assets", async () => {
   assert.match(worker, /fetch/);
 });
 
-test("production build emits JS and CSS inside the isolated Rekixo asset namespace", async () => {
-  const assetRoot = new URL("../dist/client/__rekixo/_next/static/", import.meta.url);
-  await access(assetRoot);
-  const files = await listFiles(assetRoot);
-  assert.ok(files.some((file) => file.endsWith(".js")), "missing prefixed JS assets");
-  assert.ok(files.some((file) => file.endsWith(".css")), "missing prefixed CSS assets");
+test("production build emits JS and CSS while Rekixo owns the shared asset namespace", async () => {
+  const clientRoot = new URL("../dist/client/", import.meta.url);
+  const files = await listFiles(clientRoot);
+
+  assert.ok(
+    files.some((file) => file.endsWith(".js")),
+    "missing production JS assets",
+  );
+  assert.ok(
+    files.some((file) => file.endsWith(".css")),
+    "missing production CSS assets",
+  );
+
+  const [nextConfig, worker] = await Promise.all([
+    readFile(new URL("../next.config.ts", import.meta.url), "utf8"),
+    readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(nextConfig, /assetPrefix:\s*"\/__rekixo"/);
+  assert.match(worker, /fetchPrefixedFrameworkAsset/);
+  assert.match(worker, /stripSharedAssetPrefix/);
 });
 
 test("client access includes mandatory password change and tenant guards", async () => {
