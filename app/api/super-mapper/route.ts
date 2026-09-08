@@ -20,6 +20,7 @@ const SETTINGS_WHITELIST = new Set([
   "cadMatchedCount",
   "cadReviewCount",
   "publicRotation",
+  "address",
 ]);
 
 async function projectExists(projectId: string) {
@@ -111,6 +112,12 @@ function validatedSetting(key: string, raw: unknown) {
     const number = Number(raw);
     if (!(number >= 100 && number <= 10000)) throw new Error(`${key} invalid hai`);
     return String(Math.round(number));
+  }
+  if (key === "address") {
+    if (typeof raw !== "string") throw new Error("Website header address invalid hai");
+    const value = raw.trim().replace(/\s+/g, " ");
+    if (value.length > 180) throw new Error("Website header address bahut lamba hai");
+    return value;
   }
   if (key === "publicRotation") {
     const number = Number(raw);

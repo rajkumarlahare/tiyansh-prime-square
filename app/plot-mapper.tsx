@@ -71,6 +71,7 @@ type MapperSettings = {
   publicRotation?: string;
   logoName?: string;
   logoVersion?: string;
+  address?: string;
 };
 
 type AutoMatch = {
@@ -359,6 +360,7 @@ export default function PlotMapper({
   // metadata/CSS mismatch from ever stretching the masterplan.
   const [naturalImageSize, setNaturalImageSize] = useState<{ width: number; height: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [headerAddress, setHeaderAddress] = useState("");
   const [settingsReady, setSettingsReady] = useState(false);
   const [lastVerifiedId, setLastVerifiedId] = useState("");
   const [zoom, setZoom] = useState(1);
@@ -445,6 +447,32 @@ export default function PlotMapper({
     announceMapperSettingsUpdated();
   }
 
+  async function saveHeaderAddress() {
+    const value = headerAddress.trim().replace(/\s+/g, " ");
+    if (value.length > 180) {
+      notify("Website header address 180 characters se chhota rakhein");
+      return;
+    }
+    setBusy(true);
+    try {
+      await persistMapperSettings({ address: value });
+      setHeaderAddress(value);
+      notify(
+        value
+          ? "Website header address save ho gaya — customer site title ke niche dikhega"
+          : "Website header address clear ho gaya",
+      );
+    } catch (error) {
+      notify(
+        error instanceof Error
+          ? error.message
+          : "Website header address save nahi hua",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function reload() {
     setSettingsReady(false);
     const response = await fetch(`/api/super-mapper?projectId=${encodeURIComponent(projectId)}`, {
@@ -455,6 +483,7 @@ export default function PlotMapper({
     const nextSettings = (data.settings || {}) as MapperSettings;
     setPlots(nextPlots);
     setSettings(nextSettings);
+    setHeaderAddress(String(nextSettings.address || ""));
     // Plot polygons always stay in canonical source-image coordinates.
     // publicRotation only controls the shared Super Admin/public presentation angle.
     setSettingsReady(true);
@@ -2010,6 +2039,44 @@ export default function PlotMapper({
             {hasPdf && <CheckCircle2 className="mapper-ready-icon" />}
             <input type="file" accept="application/pdf,.pdf" disabled={busy} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "sourcePdf")} />
           </label>
+        </div>
+
+        <div className="mapper-header-address-card">
+          <div className="mapper-header-address-copy">
+            <b>Website header subtitle / address</b>
+            <small>
+              Customer site me project title ke just niche reference jaisa text dikhega.
+              Example: MALE, RATNAGIRI
+            </small>
+          </div>
+          <div className="mapper-header-address-controls">
+            <input
+              type="text"
+              maxLength={180}
+              value={headerAddress}
+              disabled={busy}
+              placeholder="Example: MALE, RATNAGIRI"
+              aria-label="Customer website header address"
+              onChange={(event) => setHeaderAddress(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void saveHeaderAddress();
+                }
+              }}
+            />
+            <button
+              type="button"
+              disabled={
+                busy ||
+                headerAddress.trim().replace(/\s+/g, " ") ===
+                  String(settings.address || "").trim().replace(/\s+/g, " ")
+              }
+              onClick={() => void saveHeaderAddress()}
+            >
+              <Save /> Save
+            </button>
+          </div>
         </div>
 
         <div className="mapper-source-actions">

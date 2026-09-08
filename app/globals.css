@@ -2525,3 +2525,80 @@ body {
   background:#fff;
   box-shadow:0 6px 18px #0008;
 }
+
+.mapper-header-address-card{
+  margin-top:12px;
+  padding:13px 14px;
+  border:1px solid #243553;
+  border-radius:14px;
+  background:#091326;
+  display:flex;
+  align-items:center;
+  gap:14px;
+}
+.mapper-header-address-copy{
+  min-width:0;
+  flex:1;
+  display:grid;
+  gap:4px;
+}
+.mapper-header-address-copy b{
+  color:#f5f8ff;
+  font-size:13px;
+}
+.mapper-header-address-copy small{
+  color:#7f90ad;
+  font-size:11px;
+  line-height:1.35;
+}
+.mapper-header-address-controls{
+  width:min(520px,58%);
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+.mapper-header-address-controls input{
+  min-width:0;
+  flex:1;
+  height:40px;
+  border:1px solid #2a3d5f;
+  border-radius:10px;
+  background:#07101f;
+  color:#f7f9ff;
+  padding:0 12px;
+  outline:none;
+}
+.mapper-header-address-controls input:focus{
+  border-color:#6f7df5;
+  box-shadow:0 0 0 3px #6f7df522;
+}
+.mapper-header-address-controls button{
+  height:40px;
+  flex:none;
+  border:1px solid #3a4d70;
+  border-radius:10px;
+  background:#182544;
+  color:#fff;
+  padding:0 13px;
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  font-weight:800;
+}
+.mapper-header-address-controls button svg{
+  width:15px;
+  height:15px;
+}
+.mapper-header-address-controls button:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+@media(max-width:760px){
+  .mapper-header-address-card{
+    align-items:stretch;
+    flex-direction:column;
+  }
+  .mapper-header-address-controls{
+    width:100%;
+  }
+}
