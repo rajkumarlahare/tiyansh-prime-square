@@ -980,7 +980,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     shareImage: ""
   }
 
-  const normalizeDigits = (value)=>String(value||"").replace(/D+/g, "");
+  const normalizeDigits = (value)=>String(value||"").replace(/\D+/g, "");
   const safeText = (value, fallback="") => String(value ?? fallback).trim();
 
   function buildPublicDataUrl(){
