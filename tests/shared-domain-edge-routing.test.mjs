@@ -10,12 +10,11 @@ test("shared boss domain routes are narrow and never hijack the Vercel root", as
   for (const expected of [
     "${platformHost}/projects/*",
     "${platformHost}/__rekixo/*",
-    "${platformHost}/api/public-data",
+    "${platformHost}/api/public-data*",
     "${platformHost}/api/project-asset/*",
     "${platformHost}/api/admin/*",
-    "${platformHost}/api/data",
-    "${platformHost}/api/gallery",
-    "${platformHost}/api/gallery/*",
+    "${platformHost}/api/data*",
+    "${platformHost}/api/gallery*",
   ]) {
     assert.ok(deploy.includes(expected), `missing shared-domain route ${expected}`);
   }
@@ -23,6 +22,22 @@ test("shared boss domain routes are narrow and never hijack the Vercel root", as
   assert.doesNotMatch(deploy, /`\$\{platformHost\}\/\*`/);
   assert.match(deploy, /if \(mode === "client" && sharedDomainRoutes\.length\)/);
   assert.match(deploy, /delete config\.routes/);
+});
+
+test("query-bearing Rekixo API routes terminate in wildcard so Cloudflare matches query strings", async () => {
+  const deploy = await source("../scripts/prepare-cloudflare-deploy.mjs");
+
+  for (const expected of [
+    "${platformHost}/api/public-data*",
+    "${platformHost}/api/data*",
+    "${platformHost}/api/gallery*",
+  ]) {
+    assert.ok(deploy.includes(expected), `query-safe route missing: ${expected}`);
+  }
+
+  assert.doesNotMatch(deploy, /\`\$\{platformHost\}\/api\/public-data\`,/);
+  assert.doesNotMatch(deploy, /\`\$\{platformHost\}\/api\/data\`,/);
+  assert.doesNotMatch(deploy, /\`\$\{platformHost\}\/api\/gallery\`,/);
 });
 
 test("Rekixo static assets use an isolated namespace on the shared domain", async () => {

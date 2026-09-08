@@ -51,12 +51,11 @@ const sharedDomainRoutes = platformHost
   ? [
       `${platformHost}/projects/*`,
       `${platformHost}/__rekixo/*`,
-      `${platformHost}/api/public-data`,
+      `${platformHost}/api/public-data*`,
       `${platformHost}/api/project-asset/*`,
       `${platformHost}/api/admin/*`,
-      `${platformHost}/api/data`,
-      `${platformHost}/api/gallery`,
-      `${platformHost}/api/gallery/*`,
+      `${platformHost}/api/data*`,
+      `${platformHost}/api/gallery*`,
     ]
   : [];
 
