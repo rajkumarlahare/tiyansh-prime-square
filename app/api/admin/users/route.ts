@@ -6,22 +6,22 @@ import { upsertPrimaryProjectDomain } from "../../../project-domains";
 const unauthorized=()=>Response.json({error:"Super Admin access required"},{status:403});
 const emailPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const hostPattern=/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
-type UserRow={id:string;email:string;name:string;role:string;status:string;mustChangePassword:number;createdAt:string;updatedAt:string;lastLoginAt:string|null;projectId:string;projectName:string;publicHost:string|null;adminHost:string|null};
+type UserRow={id:string;email:string;name:string;role:string;status:string;mustChangePassword:number;createdAt:string;updatedAt:string;lastLoginAt:string|null;projectId:string;projectName:string;projectSlug:string;publicHost:string|null;adminHost:string|null};
 const cleanHost=(value:unknown)=>{const host=String(value||"").trim().toLowerCase().replace(/^https?:\/\//,"").replace(/\/.*/,"").replace(/\.$/,"");return host||null};
 const validHost=(host:string|null)=>!host||hostPattern.test(host);
 const slugify=(value:string)=>value.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"project";
 const projectBrand=(value:string)=>{const clean=value.replace(/[—–-].*$/g,"").trim()||value.trim(),words=clean.split(/\s+/).filter(Boolean),short=(words.length>1?words.map(word=>word[0]).join(""):clean.slice(0,3)).replace(/[^a-z0-9]/gi,"").toUpperCase().slice(0,4)||"PRJ";return {brandName:clean.toUpperCase().slice(0,50),brandShort:short}};
-const clientAdminUrl=()=>(((env as unknown as Record<string,string>).CLIENT_ADMIN_ORIGIN)||((env as unknown as Record<string,string>).CLIENT_FALLBACK_HOST?"https://"+(env as unknown as Record<string,string>).CLIENT_FALLBACK_HOST:"https://rekixo-client-sites.ai-8f3.workers.dev")).replace(/\/$/,"")+"/admin/login";
+const clientAdminUrl=(slug="")=>{const cfg=env as unknown as Record<string,string>,platform=String(cfg.CLIENT_PLATFORM_HOST||"").trim().replace(/^https?:\/\//,"").replace(/\/.*$/,"");if(platform&&slug)return `https://${platform}/projects/${encodeURIComponent(slug)}/admin-login`;const origin=(cfg.CLIENT_ADMIN_ORIGIN||(cfg.CLIENT_FALLBACK_HOST?"https://"+cfg.CLIENT_FALLBACK_HOST:"https://rekixo-client-sites.ai-8f3.workers.dev")).replace(/\/$/,"");return slug?`${origin}/projects/${encodeURIComponent(slug)}/admin-login`:`${origin}/admin/login`};
 const strongPassword=(value:string)=>value.length>=12&&value.length<=128&&/[A-Z]/.test(value)&&/[a-z]/.test(value)&&/\d/.test(value)&&/[^A-Za-z0-9]/.test(value);
 
 export async function GET(){
   const actor=await requireSuperAdmin();if(!actor)return unauthorized();
   const [result,projects,audits]=await Promise.all([
-    env.DB.prepare("SELECT u.id,u.email,u.name,u.role,u.status,u.must_change_password AS mustChangePassword,u.created_at AS createdAt,u.updated_at AS updatedAt,u.last_login_at AS lastLoginAt,p.id AS projectId,p.name AS projectName,p.public_host AS publicHost,p.admin_host AS adminHost FROM admin_users u JOIN projects p ON p.id=u.project_id WHERE p.status!='deleted' ORDER BY u.created_at DESC").all<UserRow>(),
+    env.DB.prepare("SELECT u.id,u.email,u.name,u.role,u.status,u.must_change_password AS mustChangePassword,u.created_at AS createdAt,u.updated_at AS updatedAt,u.last_login_at AS lastLoginAt,p.id AS projectId,p.name AS projectName,p.slug AS projectSlug,p.public_host AS publicHost,p.admin_host AS adminHost FROM admin_users u JOIN projects p ON p.id=u.project_id WHERE p.status!='deleted' ORDER BY u.created_at DESC").all<UserRow>(),
     env.DB.prepare("SELECT p.id,p.name,p.slug,p.public_host AS publicHost,p.admin_host AS adminHost,p.status,COUNT(u.id) AS adminCount FROM projects p LEFT JOIN admin_users u ON u.project_id=p.id WHERE p.status!='deleted' GROUP BY p.id ORDER BY p.created_at DESC").all(),
     env.DB.prepare("SELECT action,actor_email AS actorEmail,project_id AS projectId,target_id AS targetId,created_at AS createdAt FROM audit_logs ORDER BY created_at DESC LIMIT 50").all()
   ]);
-  return Response.json({users:result.results,projects:projects.results,audits:audits.results,clientAdminUrl:clientAdminUrl()},{headers:{"cache-control":"no-store"}});
+  return Response.json({users:result.results.map(user=>({...user,adminUrl:clientAdminUrl(user.projectSlug)})),projects:projects.results,audits:audits.results,clientAdminUrl:clientAdminUrl()},{headers:{"cache-control":"no-store"}});
 }
 
 export async function POST(request:Request){
@@ -31,13 +31,13 @@ export async function POST(request:Request){
   if(!emailPattern.test(email)||name.length<2||name.length>80||!strongPassword(password)||!validHost(publicHost)||!validHost(adminHost))return Response.json({error:"Valid details और strong 12+ character password required"},{status:400});
   if(email===(env as unknown as Record<string,string>).ADMIN_EMAIL?.toLowerCase())return Response.json({error:"Owner email client account me use nahi ho sakta"},{status:409});
   if(await env.DB.prepare("SELECT id FROM admin_users WHERE email=? LIMIT 1").bind(email).first())return Response.json({error:"Is email ka account pehle se hai"},{status:409});
-  let projectId=String(body.projectId||"").trim(),resolvedName=projectName;
-  if(projectId){const project=await env.DB.prepare("SELECT id,name,status FROM projects WHERE id=? AND status!='deleted' LIMIT 1").bind(projectId).first<{id:string;name:string;status:string}>();if(!project)return Response.json({error:"Existing project nahi mila"},{status:404});resolvedName=project.name}
+  let projectId=String(body.projectId||"").trim(),resolvedName=projectName,resolvedSlug="";
+  if(projectId){const project=await env.DB.prepare("SELECT id,name,slug,status FROM projects WHERE id=? AND status!='deleted' LIMIT 1").bind(projectId).first<{id:string;name:string;slug:string;status:string}>();if(!project)return Response.json({error:"Existing project nahi mila"},{status:404});resolvedName=project.name;resolvedSlug=project.slug}
   else {if(projectName.length<2||projectName.length>100)return Response.json({error:"Project name required"},{status:400});projectId=crypto.randomUUID()}
-  const id=crypto.randomUUID(),now=new Date().toISOString(),hash=await hashAdminPassword(password),slug=`${slugify(resolvedName)}-${projectId.slice(0,6)}`;
+  const id=crypto.randomUUID(),now=new Date().toISOString(),hash=await hashAdminPassword(password),slug=resolvedSlug||`${slugify(resolvedName)}-${projectId.slice(0,6)}`;
   try{const statements=[];if(!body.projectId){statements.push(env.DB.prepare("INSERT INTO projects (id,name,slug,public_host,admin_host,status,created_at,updated_at) VALUES (?,?,?,?,?,'active',?,?)").bind(projectId,resolvedName,slug,publicHost,adminHost,now,now));const brand=projectBrand(resolvedName),defaults={projectName:resolvedName,brandName:brand.brandName,brandShort:brand.brandShort,template:"plots",accentColor:"#f0b323",location:"",address:"",phone1:"",phone2:"",whatsapp:"",mapUrl:"",brochureUrl:""};for(const [key,value] of Object.entries(defaults))statements.push(env.DB.prepare("INSERT INTO settings (project_id,key,value,updated_at) VALUES (?,?,?,?)").bind(projectId,key,value,now))}else if(publicHost||adminHost)statements.push(env.DB.prepare("UPDATE projects SET public_host=COALESCE(?,public_host),admin_host=COALESCE(?,admin_host),updated_at=? WHERE id=?").bind(publicHost,adminHost,now,projectId));statements.push(env.DB.prepare("INSERT INTO admin_users (id,email,name,project_id,role,password_hash,password_salt,status,must_change_password,session_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,email,name,projectId,"client_admin",hash.passwordHash,hash.passwordSalt,"active",1,1,now,now));await env.DB.batch(statements);if(publicHost)await upsertPrimaryProjectDomain(projectId,"public",publicHost,now);if(adminHost)await upsertPrimaryProjectDomain(projectId,"admin",adminHost,now)}catch(error){console.error("Client project create failed",error);return Response.json({error:"Email ya domain pehle se use ho raha hai"},{status:409})}
   await writeAudit(actor,"client.created",projectId,id,{email,projectName:resolvedName,publicHost,adminHost});
-  return Response.json({user:{id,email,name,projectId,projectName:resolvedName,publicHost,adminHost,role:"client_admin",status:"active",mustChangePassword:true,createdAt:now,updatedAt:now,lastLoginAt:null},clientAdminUrl:clientAdminUrl()},{status:201});
+  return Response.json({user:{id,email,name,projectId,projectName:resolvedName,projectSlug:slug,publicHost,adminHost,role:"client_admin",status:"active",mustChangePassword:true,createdAt:now,updatedAt:now,lastLoginAt:null,adminUrl:clientAdminUrl(slug)},clientAdminUrl:clientAdminUrl(slug)},{status:201});
 }
 
 export async function PATCH(request:Request){

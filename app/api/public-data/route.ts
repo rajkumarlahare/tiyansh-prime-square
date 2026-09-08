@@ -93,14 +93,18 @@ export async function GET(request: Request) {
 
     const shared = sharedAdminHost();
     const fallback = clientFallbackHost();
+    const platform = clientPlatformHost();
     const adminHost = adminDomain || project.adminHost;
+    const projectPath = `/projects/${encodeURIComponent(project.slug)}`;
     const adminUrl = adminHost
       ? `https://${adminHost}/admin/login`
-      : shared
-        ? `https://${shared}/admin/login`
-        : fallback
-          ? `https://${fallback}/admin/login`
-          : "/admin/login";
+      : platform
+        ? `https://${platform}${projectPath}/admin-login`
+        : shared
+          ? `https://${shared}${projectPath}/admin-login`
+          : fallback
+            ? `https://${fallback}${projectPath}/admin-login`
+            : `${projectPath}/admin-login`;
 
     return Response.json(
       {
@@ -111,8 +115,8 @@ export async function GET(request: Request) {
         publishVersion: project.publishVersion,
         publishedAt: project.publishedAt,
         adminUrl,
-        platformUrl: clientPlatformHost()
-          ? `https://${clientPlatformHost()}/p/${encodeURIComponent(project.slug)}`
+        platformUrl: platform
+          ? `https://${platform}/projects/${encodeURIComponent(project.slug)}`
           : "",
         plots: plotRows,
         settings: Object.fromEntries(

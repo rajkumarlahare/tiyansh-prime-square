@@ -36,8 +36,8 @@ function links(slug: string, publicHost?: string | null, adminHost?: string | nu
   const platform = clientPlatformHost();
   const shared = sharedAdminHost();
   return {
-    fallbackUrl: fallback ? `https://${fallback}/p/${encodeURIComponent(slug)}` : "",
-    platformUrl: platform ? `https://${platform}/p/${encodeURIComponent(slug)}` : "",
+    fallbackUrl: fallback ? `https://${fallback}/projects/${encodeURIComponent(slug)}` : "",
+    platformUrl: platform ? `https://${platform}/projects/${encodeURIComponent(slug)}` : "",
     publicUrl: publicHost
       ? `https://${publicHost}`
       : platform
@@ -47,11 +47,13 @@ function links(slug: string, publicHost?: string | null, adminHost?: string | nu
           : "",
     adminUrl: adminHost
       ? `https://${adminHost}/admin/login`
-      : shared
-        ? `https://${shared}/admin/login`
-        : fallback
-          ? `https://${fallback}/admin/login`
-          : "",
+      : platform
+        ? `https://${platform}/projects/${encodeURIComponent(slug)}/admin-login`
+        : shared
+          ? `https://${shared}/projects/${encodeURIComponent(slug)}/admin-login`
+          : fallback
+            ? `https://${fallback}/projects/${encodeURIComponent(slug)}/admin-login`
+            : "",
   };
 }
 
