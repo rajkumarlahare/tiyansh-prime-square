@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { getAdminSession } from "../../../admin-auth";
 import { publicProjectId } from "../../../project-context";
 
-const PUBLIC_KINDS = new Set(["masterplan"]);
+const PUBLIC_KINDS = new Set(["masterplan", "logo"]);
 const ADMIN_KINDS = new Set(["sourcePdf"]);
 const SUPER_ADMIN_ONLY = new Set([
   "sourceCad",
@@ -80,7 +80,9 @@ export async function GET(
         ? "no-store"
         : kind === "masterplan"
           ? "public,max-age=0,must-revalidate"
-          : "private,no-store",
+          : kind === "logo"
+            ? "public,max-age=31536000,immutable"
+            : "private,no-store",
     "x-content-type-options": "nosniff",
   });
   headers.set("x-rekixo-project", projectId);

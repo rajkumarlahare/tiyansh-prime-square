@@ -28,6 +28,8 @@ const PUBLIC_SETTING_KEYS = new Set([
   "mapWidth",
   "mapHeight",
   "publicRotation",
+  "logoName",
+  "logoVersion",
 ]);
 
 async function previewProjectId(request: Request) {

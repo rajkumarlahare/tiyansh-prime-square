@@ -33,6 +33,7 @@ html.rekixo-project-error body::after{content:"Project preview load nahi hua. Re
 .brandrow{display:flex;align-items:center;gap:14px}.brandmark{width:60px;height:60px;flex:none;border-radius:13px;background:#fff;border:1px solid #e7e7e7;display:grid;place-items:center;color:#111;box-shadow:0 0 0 2px #ffffff12}
 .brandmark .monogram{width:48px;height:48px;border:2px solid #141414;border-radius:8px;display:grid;place-items:center;font-weight:950;font-size:17px;line-height:1;text-align:center}
 .brandmark .monogram small{display:block;font-size:6px;letter-spacing:.08em;margin-top:2px}
+.brandmark .project-logo{width:100%;height:100%;display:block;object-fit:contain;border-radius:inherit;padding:2px;background:#fff}
 .brand{min-width:0;flex:1}.brand b{display:block;font-size:20px;line-height:1.06;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:950}
 .brand small{display:block;color:#8f9aba;letter-spacing:.27em;margin-top:7px;font-weight:800;font-size:11px}
 .head-actions{display:flex;gap:11px}.icon{width:60px;height:60px;border:1px solid #23304a;background:#091326;color:#eef3ff;border-radius:18px;display:grid;place-items:center;font-size:23px;font-weight:900}
@@ -271,7 +272,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
 <div class="app">
 <header class="header">
   <div class="brandrow">
-    <div class="brandmark"><div class="monogram">TPS<small>TIYANSH</small></div></div>
+    <div class="brandmark"><img class="project-logo" id="projectLogo" alt="" hidden><div class="monogram">TPS<small>TIYANSH</small></div></div>
     <div class="brand"><b>TIYANSH — THE PRIME SQUARE</b><small>RAIGARH, CHHATTISGARH</small></div>
     <div class="head-actions">
       <button class="icon" id="callTop" aria-label="Call">
@@ -755,6 +756,20 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     const brand=document.querySelector('.brand b');if(brand)brand.textContent=PROJECT_NAME.toUpperCase();
     const small=document.querySelector('.monogram small');if(small)small.textContent=resolvedBrand;
     const mono=document.querySelector('.monogram');if(mono&&mono.firstChild)mono.firstChild.textContent=resolvedShort;
+    const projectLogo=document.getElementById('projectLogo');
+    if(projectLogo){
+      projectLogo.alt=(resolvedBrand||PROJECT_NAME)+' logo';
+      if(s.logoName){
+        projectLogo.hidden=true;if(mono)mono.style.display='grid';
+        const baseLogoQuery=window.REKIXO_PROJECT_QUERY||'';
+        const joiner=baseLogoQuery?'&':'?';
+        projectLogo.onload=()=>{projectLogo.hidden=false;if(mono)mono.style.display='none'};
+        projectLogo.onerror=()=>{projectLogo.hidden=true;if(mono)mono.style.display='grid'};
+        projectLogo.src='/api/project-asset/logo'+baseLogoQuery+joiner+'v='+encodeURIComponent(String(s.logoVersion||s.logoName));
+      }else{
+        projectLogo.removeAttribute('src');projectLogo.hidden=true;if(mono)mono.style.display='grid';
+      }
+    }
     const badge=document.querySelector('.mini-logo strong');if(badge)badge.textContent=resolvedShort;
     const location=document.querySelector('.brand small');if(location)location.textContent=(resolvedAddress||PROJECT_LOCATION).toUpperCase();
     const sub=document.querySelector('.dhead .sub');if(sub)sub.textContent=(resolvedAddress||PROJECT_LOCATION).toUpperCase();

@@ -69,6 +69,8 @@ type MapperSettings = {
   cadMatchedCount?: string;
   cadReviewCount?: string;
   publicRotation?: string;
+  logoName?: string;
+  logoVersion?: string;
 };
 
 type AutoMatch = {
@@ -230,6 +232,53 @@ async function prepareMasterplan(file: File) {
     originalWidth,
     originalHeight,
   };
+}
+
+async function prepareProjectLogo(file: File) {
+  const allowed = ["image/jpeg", "image/png", "image/webp"];
+  if (!allowed.includes(file.type)) {
+    throw new Error("Logo JPG, PNG ya WebP me upload karein");
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    throw new Error("Logo 8 MB se chhota rakhein");
+  }
+
+  const bitmap = await createImageBitmap(file);
+  const maxSide = 512;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { alpha: true });
+  if (!context) {
+    bitmap.close();
+    throw new Error("Logo process nahi ho paya");
+  }
+  context.clearRect(0, 0, width, height);
+  context.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  const encode = (quality: number) =>
+    new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/webp", quality),
+    );
+
+  let blob: Blob | null = null;
+  for (const quality of [0.86, 0.78, 0.7, 0.62, 0.54]) {
+    blob = await encode(quality);
+    if (blob && blob.size <= 180 * 1024) break;
+  }
+  if (!blob) throw new Error("Logo encode nahi hua");
+  if (blob.size > 512 * 1024) {
+    throw new Error("Logo optimize karne ke baad bhi bahut bada hai");
+  }
+
+  const cleanName =
+    file.name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9._-]+/gi, "-") ||
+    "project-logo";
+  return new File([blob], `${cleanName}.webp`, { type: "image/webp" });
 }
 
 function plotSort(a: Plot, b: Plot) {
@@ -618,6 +667,12 @@ export default function PlotMapper({
   const hasCad = Boolean(settings.sourceCadName);
   const hasPlotSheet = Boolean(settings.plotSheetName) || plots.length > 0;
   const hasPdf = Boolean(settings.sourcePdfName);
+  const hasLogo = Boolean(settings.logoName);
+  const logoUrl = hasLogo
+    ? `${assetUrl("logo")}&v=${encodeURIComponent(
+        settings.logoVersion || settings.logoName || "1",
+      )}`
+    : "";
 
   const savedMatrix = useMemo(() => {
     try {
@@ -864,8 +919,11 @@ export default function PlotMapper({
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
-  async function upload(file: File, kind: "masterplan" | "sourcePdf" | "sourceCad" | "plotSheet") {
-    if (completedProject && kind !== "sourcePdf") {
+  async function upload(
+    file: File,
+    kind: "masterplan" | "sourcePdf" | "sourceCad" | "plotSheet" | "logo",
+  ) {
+    if (completedProject && !["sourcePdf", "logo"].includes(kind)) {
       notify("Tiyansh completed project locked है");
       return;
     }
@@ -874,7 +932,9 @@ export default function PlotMapper({
       const data = new FormData();
       data.append("projectId", projectId);
       data.append("kind", kind);
-      if (kind === "masterplan") {
+      if (kind === "logo") {
+        data.append("file", await prepareProjectLogo(file));
+      } else if (kind === "masterplan") {
         const prepared = await prepareMasterplan(file);
         data.append("file", prepared.mappingFile);
         data.append("originalFile", prepared.originalFile);
@@ -895,6 +955,8 @@ export default function PlotMapper({
         notify(`${Number(result.count || 0)} plot records import हुए`);
       } else if (kind === "masterplan") {
         notify("Masterplan native aspect ratio में ready है");
+      } else if (kind === "logo") {
+        notify("Project logo save ho gaya — customer site aur Client Admin me sync hoga");
       } else notify("Technical PDF reference save हो गया");
       await reload();
     } catch (error) {
@@ -1909,6 +1971,23 @@ export default function PlotMapper({
             <div><b>{hasMasterplan ? "Masterplan ready" : "1. Masterplan image"}</b><small>{settings.masterplanName || "High-resolution JPG/PNG/WebP"}</small></div>
             {hasMasterplan && <CheckCircle2 className="mapper-ready-icon" />}
             <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || completedProject} onChange={(event) => event.target.files?.[0] && upload(event.target.files[0], "masterplan")} />
+          </label>
+
+          <label className={`mapper-upload-card ${hasLogo ? "ready" : ""}`}>
+            <span>{hasLogo ? <img className="mapper-logo-thumb" src={logoUrl} alt="" /> : <ImagePlus />}</span>
+            <div>
+              <b>{hasLogo ? "Project logo ready · tap to replace" : "Project logo"}</b>
+              <small>{settings.logoName || "Customer site + Client Admin · JPG/PNG/WebP"}</small>
+            </div>
+            {hasLogo && <CheckCircle2 className="mapper-ready-icon" />}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={busy}
+              onChange={(event) =>
+                event.target.files?.[0] && upload(event.target.files[0], "logo")
+              }
+            />
           </label>
 
           <label className={`mapper-upload-card ${hasCad ? "ready" : ""}`}>

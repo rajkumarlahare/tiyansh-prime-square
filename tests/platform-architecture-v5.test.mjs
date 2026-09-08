@@ -42,11 +42,15 @@ test("draft projects remain previewable only through authenticated preview", asy
   assert.match(gallery, /if \(requested && requested !== session\.projectId\) return null/);
 });
 
-test("technical CAD/PDF internals are not exposed as normal public assets", async () => {
+test("technical CAD/PDF internals stay protected while public branding assets are allowed", async () => {
   const asset = await source("../app/api/project-asset/[kind]/route.ts");
-  assert.match(asset, /PUBLIC_KINDS = new Set\(\["masterplan"\]\)/);
+  assert.match(asset, /PUBLIC_KINDS = new Set\(\["masterplan", "logo"\]\)/);
   assert.match(asset, /ADMIN_KINDS = new Set\(\["sourcePdf"\]\)/);
   assert.match(asset, /SUPER_ADMIN_ONLY/);
+  assert.match(asset, /"sourceCad"/);
+  assert.match(asset, /"cadGeometry"/);
+  assert.match(asset, /"plotSheet"/);
+  assert.match(asset, /"masterplanOriginal"/);
 });
 
 test("one generic client Worker is deployed while legacy Tiyansh remains as zero-downtime bridge", async () => {

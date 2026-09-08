@@ -257,6 +257,7 @@ export async function POST(request: Request) {
     const extension = file.name.toLowerCase().split(".").pop() || "";
     const valid =
       (kind === "masterplan" && ["image/jpeg", "image/png", "image/webp"].includes(file.type)) ||
+      (kind === "logo" && ["image/jpeg", "image/png", "image/webp"].includes(file.type)) ||
       (kind === "sourcePdf" && (file.type === "application/pdf" || extension === "pdf")) ||
       (kind === "sourceCad" && ["dwg", "dxf"].includes(extension)) ||
       (kind === "plotSheet" && ["csv", "json"].includes(extension));
@@ -268,6 +269,7 @@ export async function POST(request: Request) {
 
     const limits: Record<string, number> = {
       masterplan: 20 * 1024 * 1024,
+      logo: 512 * 1024,
       sourcePdf: 25 * 1024 * 1024,
       sourceCad: 25 * 1024 * 1024,
       plotSheet: 3 * 1024 * 1024,
@@ -277,6 +279,28 @@ export async function POST(request: Request) {
 
     const now = new Date().toISOString();
     const objectKey = `projects/${projectId}/mapper/${kind}`;
+
+    if (kind === "logo") {
+      await env.BUCKET.put(objectKey, file.stream(), {
+        httpMetadata: { contentType: file.type || "image/webp" },
+      });
+      const version = String(Date.now());
+      await Promise.all([
+        writeSetting(projectId, "logoName", file.name.slice(0, 240), now),
+        writeSetting(projectId, "logoVersion", version, now),
+      ]);
+      await writeAudit(actor, "mapper.logo_uploaded", projectId, null, {
+        filename: file.name,
+        size: file.size,
+        version,
+      });
+      return Response.json({
+        ok: true,
+        name: file.name,
+        logoVersion: version,
+        url: `/api/project-asset/logo?projectId=${encodeURIComponent(projectId)}&v=${version}`,
+      });
+    }
 
     if (kind === "masterplan") {
       const width = Math.round(Number(form.get("mapWidth")));

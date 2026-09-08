@@ -2503,3 +2503,25 @@ body {
 .mapper-v4-canvas .mapper-rotated-scene {
   touch-action: none !important;
 }
+
+.mapper-logo-thumb{
+  width:38px;
+  height:38px;
+  display:block;
+  object-fit:contain;
+  border-radius:8px;
+  padding:2px;
+  background:#fff;
+}
+.client-project-logo{
+  width:46px;
+  height:46px;
+  flex:0 0 46px;
+  display:block;
+  object-fit:contain;
+  border:1px solid #be903d;
+  border-radius:13px;
+  padding:2px;
+  background:#fff;
+  box-shadow:0 6px 18px #0008;
+}
