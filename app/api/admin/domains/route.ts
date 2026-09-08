@@ -19,6 +19,7 @@ import {
   clientPlatformHost,
   sharedAdminHost,
 } from "../../../project-context";
+import { currentProjectLinks } from "../../../project-links";
 
 const denied = () => Response.json({ error: "Super Admin access required" }, { status: 403 });
 
@@ -32,29 +33,7 @@ type DomainRow = {
 };
 
 function links(slug: string, publicHost?: string | null, adminHost?: string | null) {
-  const fallback = clientFallbackHost();
-  const platform = clientPlatformHost();
-  const shared = sharedAdminHost();
-  return {
-    fallbackUrl: fallback ? `https://${fallback}/projects/${encodeURIComponent(slug)}` : "",
-    platformUrl: platform ? `https://${platform}/projects/${encodeURIComponent(slug)}` : "",
-    publicUrl: publicHost
-      ? `https://${publicHost}`
-      : platform
-        ? `https://${platform}/p/${encodeURIComponent(slug)}`
-        : fallback
-          ? `https://${fallback}/projects/${encodeURIComponent(slug)}`
-          : "",
-    adminUrl: adminHost
-      ? `https://${adminHost}/admin/login`
-      : platform
-        ? `https://${platform}/projects/${encodeURIComponent(slug)}/admin-login`
-        : shared
-          ? `https://${shared}/projects/${encodeURIComponent(slug)}/admin-login`
-          : fallback
-            ? `https://${fallback}/projects/${encodeURIComponent(slug)}/admin-login`
-            : "",
-  };
+  return currentProjectLinks(slug, publicHost, adminHost);
 }
 
 export async function GET() {

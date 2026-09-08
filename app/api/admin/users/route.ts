@@ -2,6 +2,8 @@ import { env } from "cloudflare:workers";
 import { hashAdminPassword,requireSuperAdmin,sameOrigin } from "../../../admin-auth";
 import { writeAudit } from "../../../audit";
 import { upsertPrimaryProjectDomain } from "../../../project-domains";
+import { clientFallbackHost } from "../../../project-context";
+import { currentProjectLinks } from "../../../project-links";
 
 const unauthorized=()=>Response.json({error:"Super Admin access required"},{status:403});
 const emailPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -11,7 +13,7 @@ const cleanHost=(value:unknown)=>{const host=String(value||"").trim().toLowerCas
 const validHost=(host:string|null)=>!host||hostPattern.test(host);
 const slugify=(value:string)=>value.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"project";
 const projectBrand=(value:string)=>{const clean=value.replace(/[—–-].*$/g,"").trim()||value.trim(),words=clean.split(/\s+/).filter(Boolean),short=(words.length>1?words.map(word=>word[0]).join(""):clean.slice(0,3)).replace(/[^a-z0-9]/gi,"").toUpperCase().slice(0,4)||"PRJ";return {brandName:clean.toUpperCase().slice(0,50),brandShort:short}};
-const clientAdminUrl=(slug="")=>{const cfg=env as unknown as Record<string,string>,platform=String(cfg.CLIENT_PLATFORM_HOST||"").trim().replace(/^https?:\/\//,"").replace(/\/.*$/,"");if(platform&&slug)return `https://${platform}/projects/${encodeURIComponent(slug)}/admin-login`;const origin=(cfg.CLIENT_ADMIN_ORIGIN||(cfg.CLIENT_FALLBACK_HOST?"https://"+cfg.CLIENT_FALLBACK_HOST:"https://rekixo-client-sites.ai-8f3.workers.dev")).replace(/\/$/,"");return slug?`${origin}/projects/${encodeURIComponent(slug)}/admin-login`:`${origin}/admin/login`};
+const clientAdminUrl=(slug="",adminHost?:string|null)=>slug?currentProjectLinks(slug,null,adminHost).adminUrl:`https://${clientFallbackHost()}/admin/login`;
 const strongPassword=(value:string)=>value.length>=12&&value.length<=128&&/[A-Z]/.test(value)&&/[a-z]/.test(value)&&/\d/.test(value)&&/[^A-Za-z0-9]/.test(value);
 
 export async function GET(){
@@ -21,7 +23,7 @@ export async function GET(){
     env.DB.prepare("SELECT p.id,p.name,p.slug,p.public_host AS publicHost,p.admin_host AS adminHost,p.status,COUNT(u.id) AS adminCount FROM projects p LEFT JOIN admin_users u ON u.project_id=p.id WHERE p.status!='deleted' GROUP BY p.id ORDER BY p.created_at DESC").all(),
     env.DB.prepare("SELECT action,actor_email AS actorEmail,project_id AS projectId,target_id AS targetId,created_at AS createdAt FROM audit_logs ORDER BY created_at DESC LIMIT 50").all()
   ]);
-  return Response.json({users:result.results.map(user=>({...user,adminUrl:clientAdminUrl(user.projectSlug)})),projects:projects.results,audits:audits.results,clientAdminUrl:clientAdminUrl()},{headers:{"cache-control":"no-store"}});
+  return Response.json({users:result.results.map(user=>({...user,adminUrl:clientAdminUrl(user.projectSlug,user.adminHost)})),projects:projects.results,audits:audits.results,clientAdminUrl:clientAdminUrl()},{headers:{"cache-control":"no-store"}});
 }
 
 export async function POST(request:Request){
@@ -37,7 +39,7 @@ export async function POST(request:Request){
   const id=crypto.randomUUID(),now=new Date().toISOString(),hash=await hashAdminPassword(password),slug=resolvedSlug||`${slugify(resolvedName)}-${projectId.slice(0,6)}`;
   try{const statements=[];if(!body.projectId){statements.push(env.DB.prepare("INSERT INTO projects (id,name,slug,public_host,admin_host,status,created_at,updated_at) VALUES (?,?,?,?,?,'active',?,?)").bind(projectId,resolvedName,slug,publicHost,adminHost,now,now));const brand=projectBrand(resolvedName),defaults={projectName:resolvedName,brandName:brand.brandName,brandShort:brand.brandShort,template:"plots",accentColor:"#f0b323",location:"",address:"",phone1:"",phone2:"",whatsapp:"",mapUrl:"",brochureUrl:""};for(const [key,value] of Object.entries(defaults))statements.push(env.DB.prepare("INSERT INTO settings (project_id,key,value,updated_at) VALUES (?,?,?,?)").bind(projectId,key,value,now))}else if(publicHost||adminHost)statements.push(env.DB.prepare("UPDATE projects SET public_host=COALESCE(?,public_host),admin_host=COALESCE(?,admin_host),updated_at=? WHERE id=?").bind(publicHost,adminHost,now,projectId));statements.push(env.DB.prepare("INSERT INTO admin_users (id,email,name,project_id,role,password_hash,password_salt,status,must_change_password,session_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,email,name,projectId,"client_admin",hash.passwordHash,hash.passwordSalt,"active",1,1,now,now));await env.DB.batch(statements);if(publicHost)await upsertPrimaryProjectDomain(projectId,"public",publicHost,now);if(adminHost)await upsertPrimaryProjectDomain(projectId,"admin",adminHost,now)}catch(error){console.error("Client project create failed",error);return Response.json({error:"Email ya domain pehle se use ho raha hai"},{status:409})}
   await writeAudit(actor,"client.created",projectId,id,{email,projectName:resolvedName,publicHost,adminHost});
-  return Response.json({user:{id,email,name,projectId,projectName:resolvedName,projectSlug:slug,publicHost,adminHost,role:"client_admin",status:"active",mustChangePassword:true,createdAt:now,updatedAt:now,lastLoginAt:null,adminUrl:clientAdminUrl(slug)},clientAdminUrl:clientAdminUrl(slug)},{status:201});
+  return Response.json({user:{id,email,name,projectId,projectName:resolvedName,projectSlug:slug,publicHost,adminHost,role:"client_admin",status:"active",mustChangePassword:true,createdAt:now,updatedAt:now,lastLoginAt:null,adminUrl:clientAdminUrl(slug,adminHost)},clientAdminUrl:clientAdminUrl(slug,adminHost)},{status:201});
 }
 
 export async function PATCH(request:Request){

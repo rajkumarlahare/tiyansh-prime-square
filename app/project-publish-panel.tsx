@@ -14,8 +14,11 @@ type State = {
   ready?: boolean;
   reasons?: string[];
   publicUrl?: string;
+  adminUrl?: string;
   platformUrl?: string;
+  platformAdminUrl?: string;
   fallbackUrl?: string;
+  fallbackAdminUrl?: string;
   legacy?: boolean;
 };
 
@@ -141,6 +144,11 @@ export default function ProjectPublishPanel({
             <ExternalLink /> Open live site
           </a>
         ) : null}
+        {state.adminUrl ? (
+          <a href={state.adminUrl} target="_blank" rel="noreferrer">
+            <ExternalLink /> Client admin
+          </a>
+        ) : null}
         {!published ? (
           <button
             className="primary"
@@ -156,8 +164,14 @@ export default function ProjectPublishPanel({
         ) : null}
       </div>
 
-      {published && state.fallbackUrl ? (
-        <small>Fallback live URL: {state.fallbackUrl}</small>
+      {published ? (
+        <div>
+          {state.publicUrl ? <small>Canonical site: {state.publicUrl}</small> : null}
+          {state.publicUrl && state.adminUrl ? <br /> : null}
+          {state.adminUrl ? <small>Canonical admin: {state.adminUrl}</small> : null}
+          {state.fallbackUrl ? <><br /><small>Free fallback site: {state.fallbackUrl}</small></> : null}
+          {state.fallbackAdminUrl ? <><br /><small>Free fallback admin: {state.fallbackAdminUrl}</small></> : null}
+        </div>
       ) : null}
     </section>
   );

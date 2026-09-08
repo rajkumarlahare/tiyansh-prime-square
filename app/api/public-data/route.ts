@@ -3,13 +3,9 @@ import { gallery, plots, settings } from "../../../db/schema";
 import { desc, eq } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { getAdminSession } from "../../admin-auth";
-import {
-  clientFallbackHost,
-  clientPlatformHost,
-  publicProjectId,
-  sharedAdminHost,
-} from "../../project-context";
+import { publicProjectId } from "../../project-context";
 import { activeProjectDomain } from "../../project-domains";
+import { currentProjectLinks } from "../../project-links";
 
 const PUBLIC_SETTING_KEYS = new Set([
   "projectName",
@@ -94,20 +90,8 @@ export async function GET(request: Request) {
       );
     }
 
-    const shared = sharedAdminHost();
-    const fallback = clientFallbackHost();
-    const platform = clientPlatformHost();
     const adminHost = adminDomain || project.adminHost;
-    const projectPath = `/projects/${encodeURIComponent(project.slug)}`;
-    const adminUrl = adminHost
-      ? `https://${adminHost}/admin/login`
-      : platform
-        ? `https://${platform}${projectPath}/admin-login`
-        : shared
-          ? `https://${shared}${projectPath}/admin-login`
-          : fallback
-            ? `https://${fallback}${projectPath}/admin-login`
-            : `${projectPath}/admin-login`;
+    const links = currentProjectLinks(project.slug, null, adminHost);
 
     return Response.json(
       {
@@ -117,10 +101,8 @@ export async function GET(request: Request) {
         preview: Boolean(previewId),
         publishVersion: project.publishVersion,
         publishedAt: project.publishedAt,
-        adminUrl,
-        platformUrl: platform
-          ? `https://${platform}/projects/${encodeURIComponent(project.slug)}`
-          : "",
+        adminUrl: links.adminUrl,
+        platformUrl: links.platformUrl,
         plots: plotRows,
         settings: Object.fromEntries(
           settingRows

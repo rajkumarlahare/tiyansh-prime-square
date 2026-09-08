@@ -4,7 +4,7 @@ import test from "node:test";
 
 const source = path => readFile(new URL(path, import.meta.url), "utf8");
 
-test("shared public domain exposes clean /projects/:slug paths", async () => {
+test("shared public domain delegates clean project links to the canonical helper", async () => {
   const [page, publicData, domains] = await Promise.all([
     source("../app/projects/[slug]/page.tsx"),
     source("../app/api/public-data/route.ts"),
@@ -12,9 +12,13 @@ test("shared public domain exposes clean /projects/:slug paths", async () => {
   ]);
   assert.match(page, /projectBySlug/);
   assert.match(page, /projectSlug=/);
-  assert.match(publicData, /\/projects\/\$\{encodeURIComponent\(project\.slug\)\}/);
-  assert.match(publicData, /admin-login/);
-  assert.match(domains, /\/projects\/\$\{encodeURIComponent\(slug\)\}/);
+  // URL construction now belongs to app/project-links.ts. These route-level
+  // checks intentionally verify delegation instead of duplicating helper internals.
+  assert.match(publicData, /currentProjectLinks/);
+  assert.match(publicData, /adminUrl:\s*links\.adminUrl/);
+  assert.match(publicData, /platformUrl:\s*links\.platformUrl/);
+  assert.match(domains, /currentProjectLinks/);
+  assert.doesNotMatch(domains, /\/p\/\$\{encodeURIComponent\(slug\)\}/);
 });
 
 test("project admin login is path-scoped and cannot cross tenants", async () => {

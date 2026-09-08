@@ -1,11 +1,8 @@
 import { env } from "cloudflare:workers";
 import { requireSuperAdmin, sameOrigin } from "../../../admin-auth";
 import { writeAudit } from "../../../audit";
-import {
-  clientFallbackHost,
-  clientPlatformHost,
-} from "../../../project-context";
 import { activeProjectDomain } from "../../../project-domains";
+import { currentProjectLinks } from "../../../project-links";
 
 const denied = () => Response.json({ error: "Super Admin access required" }, { status: 403 });
 const LEGACY_PROJECT = "tiyansh-prime-square";
@@ -37,7 +34,7 @@ function validPolygon(raw: string) {
 
 async function publishState(projectId: string) {
   const project = await env.DB.prepare(
-    "SELECT id,name,slug,status,public_status AS publicStatus,published_at AS publishedAt,publish_version AS publishVersion,public_host AS publicHost FROM projects WHERE id=? AND status!='deleted' LIMIT 1",
+    "SELECT id,name,slug,status,public_status AS publicStatus,published_at AS publishedAt,publish_version AS publishVersion,public_host AS publicHost,admin_host AS adminHost FROM projects WHERE id=? AND status!='deleted' LIMIT 1",
   )
     .bind(projectId)
     .first<{
@@ -49,6 +46,7 @@ async function publishState(projectId: string) {
       publishedAt: string | null;
       publishVersion: number;
       publicHost: string | null;
+      adminHost: string | null;
     }>();
   if (!project) return null;
 
@@ -83,19 +81,15 @@ async function publishState(projectId: string) {
     if (invalid) reasons.push(`${invalid} invalid polygon boundaries hain`);
   }
 
-  const primaryDomain =
-    (await activeProjectDomain(projectId, "public")) || project.publicHost;
-  const platform = clientPlatformHost();
-  const fallback = clientFallbackHost();
-  const platformUrl = platform
-    ? `https://${platform}/p/${encodeURIComponent(project.slug)}`
-    : "";
-  const fallbackUrl = fallback
-    ? `https://${fallback}/p/${encodeURIComponent(project.slug)}`
-    : "";
-  const publicUrl = primaryDomain
-    ? `https://${primaryDomain}`
-    : platformUrl || fallbackUrl;
+  const [primaryDomain, primaryAdminDomain] = await Promise.all([
+    activeProjectDomain(projectId, "public"),
+    activeProjectDomain(projectId, "admin"),
+  ]);
+  const links = currentProjectLinks(
+    project.slug,
+    primaryDomain || project.publicHost,
+    primaryAdminDomain || project.adminHost,
+  );
 
   return {
     ...project,
@@ -105,10 +99,9 @@ async function publishState(projectId: string) {
     masterplanReady: legacy || Boolean(settings.masterplanName),
     ready: reasons.length === 0,
     reasons,
-    primaryDomain,
-    publicUrl,
-    platformUrl,
-    fallbackUrl,
+    primaryDomain: primaryDomain || project.publicHost,
+    primaryAdminDomain: primaryAdminDomain || project.adminHost,
+    ...links,
     legacy,
   };
 }

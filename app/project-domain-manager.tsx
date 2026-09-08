@@ -22,6 +22,10 @@ type Project = {
   publicUrl: string;
   platformUrl: string;
   fallbackUrl: string;
+  fallbackAdminUrl: string;
+  platformAdminUrl: string;
+  customPublicUrl: string;
+  customAdminUrl: string;
   adminUrl: string;
 };
 
@@ -174,7 +178,33 @@ export default function ProjectDomainManager({
             </header>
 
             <div className="rekixo-domain-link">
-              <span>Guaranteed fallback</span>
+              <span>Canonical website</span>
+              <code>{project.publicUrl || "—"}</code>
+              <button onClick={() => copy(project.publicUrl)} disabled={!project.publicUrl}>
+                <Copy />
+              </button>
+              {project.publicUrl && (
+                <a href={project.publicUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink />
+                </a>
+              )}
+            </div>
+
+            <div className="rekixo-domain-link">
+              <span>Canonical client admin</span>
+              <code>{project.adminUrl || "—"}</code>
+              <button onClick={() => copy(project.adminUrl)} disabled={!project.adminUrl}>
+                <Copy />
+              </button>
+              {project.adminUrl && (
+                <a href={project.adminUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink />
+                </a>
+              )}
+            </div>
+
+            <div className="rekixo-domain-link">
+              <span>Free fallback website</span>
               <code>{project.fallbackUrl || "—"}</code>
               <button onClick={() => copy(project.fallbackUrl)} disabled={!project.fallbackUrl}>
                 <Copy />
@@ -187,13 +217,16 @@ export default function ProjectDomainManager({
             </div>
 
             <div className="rekixo-domain-link">
-              <span>Platform link</span>
-              <code>{project.platformUrl || "Cloudflare setup pending"}</code>
-              <button onClick={() => copy(project.platformUrl)} disabled={!project.platformUrl}>
+              <span>Free fallback admin</span>
+              <code>{project.fallbackAdminUrl || "—"}</code>
+              <button
+                onClick={() => copy(project.fallbackAdminUrl)}
+                disabled={!project.fallbackAdminUrl}
+              >
                 <Copy />
               </button>
-              {project.platformUrl && (
-                <a href={project.platformUrl} target="_blank" rel="noreferrer">
+              {project.fallbackAdminUrl && (
+                <a href={project.fallbackAdminUrl} target="_blank" rel="noreferrer">
                   <ExternalLink />
                 </a>
               )}
