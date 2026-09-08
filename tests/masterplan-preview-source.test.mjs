@@ -45,9 +45,13 @@ test("public renderer rotates image and SVG together while keeping polygon stora
     /world\.style\.transform = `translate\(calc\(-50% \+ \$\{pan\.x\}px\),calc\(-50% \+ \$\{pan\.y\}px\)\) scale\(\$\{scale\}\) rotate\(\$\{publicRotation\*90\}deg\)`/,
   );
   assert.match(publicPage, /publicRotation=normalizeQuarterTurn\(s\.publicRotation\)/);
+  assert.match(publicPage, /const ctm=svg\.getScreenCTM\?\.\(\)/);
+  assert.match(publicPage, /const point=svg\.createSVGPoint\(\)/);
+  assert.match(publicPage, /point\.matrixTransform\(ctm\.inverse\(\)\)/);
+  assert.match(publicPage, /const native=nativePlotAtClient\(x,y\)/);
   assert.match(
     publicPage,
-    /function clientToPlan\(x,y\)\{const r=viewport\.getBoundingClientRect\(\),dx=\(x-r\.left-r\.width\/2-pan\.x\)\/scale,dy=\(y-r\.top-r\.height\/2-pan\.y\)\/scale,u=rotateOffset\(dx,dy,\(4-publicRotation\)%4\);return\{x:u\.x\+W\/2,y:u\.y\+H\/2\}\}/,
+    /u=rotateOffset\(dx,dy,\(4-publicRotation\)%4\)/,
   );
   assert.match(publicPage, /setMapDimensions\(master\.naturalWidth,master\.naturalHeight\)/);
 });
