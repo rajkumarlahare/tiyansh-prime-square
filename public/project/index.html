@@ -662,6 +662,18 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   }
   function applyPublicData(data){
     ACTIVE_PROJECT_ID=data.projectId||(GENERIC_BOOT?'':REKIXO_DEFAULT_PROJECT);
+
+    // public-data is the canonical tenant resolver. After it returns, every
+    // project asset/gallery request follows THAT exact project id instead of
+    // reusing a stale/short id from an old preview tab.
+    const canonicalForward=new URLSearchParams();
+    if(ACTIVE_PROJECT_ID)canonicalForward.set('projectId',ACTIVE_PROJECT_ID);
+    if(data&&data.preview){
+      canonicalForward.set('preview','1');
+      canonicalForward.set('assetRev',String(Date.now()));
+    }
+    window.REKIXO_PROJECT_QUERY=canonicalForward.toString()?'?'+canonicalForward.toString():'';
+
     const isTiyansh=ACTIVE_PROJECT_ID===REKIXO_DEFAULT_PROJECT;
     const s=data&&data.settings||{};
     const configuredRotation=Number(s.publicRotation);

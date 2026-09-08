@@ -20,6 +20,27 @@ export default async function ProjectPreview({
   )
     .bind(projectId)
     .first<{ id: string; name: string }>();
+
+  // Old preview tabs may contain a short legacy identifier such as /preview/904.
+  // Super Admin may resolve it only when it matches exactly ONE active project,
+  // then immediately redirect to the canonical project UUID. Client admins stay
+  // exact-tenant scoped and never receive prefix lookup behavior.
+  if (
+    !project &&
+    session.role === "super_admin" &&
+    /^[A-Za-z0-9-]{3,35}$/.test(projectId)
+  ) {
+    const prefix = await env.DB.prepare(
+      "SELECT id,name FROM projects WHERE id LIKE ? AND status='active' ORDER BY id LIMIT 2",
+    )
+      .bind(`${projectId}%`)
+      .all<{ id: string; name: string }>();
+    const matches = prefix.results || [];
+    if (matches.length === 1) {
+      redirect(`/preview/${encodeURIComponent(matches[0].id)}`);
+    }
+  }
+
   if (!project) notFound();
 
   return (
