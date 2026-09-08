@@ -46,6 +46,8 @@ html.rekixo-project-error body::after{content:"Project preview load nahi hua. Re
 .world{position:absolute;left:50%;top:50%;width:var(--map-w,1200px);height:var(--map-h,2133px);transform-origin:center center;will-change:transform;user-select:none;backface-visibility:hidden;contain:layout paint style;transform:translateZ(0)}
 .master,.hotspots{position:absolute;inset:0;width:var(--map-w,1200px);height:var(--map-h,2133px);display:block}.master{pointer-events:none;-webkit-user-drag:none;backface-visibility:hidden;transform:translateZ(0);image-rendering:auto}.hotspots{z-index:2;overflow:visible}
 .map.dragging .plot{transition:none}.map.dragging .plot.selected{filter:none}
+.map.gesture-active .hotspots{visibility:hidden}
+.map.gesture-active .world{will-change:transform}
 .plot{fill:rgba(32,225,125,.001);stroke:transparent;stroke-width:1.1;vector-effect:non-scaling-stroke;cursor:pointer;transition:fill .12s,stroke .12s,filter .12s}
 .plot.selected{fill:rgba(18,197,104,.22);stroke:#20e47e;stroke-width:1.45;filter:drop-shadow(0 0 3px rgba(37,236,132,.75))}
 .show-all .plot{stroke-width:.95}.show-all .plot[data-status="available"]{fill:rgba(27,188,103,.16);stroke:rgba(29,230,126,.68)}.show-all .plot[data-status="booked"]{fill:rgba(245,181,22,.27);stroke:rgba(255,203,44,.9)}.show-all .plot[data-status="sold"]{fill:rgba(240,49,76,.29);stroke:rgba(255,70,94,.92)}
@@ -434,6 +436,8 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   let gesture = null;
   const pointers = new Map();
   let lastPlotOpenAt = 0;
+  let viewportWidth = 0, viewportHeight = 0, lastPercent = -1;
+  const percentEl = q('#percent');
 
   const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
   const coarseMQ = window.matchMedia('(pointer:coarse)');
@@ -469,20 +473,27 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   function calcFit(){
     const mobile = window.matchMedia('(max-width:700px)').matches;
     const size=displaySize();
-    const fw = viewport.clientWidth / size.w;
-    const fh = viewport.clientHeight / size.h;
+    viewportWidth=viewport.clientWidth;
+    viewportHeight=viewport.clientHeight;
+    const fw = viewportWidth / size.w;
+    const fh = viewportHeight / size.h;
     // Mobile uses full width. Image + SVG remain in one uniformly-scaled world,
     // so side gutters disappear without stretching or changing polygon coordinates.
     fit = mobile ? fw : Math.min(fw,fh);
     if(!Number.isFinite(fit) || fit <= 0) fit = .3;
   }
-  function limits(){const size=displaySize();return {x:Math.max(0,(size.w*scale-viewport.clientWidth)/2),y:Math.max(0,(size.h*scale-viewport.clientHeight)/2)}}
+  function limits(){
+    const sw=publicRotation%2?H:W,sh=publicRotation%2?W:H;
+    const vw=viewportWidth||viewport.clientWidth,vh=viewportHeight||viewport.clientHeight;
+    return {x:Math.max(0,(sw*scale-vw)/2),y:Math.max(0,(sh*scale-vh)/2)}
+  }
   function clampPan(){const l=limits();pan.x=clamp(pan.x,-l.x,l.x);pan.y=clamp(pan.y,-l.y,l.y)}
   function render(){
     clampPan();
     // Image + SVG rotate as one world; polygon coordinates remain canonical.
     world.style.transform = `translate3d(calc(-50% + ${pan.x}px),calc(-50% + ${pan.y}px),0) scale(${scale}) rotate(${publicRotation*90}deg)`;
-    q('#percent').textContent = Math.round(scale/fit*100)+'%';
+    const percent=Math.round(scale/fit*100);
+    if(percent!==lastPercent){lastPercent=percent;percentEl.textContent=percent+'%'}
   }
   function scheduleRender(){if(!mapRaf)mapRaf=requestAnimationFrame(()=>{mapRaf=0;render()})}
   function reset(){calcFit();scale=fit;pan={x:0,y:0};render()}
@@ -539,7 +550,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   }
   function close(){drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.classList.remove('open')}
   function focusPlot(p){const target=Math.max(scale,fit*1.85);scale=Math.min(target,fit*4.5);const r=rotateOffset(p.center[0]-W/2,p.center[1]-H/2,publicRotation);pan.x=-r.x*scale;pan.y=-r.y*scale;render()}
-  function zoomAt(newScale,sx,sy){newScale=clamp(newScale,fit,fit*4.5);const r=viewport.getBoundingClientRect(),mx=sx-r.left-r.width/2,my=sy-r.top-r.height/2,cx=(mx-pan.x)/scale,cy=(my-pan.y)/scale;pan.x=mx-cx*newScale;pan.y=my-cy*newScale;scale=newScale;render()}
+  function zoomAt(newScale,sx,sy){newScale=clamp(newScale,fit,fit*4.5);const r=viewport.getBoundingClientRect(),mx=sx-r.left-r.width/2,my=sy-r.top-r.height/2,cx=(mx-pan.x)/scale,cy=(my-pan.y)/scale;pan.x=mx-cx*newScale;pan.y=my-cy*newScale;scale=newScale;scheduleRender()}
   function zoomCenter(factor){const r=viewport.getBoundingClientRect();zoomAt(scale*factor,r.left+r.width/2,r.top+r.height/2)}
   function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
   function midpoint(a,b){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2}}
@@ -548,6 +559,15 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
       const samples=typeof e.getCoalescedEvents==='function'?e.getCoalescedEvents():[];
       return samples&&samples.length?samples[samples.length-1]:e;
     }catch(_){return e}
+  }
+  function viewportRectSnapshot(){
+    const r=viewport.getBoundingClientRect();
+    return {left:r.left,top:r.top,width:r.width,height:r.height}
+  }
+  function setGestureActive(active){
+    viewport.classList.toggle('gesture-active',Boolean(active));
+    if(active)viewport.classList.add('dragging');
+    else viewport.classList.remove('dragging')
   }
 
   function pointInPolygon(x,y,pts){let inside=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const xi=pts[i][0],yi=pts[i][1],xj=pts[j][0],yj=pts[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi))inside=!inside}return inside}
@@ -599,38 +619,45 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   viewport.addEventListener('pointerdown',e=>{
     if(mode3D || isUiTarget(e.target)) return;
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType});
+    try{viewport.setPointerCapture(e.pointerId)}catch(_){ }
     if(pointers.size===1){
       const hit=plotAtClient(e.clientX,e.clientY,HIT_PAD(e));
       gesture={type:'single',id:e.pointerId,start:{x:e.clientX,y:e.clientY},last:{x:e.clientX,y:e.clientY},pan:{...pan},startPlot:hit?.id||null,moved:false,slop:TAP_SLOP(e),pointerType:e.pointerType};
     }else if(pointers.size===2){
       const [a,b]=[...pointers.values()];
-      gesture={type:'pinch',dist:Math.max(8,distance(a,b)),scale,mid:midpoint(a,b),pan:{...pan},moved:true};
-      viewport.classList.add('dragging');
+      gesture={type:'pinch',dist:Math.max(8,distance(a,b)),scale,mid:midpoint(a,b),pan:{...pan},rect:viewportRectSnapshot(),moved:true};
+      setGestureActive(true);
     }
   },{passive:true});
 
-  viewport.addEventListener('pointermove',e=>{
+  const mapMoveEvent='onpointerrawupdate' in window?'pointerrawupdate':'pointermove';
+  const handleMapPointerMove=e=>{
     if(mode3D || !pointers.has(e.pointerId)) return;
-    const sample=latestPointerSample(e);
-    pointers.set(e.pointerId,{x:sample.clientX,y:sample.clientY,type:e.pointerType});
+    const sample=latestPointerSample(e),tracked=pointers.get(e.pointerId);
+    tracked.x=sample.clientX;tracked.y=sample.clientY;tracked.type=e.pointerType;
     if(pointers.size===2){
       const [a,b]=[...pointers.values()],m=midpoint(a,b);
-      if(!gesture||gesture.type!=='pinch')gesture={type:'pinch',dist:Math.max(8,distance(a,b)),scale,mid:m,pan:{...pan},moved:true};
-      const ns=clamp(gesture.scale*distance(a,b)/gesture.dist,fit,fit*4.5),r=viewport.getBoundingClientRect(),oldMx=gesture.mid.x-r.left-r.width/2,oldMy=gesture.mid.y-r.top-r.height/2,cx=(oldMx-gesture.pan.x)/gesture.scale,cy=(oldMy-gesture.pan.y)/gesture.scale,newMx=m.x-r.left-r.width/2,newMy=m.y-r.top-r.height/2;
+      if(!gesture||gesture.type!=='pinch'){
+        gesture={type:'pinch',dist:Math.max(8,distance(a,b)),scale,mid:m,pan:{...pan},rect:viewportRectSnapshot(),moved:true};
+        setGestureActive(true)
+      }
+      const r=gesture.rect;
+      const ns=clamp(gesture.scale*distance(a,b)/gesture.dist,fit,fit*4.5),oldMx=gesture.mid.x-r.left-r.width/2,oldMy=gesture.mid.y-r.top-r.height/2,cx=(oldMx-gesture.pan.x)/gesture.scale,cy=(oldMy-gesture.pan.y)/gesture.scale,newMx=m.x-r.left-r.width/2,newMy=m.y-r.top-r.height/2;
       scale=ns;pan.x=newMx-cx*scale;pan.y=newMy-cy*scale;scheduleRender();
       return;
     }
     if(pointers.size===1&&gesture?.type==='single'&&gesture.id===e.pointerId){
-      gesture.last={x:sample.clientX,y:sample.clientY};
+      gesture.last.x=sample.clientX;gesture.last.y=sample.clientY;
       const dx=sample.clientX-gesture.start.x,dy=sample.clientY-gesture.start.y,d=Math.hypot(dx,dy);
-      if(!gesture.moved&&d<=gesture.slop) return; // don't move map during finger jitter
+      if(!gesture.moved&&d<=gesture.slop) return;
       if(!gesture.moved){
-        gesture.moved=true; viewport.classList.add('dragging');
-        try{viewport.setPointerCapture(e.pointerId)}catch(_){ }
+        gesture.moved=true;
+        setGestureActive(true)
       }
       pan.x=gesture.pan.x+dx;pan.y=gesture.pan.y+dy;scheduleRender();
     }
-  },{passive:true});
+  };
+  viewport.addEventListener(mapMoveEvent,handleMapPointerMove,{passive:true});
 
   function finishPointer(e,cancelled=false){
     const g=gesture;
@@ -646,13 +673,16 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     }
     pointers.delete(e.pointerId);
     try{if(viewport.hasPointerCapture?.(e.pointerId))viewport.releasePointerCapture(e.pointerId)}catch(_){ }
-    if(pointers.size===0){gesture=null;viewport.classList.remove('dragging')}
-    else if(pointers.size===1){const [id,p]=[...pointers.entries()][0];gesture={type:'single',id,start:{x:p.x,y:p.y},last:{x:p.x,y:p.y},pan:{...pan},startPlot:null,moved:true,slop:14,pointerType:p.type};}
+    if(pointers.size===0){gesture=null;setGestureActive(false)}
+    else if(pointers.size===1){const [id,p]=[...pointers.entries()][0];gesture={type:'single',id,start:{x:p.x,y:p.y},last:{x:p.x,y:p.y},pan:{...pan},startPlot:null,moved:true,slop:14,pointerType:p.type};setGestureActive(true)}
     if(hit) openPlot(hit,false);
   }
   viewport.addEventListener('pointerup',e=>{if(!mode3D)finishPointer(e,false)},{passive:true});
   viewport.addEventListener('pointercancel',e=>{if(!mode3D)finishPointer(e,true)},{passive:true});
-  viewport.addEventListener('lostpointercapture',e=>{if(pointers.has(e.pointerId)&&pointers.size===1&&gesture?.moved){pointers.delete(e.pointerId);gesture=null;viewport.classList.remove('dragging')}});
+  const cancelMapGesture=()=>{if(!pointers.size&&!gesture)return;pointers.clear();gesture=null;setGestureActive(false)};
+  window.addEventListener('blur',cancelMapGesture,{passive:true});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelMapGesture()},{passive:true});
+  viewport.addEventListener('lostpointercapture',e=>{if(pointers.has(e.pointerId)&&pointers.size===1&&gesture?.moved){pointers.delete(e.pointerId);gesture=null;setGestureActive(false)}});
 
   viewport.addEventListener('wheel',e=>{if(mode3D)return;e.preventDefault();zoomAt(scale*(e.deltaY<0?1.12:.89),e.clientX,e.clientY)},{passive:false});
   q('#zoomIn').onclick=()=>mode3D?engine3D?.zoom(.88):zoomCenter(1.16);
