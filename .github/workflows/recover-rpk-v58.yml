@@ -1,0 +1,254 @@
+name: Rekixo RPK V5.8 Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type RECOVER-904 to run the guarded RPK recovery
+        required: true
+        default: "NO"
+
+concurrency:
+  group: rekixo-rpk-v58-recovery
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    if: ${{ inputs.confirm == 'RECOVER-904' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DB_NAME: tiyansh-production
+      BUCKET: tiyansh-gallery-production
+      TARGET_PROJECT_ID: "904"
+      MAPPER_SOURCE_PROJECT_ID: tiyansh-prime-square
+      WRANGLER_VERSION: "4.92.0"
+
+    steps:
+      - name: Check out exact main
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build
+        run: npm run build
+
+      - name: Full regression suite
+        run: node --test tests/*.test.mjs
+
+      - name: Guarded D1 + R2 recovery
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          W=(npx --yes "wrangler@${WRANGLER_VERSION}")
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+
+          STATE_SQL="SELECT p.id,p.name,p.public_status AS publicStatus,\
+          (SELECT COUNT(*) FROM plots x WHERE x.project_id=p.id) AS total,\
+          (SELECT COUNT(*) FROM plots x WHERE x.project_id=p.id AND TRIM(COALESCE(x.polygon,''))<>'') AS mapped,\
+          COALESCE((SELECT value FROM settings s WHERE s.project_id=p.id AND s.key='mapWidth'),'') AS mapWidth,\
+          COALESCE((SELECT value FROM settings s WHERE s.project_id=p.id AND s.key='mapHeight'),'') AS mapHeight,\
+          COALESCE((SELECT value FROM settings s WHERE s.project_id=p.id AND s.key='publicRotation'),'') AS publicRotation \
+          FROM projects p WHERE p.id='${TARGET_PROJECT_ID}' AND p.status='active' LIMIT 1;"
+
+          PLOTS_SQL="SELECT id,sqft,sqm,sqyd,dimensions,road,status,notes,featured,polygon \
+          FROM plots WHERE project_id='${TARGET_PROJECT_ID}' ORDER BY id;"
+
+          "${W[@]}" d1 execute "$DB_NAME" --remote --json --command "$STATE_SQL" > "$TMP/state-before.json"
+          "${W[@]}" d1 execute "$DB_NAME" --remote --json --command "$PLOTS_SQL" > "$TMP/plots-before.json"
+
+          cat > "$TMP/tools.py" <<'PY'
+          import hashlib, json, struct, sys
+          from pathlib import Path
+
+          def rows_from(obj):
+              found=[]
+              def walk(v):
+                  if isinstance(v, dict):
+                      if isinstance(v.get("results"), list):
+                          found.extend(x for x in v["results"] if isinstance(x, dict))
+                      for x in v.values():
+                          walk(x)
+                  elif isinstance(v, list):
+                      for x in v:
+                          walk(x)
+              walk(obj)
+              unique=[]; seen=set()
+              for row in found:
+                  key=json.dumps(row, sort_keys=True, ensure_ascii=False)
+                  if key not in seen:
+                      seen.add(key); unique.append(row)
+              return unique
+
+          def rows(path):
+              return rows_from(json.loads(Path(path).read_text(encoding="utf-8")))
+
+          def jpeg_size(data):
+              if not data.startswith(b"\xff\xd8"): return None
+              i=2; sof={0xC0,0xC1,0xC2,0xC3,0xC5,0xC6,0xC7,0xC9,0xCA,0xCB,0xCD,0xCE,0xCF}
+              while i+4 <= len(data):
+                  if data[i] != 0xFF:
+                      i += 1; continue
+                  while i < len(data) and data[i] == 0xFF: i += 1
+                  if i >= len(data): break
+                  marker=data[i]; i += 1
+                  if marker in (0xD8,0xD9): continue
+                  if i+2 > len(data): break
+                  length=struct.unpack(">H", data[i:i+2])[0]
+                  if length < 2 or i+length > len(data): break
+                  if marker in sof and length >= 7:
+                      h=struct.unpack(">H", data[i+3:i+5])[0]
+                      w=struct.unpack(">H", data[i+5:i+7])[0]
+                      return w,h
+                  i += length
+              return None
+
+          def webp_size(data):
+              if len(data)<30 or data[:4]!=b"RIFF" or data[8:12]!=b"WEBP": return None
+              pos=12
+              while pos+8 <= len(data):
+                  fourcc=data[pos:pos+4]
+                  size=int.from_bytes(data[pos+4:pos+8],"little")
+                  d=pos+8
+                  if fourcc==b"VP8X" and d+10<=len(data):
+                      return (1+int.from_bytes(data[d+4:d+7],"little"),
+                              1+int.from_bytes(data[d+7:d+10],"little"))
+                  if fourcc==b"VP8L" and d+5<=len(data) and data[d]==0x2F:
+                      b1,b2,b3,b4=data[d+1:d+5]
+                      return (1+(b1|((b2&0x3F)<<8)),
+                              1+((b2>>6)|(b3<<2)|((b4&0x0F)<<10)))
+                  if fourcc==b"VP8 " and d+10<=len(data) and data[d+3:d+6]==b"\x9d\x01\x2a":
+                      return (int.from_bytes(data[d+6:d+8],"little")&0x3FFF,
+                              int.from_bytes(data[d+8:d+10],"little")&0x3FFF)
+                  pos=d+size+(size&1)
+              return None
+
+          def image_info(path):
+              data=Path(path).read_bytes()
+              if data.startswith(b"\x89PNG\r\n\x1a\n") and len(data)>=24:
+                  w,h=struct.unpack(">II",data[16:24]); return "image/png",w,h
+              s=jpeg_size(data)
+              if s: return "image/jpeg",*s
+              s=webp_size(data)
+              if s: return "image/webp",*s
+              raise SystemExit(f"unsupported image: {path}")
+
+          mode=sys.argv[1]
+          if mode=="state":
+              rr=rows(sys.argv[2])
+              if not rr: raise SystemExit("project state row missing")
+              r=rr[0]
+              total=int(r.get("total") or 0); mapped=int(r.get("mapped") or 0)
+              mw=int(float(r.get("mapWidth") or 0)); mh=int(float(r.get("mapHeight") or 0))
+              if (total,mapped)!=(146,146):
+                  raise SystemExit(f"expected 146/146, got {mapped}/{total}")
+              if mw<100 or mh<100: raise SystemExit(f"bad map dimensions {mw}x{mh}")
+              print(mw,mh)
+          elif mode=="hash":
+              payload=json.dumps(rows(sys.argv[2]),sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
+              print(hashlib.sha256(payload).hexdigest())
+          elif mode=="image":
+              print(*image_info(sys.argv[2]))
+          else:
+              raise SystemExit("unknown mode")
+          PY
+
+          read -r MAP_W MAP_H < <(python3 "$TMP/tools.py" state "$TMP/state-before.json")
+          PLOTS_HASH_BEFORE="$(python3 "$TMP/tools.py" hash "$TMP/plots-before.json")"
+          echo "D1 verified: 146/146 · map ${MAP_W}x${MAP_H}"
+          echo "Plot snapshot: $PLOTS_HASH_BEFORE"
+
+          SRC="$TMP/source.bin"
+          SRC_KEY="projects/${MAPPER_SOURCE_PROJECT_ID}/mapper/masterplan"
+          if ! "${W[@]}" r2 object get "${BUCKET}/${SRC_KEY}" --remote --file "$SRC" >/dev/null 2>&1; then
+            SRC_KEY="projects/${MAPPER_SOURCE_PROJECT_ID}/mapper/masterplanPublic"
+            "${W[@]}" r2 object get "${BUCKET}/${SRC_KEY}" --remote --file "$SRC"
+          fi
+
+          read -r SRC_MIME SRC_W SRC_H < <(python3 "$TMP/tools.py" image "$SRC")
+          SRC_SHA="$(sha256sum "$SRC" | awk '{print $1}')"
+          echo "Mapper source: $SRC_KEY · ${SRC_W}x${SRC_H} · $SRC_MIME · $SRC_SHA"
+
+          [[ "$SRC_W" == "$MAP_W" && "$SRC_H" == "$MAP_H" ]] || {
+            echo "STOP: mapper source ${SRC_W}x${SRC_H} != D1 ${MAP_W}x${MAP_H}" >&2
+            exit 1
+          }
+          [[ "$SRC_H" -gt "$SRC_W" ]] || {
+            echo "STOP: expected portrait mapper source, got ${SRC_W}x${SRC_H}" >&2
+            exit 1
+          }
+
+          CAN="$TMP/canonical-before.bin"
+          PUB="$TMP/public-before.bin"
+          HAS_CAN=1
+          if ! "${W[@]}" r2 object get "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplan" --remote --file "$CAN" >/dev/null 2>&1; then
+            HAS_CAN=0
+          fi
+          HAS_PUB=1
+          if ! "${W[@]}" r2 object get "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplanPublic" --remote --file "$PUB" >/dev/null 2>&1; then
+            HAS_PUB=0
+          fi
+          [[ "$HAS_CAN" == "1" || "$HAS_PUB" == "1" ]] || {
+            echo "STOP: target canonical/public both missing" >&2
+            exit 1
+          }
+
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          BACKUP="projects/${TARGET_PROJECT_ID}/mapper/recovery-v5-8-${STAMP}"
+
+          if [[ "$HAS_CAN" == "1" ]]; then
+            read -r CAN_MIME _ _ < <(python3 "$TMP/tools.py" image "$CAN")
+            "${W[@]}" r2 object put "${BUCKET}/${BACKUP}/masterplan-before" --remote --force --file "$CAN" --content-type "$CAN_MIME"
+          fi
+          if [[ "$HAS_PUB" == "1" ]]; then
+            read -r PUB_MIME _ _ < <(python3 "$TMP/tools.py" image "$PUB")
+            "${W[@]}" r2 object put "${BUCKET}/${BACKUP}/masterplanPublic-before" --remote --force --file "$PUB" --content-type "$PUB_MIME"
+          fi
+
+          cat > "$TMP/manifest.txt" <<EOF
+          Rekixo V5.8 GitHub recovery
+          UTC: $STAMP
+          target_project: $TARGET_PROJECT_ID
+          mapper_source_project: $MAPPER_SOURCE_PROJECT_ID
+          mapper_source_key: $SRC_KEY
+          mapper_source_sha256: $SRC_SHA
+          mapper_source_size: ${SRC_W}x${SRC_H}
+          plot_snapshot_sha256: $PLOTS_HASH_BEFORE
+          EOF
+          "${W[@]}" r2 object put "${BUCKET}/${BACKUP}/manifest.txt" --remote --force --file "$TMP/manifest.txt" --content-type text/plain
+          echo "Backup: ${BUCKET}/${BACKUP}/"
+
+          "${W[@]}" r2 object put "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplan" --remote --force --file "$SRC" --content-type "$SRC_MIME"
+          "${W[@]}" r2 object put "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplanPublic" --remote --force --file "$SRC" --content-type "$SRC_MIME"
+
+          "${W[@]}" r2 object get "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplan" --remote --file "$TMP/canonical-after.bin"
+          "${W[@]}" r2 object get "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplanPublic" --remote --file "$TMP/public-after.bin"
+          [[ "$(sha256sum "$TMP/canonical-after.bin" | awk '{print $1}')" == "$SRC_SHA" ]]
+          [[ "$(sha256sum "$TMP/public-after.bin" | awk '{print $1}')" == "$SRC_SHA" ]]
+
+          "${W[@]}" d1 execute "$DB_NAME" --remote --json --command "$STATE_SQL" > "$TMP/state-after.json"
+          "${W[@]}" d1 execute "$DB_NAME" --remote --json --command "$PLOTS_SQL" > "$TMP/plots-after.json"
+          python3 "$TMP/tools.py" state "$TMP/state-after.json" >/dev/null
+          PLOTS_HASH_AFTER="$(python3 "$TMP/tools.py" hash "$TMP/plots-after.json")"
+          [[ "$PLOTS_HASH_AFTER" == "$PLOTS_HASH_BEFORE" ]] || {
+            echo "CRITICAL: plot rows changed unexpectedly" >&2
+            exit 1
+          }
+
+          echo "RECOVERY SUCCESS"
+          echo "✓ target 904 owns exact portrait mapper bytes"
+          echo "✓ canonical + public read-back SHA match"
+          echo "✓ 146/146 plot snapshot unchanged"

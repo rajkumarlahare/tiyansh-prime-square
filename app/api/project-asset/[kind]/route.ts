@@ -11,28 +11,32 @@ const SUPER_ADMIN_ONLY = new Set([
   "masterplanOriginal",
 ]);
 
+async function activeProjectId(projectId: string) {
+  if (!projectId) return null;
+  const row = await env.DB.prepare(
+    "SELECT id FROM projects WHERE id=? AND status='active' LIMIT 1",
+  )
+    .bind(projectId)
+    .first<{ id: string }>();
+  return row?.id || null;
+}
+
 async function authorizedProjectId(request: Request) {
   const session = await getAdminSession();
-  const url = new URL(request.url);
-  const requested = url.searchParams.get("projectId");
-  const preview = url.searchParams.get("preview") === "1";
+  const requested = new URL(request.url).searchParams.get("projectId");
 
-  if (session?.role === "super_admin" && requested && preview) {
-    const row = await env.DB.prepare(
-      "SELECT id FROM projects WHERE id=? AND status='active' LIMIT 1",
-    )
-      .bind(requested)
-      .first<{ id: string }>();
-    return row?.id || null;
+  // Super Admin works across many tenants. The selected project must always
+  // win over the legacy Tiyansh session fallback.
+  if (session?.role === "super_admin") {
+    return activeProjectId(requested || session.projectId);
   }
-  if (
-    session?.role === "client_admin" &&
-    requested &&
-    preview &&
-    requested === session.projectId
-  )
-    return session.projectId;
-  if (session?.projectId) return session.projectId;
+
+  // Client admins remain hard tenant-scoped.
+  if (session?.role === "client_admin") {
+    if (requested && requested !== session.projectId) return null;
+    return activeProjectId(session.projectId);
+  }
+
   return publicProjectId(request);
 }
 
@@ -79,6 +83,7 @@ export async function GET(
           : "private,no-store",
     "x-content-type-options": "nosniff",
   });
+  headers.set("x-rekixo-project", projectId);
   if (kind === "masterplan") {
     headers.set("x-rekixo-masterplan-source", servedMasterplanSource);
   }

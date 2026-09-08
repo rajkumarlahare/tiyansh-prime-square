@@ -5,27 +5,27 @@ import { gallery } from "../../../../db/schema";
 import { publicProjectId } from "../../../project-context";
 import { getAdminSession } from "../../../admin-auth";
 
+async function activeProjectId(projectId: string) {
+  if (!projectId) return null;
+  const row = await env.DB.prepare(
+    "SELECT id FROM projects WHERE id=? AND status='active' LIMIT 1",
+  )
+    .bind(projectId)
+    .first<{ id: string }>();
+  return row?.id || null;
+}
+
 async function galleryProjectId(request: Request) {
   const session = await getAdminSession();
-  const url = new URL(request.url);
-  const requested = url.searchParams.get("projectId");
-  const preview = url.searchParams.get("preview") === "1";
-  if (session?.role === "super_admin" && requested && preview) {
-    const row = await env.DB.prepare(
-      "SELECT id FROM projects WHERE id=? AND status='active' LIMIT 1",
-    )
-      .bind(requested)
-      .first<{ id: string }>();
-    return row?.id || null;
+  const requested = new URL(request.url).searchParams.get("projectId");
+
+  if (session?.role === "super_admin") {
+    return activeProjectId(requested || session.projectId);
   }
-  if (
-    session?.role === "client_admin" &&
-    requested &&
-    preview &&
-    requested === session.projectId
-  )
-    return session.projectId;
-  if (session?.projectId) return session.projectId;
+  if (session?.role === "client_admin") {
+    if (requested && requested !== session.projectId) return null;
+    return activeProjectId(session.projectId);
+  }
   return publicProjectId(request);
 }
 
