@@ -1,12 +1,33 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import test from "node:test";
+
+async function listFiles(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const child = new URL(`${encodeURIComponent(entry.name)}${entry.isDirectory() ? "/" : ""}`, directory);
+    if (entry.isDirectory()) files.push(...(await listFiles(child)));
+    else files.push(child.pathname);
+  }
+  return files;
+}
+
+
 
 test("build emits a Cloudflare Worker and client assets", async () => {
   await access(new URL("../dist/server/index.js", import.meta.url));
   await access(new URL("../dist/client", import.meta.url));
   const worker = await readFile(new URL("../dist/server/index.js", import.meta.url), "utf8");
   assert.match(worker, /fetch/);
+});
+
+test("production build emits JS and CSS inside the isolated Rekixo asset namespace", async () => {
+  const assetRoot = new URL("../dist/client/__rekixo/_next/static/", import.meta.url);
+  await access(assetRoot);
+  const files = await listFiles(assetRoot);
+  assert.ok(files.some((file) => file.endsWith(".js")), "missing prefixed JS assets");
+  assert.ok(files.some((file) => file.endsWith(".css")), "missing prefixed CSS assets");
 });
 
 test("client access includes mandatory password change and tenant guards", async () => {

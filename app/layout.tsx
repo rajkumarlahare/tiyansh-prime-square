@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import "./login.css";
 import "./super-mapper.css";
 import { panelMode } from "./admin-auth";
 

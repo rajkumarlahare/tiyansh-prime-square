@@ -40,16 +40,21 @@ test("query-bearing Rekixo API routes terminate in wildcard so Cloudflare matche
   assert.doesNotMatch(deploy, /\`\$\{platformHost\}\/api\/gallery\`,/);
 });
 
-test("Rekixo static assets use an isolated namespace on the shared domain", async () => {
-  const [worker, projectPage, dashboard] = await Promise.all([
+test("Rekixo static assets use a native isolated namespace plus compatibility fallback", async () => {
+  const [worker, projectPage, dashboard, nextConfig, helpers] = await Promise.all([
     source("../worker/index.ts"),
     source("../app/projects/[slug]/page.tsx"),
     source("../app/admin-dashboard.tsx"),
+    source("../next.config.ts"),
+    source("../worker/shared-assets.mjs"),
   ]);
 
-  assert.match(worker, /SHARED_ASSET_PREFIX = "\/__rekixo"/);
+  assert.match(nextConfig, /assetPrefix:\s*"\/__rekixo"/);
+  assert.match(helpers, /SHARED_ASSET_PREFIX = "\/__rekixo"/);
+  assert.match(helpers, /rewriteAssetReferences/);
   assert.match(worker, /stripSharedAssetPrefix/);
-  assert.match(worker, /rewriteAssetReferences/);
+  assert.match(worker, /fetchPrefixedFrameworkAsset/);
+  assert.match(worker, /env\.ASSETS\.fetch\(request\)/);
   assert.match(worker, /CLIENT_PLATFORM_HOST/);
   assert.match(worker, /externalUrl\.pathname\.startsWith\("\/projects\/"\)/);
   assert.match(projectPage, /\/__rekixo\/project\/index\.html\?projectSlug=/);

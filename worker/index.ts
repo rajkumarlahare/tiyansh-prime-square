@@ -1,6 +1,13 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import {
+  isPrefixedFrameworkAssetPath,
+  isSharedAssetPath,
+  rewriteAssetReferences,
+  shouldRewriteAssetBody,
+  stripSharedAssetPath,
+} from "./shared-assets.mjs";
 
 interface Env {
   ASSETS: Fetcher;
@@ -20,9 +27,6 @@ interface ExecutionContext {
   passThroughOnException(): void;
 }
 
-const SHARED_ASSET_PREFIX = "/__rekixo";
-const REKIXO_ASSET_ROOTS = ["assets", "_next", "_vinext"] as const;
-
 function normalizedHost(value: string | undefined) {
   return String(value || "")
     .trim()
@@ -37,37 +41,33 @@ function isSharedPlatformRequest(url: URL, env: Env) {
 
 function stripSharedAssetPrefix(request: Request) {
   const url = new URL(request.url);
-  if (url.pathname !== SHARED_ASSET_PREFIX && !url.pathname.startsWith(`${SHARED_ASSET_PREFIX}/`)) {
-    return request;
-  }
-  url.pathname = url.pathname.slice(SHARED_ASSET_PREFIX.length) || "/";
+  const strippedPath = stripSharedAssetPath(url.pathname);
+  if (strippedPath === url.pathname) return request;
+  url.pathname = strippedPath;
   return new Request(url.toString(), request);
 }
 
-function rewriteAssetReferences(text: string) {
-  return text.replace(
-    /(["'(=])\/(assets|_next|_vinext)\//g,
-    (_match, prefix: string, root: string) => `${prefix}${SHARED_ASSET_PREFIX}/${root}/`,
-  );
-}
-
-function shouldRewriteBody(contentType: string) {
-  const type = contentType.toLowerCase();
-  return (
-    type.includes("text/html") ||
-    type.includes("text/css") ||
-    type.includes("javascript") ||
-    type.includes("text/x-component") ||
-    type.includes("application/json")
-  );
-}
-
 async function rewriteSharedAssets(response: Response) {
+  const headers = new Headers(response.headers);
+  let headerChanged = false;
+
+  // React/Vinext can advertise CSS/JS through HTTP Link preload headers.
+  const link = headers.get("link");
+  if (link) {
+    const rewrittenLink = rewriteAssetReferences(link);
+    if (rewrittenLink !== link) {
+      headers.set("link", rewrittenLink);
+      headerChanged = true;
+    }
+  }
+
   const contentType = response.headers.get("content-type") || "";
-  if (!response.body || !shouldRewriteBody(contentType)) return response;
+  if (!response.body || !shouldRewriteAssetBody(contentType)) {
+    if (!headerChanged) return response;
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
 
   const body = rewriteAssetReferences(await response.text());
-  const headers = new Headers(response.headers);
   headers.delete("content-length");
   headers.delete("content-encoding");
   headers.delete("etag");
@@ -77,6 +77,20 @@ async function rewriteSharedAssets(response: Response) {
     statusText: response.statusText,
     headers,
   });
+}
+
+async function fetchPrefixedFrameworkAsset(request: Request, env: Env) {
+  const url = new URL(request.url);
+  if (!isPrefixedFrameworkAssetPath(url.pathname)) return null;
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+
+  try {
+    // New assetPrefix builds store framework assets at the exact /__rekixo URL.
+    const asset = await env.ASSETS.fetch(request);
+    return asset.status === 404 ? null : asset;
+  } catch {
+    return null;
+  }
 }
 
 function isSensitiveClientPath(pathname: string) {
@@ -91,18 +105,21 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const externalUrl = new URL(request.url);
     const sharedPlatform = isSharedPlatformRequest(externalUrl, env);
-    const isolatedAssetRequest =
-      externalUrl.pathname === SHARED_ASSET_PREFIX ||
-      externalUrl.pathname.startsWith(`${SHARED_ASSET_PREFIX}/`);
+    const isolatedAssetRequest = isSharedAssetPath(externalUrl.pathname);
+    const directPrefixedAsset = isolatedAssetRequest
+      ? await fetchPrefixedFrameworkAsset(request, env)
+      : null;
 
-    const internalRequest = isolatedAssetRequest
+    const internalRequest = isolatedAssetRequest && !directPrefixedAsset
       ? stripSharedAssetPrefix(request)
       : request;
     const internalUrl = new URL(internalRequest.url);
 
     let response: Response;
 
-    if (internalUrl.pathname === "/_vinext/image") {
+    if (directPrefixedAsset) {
+      response = directPrefixedAsset;
+    } else if (internalUrl.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
       response = await handleImageOptimization(
         internalRequest,
@@ -126,6 +143,7 @@ const worker = {
     // The boss/Vercel root site never enters this Worker because no broad /* route exists.
     if (
       sharedPlatform &&
+      !directPrefixedAsset &&
       (externalUrl.pathname.startsWith("/projects/") || isolatedAssetRequest)
     ) {
       response = await rewriteSharedAssets(response);

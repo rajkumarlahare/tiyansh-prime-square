@@ -23,8 +23,10 @@ export default async function ProjectAdminLoginPage({ params }: { params: Promis
       mode="client"
       projectId={project.id}
       projectSlug={project.slug}
+      projectName={project.name}
       successPath={`${base}/admin`}
       changePasswordPath={`${base}/change-password`}
+      backPath={base}
     />
   );
 }
