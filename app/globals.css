@@ -2443,6 +2443,32 @@ body {
 .mapper-v4-canvas .mapper-rotated-scene {
   touch-action: none !important;
 }
+
+/* Rekixo Mapper V5.7 — guarded bulk clear + touch-friendly 1800% precision */
+.mapper-v4-toolbar button.mapper-clear-all {
+  border-color: #873847;
+  background: #351722;
+  color: #ff9dac;
+  white-space: nowrap;
+}
+.mapper-v4-toolbar button.mapper-clear-all:not(:disabled):hover {
+  border-color: #cb5066;
+  background: #4a1d29;
+  color: #ffc1cb;
+}
+.mapper-v4-toolbar .mapper-zoom-range {
+  min-width: 130px;
+  min-height: 44px;
+  touch-action: pan-x;
+}
+.mapper-v4-toolbar button {
+  touch-action: manipulation;
+}
+@media (any-pointer: coarse), (hover: none) {
+  .mapper-v4-toolbar button.mapper-clear-all {
+    min-width: 144px;
+  }
+}
 .mapper-v4-canvas.pan-mode .mapper-image-v2 {
   cursor: grab;
 }

@@ -120,6 +120,7 @@ type PendingHandleFrame = {
 };
 
 const COMPLETED_PROJECT_ID = "tiyansh-prime-square";
+const MAX_MAPPER_ZOOM = 18;
 const MAX_MAPPING_DIMENSION = 6144;
 const MAX_MAPPING_PIXELS = 24_000_000;
 const TARGET_MAPPING_BYTES = 12 * 1024 * 1024;
@@ -853,7 +854,7 @@ export default function PlotMapper({
 
 
   function clampMapperZoom(value: number) {
-    return Math.max(1, Math.min(16, value));
+    return Math.max(1, Math.min(MAX_MAPPER_ZOOM, value));
   }
 
   function setMapperZoom(nextValue: number, clientX?: number, clientY?: number) {
@@ -1520,6 +1521,26 @@ export default function PlotMapper({
     );
   }
 
+  async function verifyAllBoundariesCleared() {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const verifyResponse = await fetch(
+        `/api/super-mapper?projectId=${encodeURIComponent(projectId)}&verify=${Date.now()}`,
+        { cache: "no-store" },
+      );
+      const verifyData = await apiResult(verifyResponse);
+      const verifiedPlots = (verifyData.plots || []) as Plot[];
+      if (!verifiedPlots.some((plot) => String(plot.polygon || "").trim())) {
+        return verifiedPlots;
+      }
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 180 * (attempt + 1)));
+      }
+    }
+    throw new Error(
+      "Clear all server read-back verify नहीं हुआ। दोबारा try करें; कोई plot detail/status नहीं बदला गया।",
+    );
+  }
+
   async function confirmPlot() {
     const id = cleanPlotId(plotId);
     const existing = plots.find((plot) => plot.id === editingId || plot.id === id);
@@ -1620,6 +1641,62 @@ export default function PlotMapper({
       notify(`Plot ${verified.plot.id} boundary SERVER VERIFIED removed ✓; details/status सुरक्षित हैं`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Boundary नहीं हटी");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearAllSelections() {
+    const mappedCount = mappedPlots.length;
+    if (!mappedCount) return notify("Clear करने के लिए कोई saved selection नहीं है");
+    const confirmed = window.confirm(
+      `${mappedCount} saved plot selections हटाएँ? सिर्फ clickable polygon boundaries हटेंगी; plot details और status सुरक्षित रहेंगे।`,
+    );
+    if (!confirmed) return;
+
+    setBusy(true);
+    try {
+      const response = await fetch("/api/super-mapper", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          action: "clear_all_polygons",
+          confirmation: `CLEAR ${projectId}`,
+        }),
+      });
+      const result = await apiResult(response);
+      const verifiedPlots = await verifyAllBoundariesCleared();
+
+      setPlots(verifiedPlots);
+      setPoints([]);
+      setEditingId("");
+      setManualPhase("select");
+      setToolMode("select");
+      setLastVerifiedId("");
+      setExcludedAutoIds(new Set());
+      try {
+        for (const plot of plots) {
+          window.localStorage.removeItem(mappingDraftKey(projectId, plot.id));
+        }
+        window.localStorage.removeItem(mappingDraftKey(projectId, plotId));
+      } catch {
+        // Local draft cleanup is best-effort; the server clear is already verified.
+      }
+
+      const firstPlot = [...verifiedPlots].sort(plotSort)[0];
+      if (firstPlot) loadPlotDetails(firstPlot, false);
+      else {
+        setPlotId("1");
+        setDimensions("");
+        setSqft("");
+        setRoad("");
+      }
+      notify(
+        `${typeof result.cleared === "number" ? result.cleared : mappedCount} selections SERVER VERIFIED removed ✓; details/status सुरक्षित हैं`,
+      );
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Clear all selections नहीं हुआ");
     } finally {
       setBusy(false);
     }
@@ -1890,11 +1967,19 @@ export default function PlotMapper({
           <div className="mapper-zoombar mapper-v4-toolbar">
             <button className={toolMode === "pan" ? "active" : ""} type="button" onClick={() => { setToolMode("pan"); setCalibrationMode(false); }}><Hand />Pan</button>
             <button className={toolMode === "select" ? "active" : ""} type="button" onClick={enableSelectMode}><Target />Select</button>
+            <button
+              className="mapper-clear-all"
+              type="button"
+              disabled={busy || completedProject || mappedPlots.length === 0}
+              onClick={clearAllSelections}
+              aria-label="Clear all saved plot selections"
+              title="Remove every saved clickable boundary; plot details and status stay safe"
+            ><Trash2 />Clear all selections</button>
             <strong>{shape === "quad" ? `Plot ${plotId} · ${points.length}/4 corners` : `Plot ${plotId} · ${points.length} corners`}</strong>
             <span>{Math.round(zoom * 100)}%</span>
-            <input className="mapper-zoom-range" type="range" min="1" max="16" step="0.1" value={zoom} onChange={(event) => zoomAtCanvasCenter(Number(event.target.value))} aria-label="Zoom level" />
+            <input className="mapper-zoom-range" type="range" min="1" max={MAX_MAPPER_ZOOM} step="0.1" value={zoom} onChange={(event) => zoomAtCanvasCenter(Number(event.target.value))} aria-label="Zoom level" aria-valuetext={`${Math.round(zoom * 100)}%`} />
             <button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => zoomAtCanvasCenter(zoomRef.current - 0.5)}><ZoomOut /></button>
-            <button aria-label="Zoom in" disabled={zoom >= 16} onClick={() => zoomAtCanvasCenter(zoomRef.current + 0.5)}><ZoomIn /></button>
+            <button aria-label="Zoom in" disabled={zoom >= MAX_MAPPER_ZOOM} onClick={() => zoomAtCanvasCenter(zoomRef.current + 0.5)}><ZoomIn /></button>
             <button
               type="button"
               aria-label="Rotate masterplan left 90 degrees"
