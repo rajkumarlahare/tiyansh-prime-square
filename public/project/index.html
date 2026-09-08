@@ -404,7 +404,6 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   let PHONE = GENERIC_BOOT?'':'919009995582', MAP_URL = GENERIC_BOOT?'':'https://maps.app.goo.gl/n9BjoY4BYzZfmqTL7', PROJECT_NAME=GENERIC_BOOT?'Project':'Tiyansh — The Prime Square', PROJECT_LOCATION=GENERIC_BOOT?'':'Raigarh, Chhattisgarh', ADMIN_URL='/admin/login';
   const plots = GENERIC_BOOT ? [] : (Array.isArray(window.TIYANSH_PLOTS) ? window.TIYANSH_PLOTS : []);
   let ACTIVE_PROJECT_ID=GENERIC_BOOT?'':REKIXO_DEFAULT_PROJECT;
-  let PUBLIC_ROTATION=0;
   const q = s => document.querySelector(s);
   const viewport = q('#viewport');
   const world = q('#world');
@@ -442,13 +441,13 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.setAttribute('width',String(W));svg.setAttribute('height',String(H));
   }
 
-  function displaySize(){return PUBLIC_ROTATION===1||PUBLIC_ROTATION===3?{w:H,h:W}:{w:W,h:H}}
+  function displaySize(){return {w:W,h:H}}
   function calcFit(){
     const mobile = window.matchMedia('(max-width:700px)').matches;
     const size=displaySize();
     const fw = viewport.clientWidth / size.w;
     const fh = viewport.clientHeight / size.h;
-    const legacyWidthFit=ACTIVE_PROJECT_ID===REKIXO_DEFAULT_PROJECT&&mobile&&PUBLIC_ROTATION===0;
+    const legacyWidthFit=ACTIVE_PROJECT_ID===REKIXO_DEFAULT_PROJECT&&mobile;
     fit = legacyWidthFit ? fw : Math.min(fw,fh);
     if(!Number.isFinite(fit) || fit <= 0) fit = .3;
   }
@@ -456,7 +455,8 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   function clampPan(){const l=limits();pan.x=clamp(pan.x,-l.x,l.x);pan.y=clamp(pan.y,-l.y,l.y)}
   function render(){
     clampPan();
-    world.style.transform = `translate(calc(-50% + ${pan.x}px),calc(-50% + ${pan.y}px)) scale(${scale}) rotate(${PUBLIC_ROTATION*90}deg)`;
+    // Canonical world: image + saved SVG geometry are never runtime-rotated.
+    world.style.transform = `translate(calc(-50% + ${pan.x}px),calc(-50% + ${pan.y}px)) scale(${scale})`;
     q('#percent').textContent = Math.round(scale/fit*100)+'%';
   }
   function scheduleRender(){if(!mapRaf)mapRaf=requestAnimationFrame(()=>{mapRaf=0;render()})}
@@ -521,7 +521,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
 
   function pointInPolygon(x,y,pts){let inside=false;for(let i=0,j=pts.length-1;i<pts.length;j=i++){const xi=pts[i][0],yi=pts[i][1],xj=pts[j][0],yj=pts[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi))inside=!inside}return inside}
   function distSeg(px,py,ax,ay,bx,by){const vx=bx-ax,vy=by-ay,wx=px-ax,wy=py-ay,c1=vx*wx+vy*wy;if(c1<=0)return Math.hypot(px-ax,py-ay);const c2=vx*vx+vy*vy;if(c2<=c1)return Math.hypot(px-bx,py-by);const t=c1/c2,qx=ax+t*vx,qy=ay+t*vy;return Math.hypot(px-qx,py-qy)}
-  function clientToPlan(x,y){const r=viewport.getBoundingClientRect(),dx=(x-r.left-r.width/2-pan.x)/scale,dy=(y-r.top-r.height/2-pan.y)/scale;let sx=dx,sy=dy;if(PUBLIC_ROTATION===1){sx=dy;sy=-dx}else if(PUBLIC_ROTATION===2){sx=-dx;sy=-dy}else if(PUBLIC_ROTATION===3){sx=-dy;sy=dx}return{x:sx+W/2,y:sy+H/2}}
+  function clientToPlan(x,y){const r=viewport.getBoundingClientRect(),dx=(x-r.left-r.width/2-pan.x)/scale,dy=(y-r.top-r.height/2-pan.y)/scale;return{x:dx+W/2,y:dy+H/2}}
   function plotAtClient(x,y,padCss=0){
     const pt=clientToPlan(x,y);
     const exact=plots.find(p=>pointInPolygon(pt.x,pt.y,p.points));
@@ -676,8 +676,9 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
 
     const isTiyansh=ACTIVE_PROJECT_ID===REKIXO_DEFAULT_PROJECT;
     const s=data&&data.settings||{};
-    const configuredRotation=Number(s.publicRotation);
-    PUBLIC_ROTATION=!isTiyansh&&(configuredRotation===0||configuredRotation===1||configuredRotation===2||configuredRotation===3)?configuredRotation:0;
+    // Website never rotates persisted plot geometry. If an uploaded masterplan
+    // needs orientation repair, the IMAGE ASSET is rebuilt to canonical portrait
+    // bytes; SVG polygons remain exactly as selected/saved.
     setMapDimensions(isTiyansh?1200:(s.mapWidth||1200),isTiyansh?2133:(s.mapHeight||2133));
     if(!isTiyansh){
       plots.splice(0,plots.length);

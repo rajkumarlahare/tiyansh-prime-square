@@ -398,23 +398,9 @@ export default function PlotMapper({
     const nextSettings = (data.settings || {}) as MapperSettings;
     setPlots(nextPlots);
     setSettings(nextSettings);
-    const savedPublicRotation = Number(nextSettings.publicRotation);
-    if (
-      savedPublicRotation === 0 ||
-      savedPublicRotation === 1 ||
-      savedPublicRotation === 2 ||
-      savedPublicRotation === 3
-    ) {
-      setRotation(savedPublicRotation as 0 | 1 | 2 | 3);
-      try {
-        window.localStorage.setItem(
-          `rekixo:mapper-rotation:${projectId}`,
-          String(savedPublicRotation),
-        );
-      } catch {
-        // localStorage is only a convenience mirror; D1 remains source of truth.
-      }
-    }
+    // Mapper rotation is intentionally device-local/view-only.
+    // Never hydrate it from a website setting: saved plot geometry and the
+    // public renderer must stay in canonical masterplan coordinates.
     setSettingsReady(true);
     setCadGeometry((data.cadGeometry || null) as CadGeometry | null);
     setImageUrl(assetUrl("masterplan"));
@@ -486,22 +472,8 @@ export default function PlotMapper({
     projectId,
   ]);
 
-  useEffect(() => {
-    if (completedProject || !settingsReady) return;
-    const stored = Number(settings.publicRotation);
-    if (stored === rotation) return;
-
-    const timer = window.setTimeout(() => {
-      persistMapperSettings({ publicRotation: String(rotation) }).catch((error) =>
-        notify(
-          error instanceof Error
-            ? error.message
-            : "Website orientation save nahi hui",
-        ),
-      );
-    }, 120);
-    return () => window.clearTimeout(timer);
-  }, [completedProject, settingsReady, rotation, settings.publicRotation, projectId]);
+  // IMPORTANT: mapper rotation is never persisted to website/public geometry.
+  // The uploaded masterplan asset itself is normalized/oriented at ingestion/repair time.
 
   useEffect(() => {
     resetGestureFrameQueue();
@@ -1744,15 +1716,6 @@ export default function PlotMapper({
   const shapeReady = points.length >= 3 && (shape === "polygon" || points.length === 4) && !shapeInvalid;
   const rotationDegrees = rotation * 90;
   const rotationSwapsAxes = rotation === 1 || rotation === 3;
-  const savedPublicRotation = Number(settings.publicRotation);
-  const websiteRotationDegrees =
-    savedPublicRotation === 0 ||
-    savedPublicRotation === 1 ||
-    savedPublicRotation === 2 ||
-    savedPublicRotation === 3
-      ? savedPublicRotation * 90
-      : rotationDegrees;
-
   // Prefer dimensions decoded from the ACTUAL displayed mapping image. Stored
   // original dimensions are fallback only; mapping dimensions are final fallback.
   const sourceWidth =
@@ -1841,7 +1804,7 @@ export default function PlotMapper({
           <span>Mapped: <b>{mappedPlots.length}</b></span>
           <span>Review: <b>{unmappedPlots.length}</b></span>
           <span>Last server verify: <b>{lastVerifiedId ? `Plot ${lastVerifiedId} ✓` : "—"}</b></span>
-          {!completedProject && <span>Website view: <b>{websiteRotationDegrees}°</b></span>}
+          {!completedProject && <span>Mapper view: <b>{rotationDegrees}° local</b></span>}
         </div>
         {settings.sourcePdfName && <a className="mapper-pdf-link" href={assetUrl("sourcePdf")} target="_blank" rel="noreferrer"><FileText /> Open technical PDF reference</a>}
         {settings.cadParseError && <div className="mapper-warning">CAD source सुरक्षित है, लेकिन automatic geometry parse नहीं हुआ: {settings.cadParseError}. DXF export upload करें या Manual Precise fallback use करें.</div>}
@@ -1949,7 +1912,7 @@ export default function PlotMapper({
           </div>
 
           {!imageReady && <div className="mapper-loading">{hasMasterplan ? "High-resolution masterplan load हो रहा है…" : "पहले masterplan image upload करें"}</div>}
-          <div className="mapper-pan-hint">{toolMode === "pan" ? `PAN: 1 finger drag = move · 2 fingers pinch = zoom + move · ↺/↻ 90° = rotate. Current: ${rotationDegrees}°.` : `SELECT: tap = corner · खाली जगह drag = move · 2 fingers pinch = zoom + move. Rotation ${rotationDegrees}° display-only है और website view से sync होती है; saved geometry original image coordinates में रहती है.`}</div>
+          <div className="mapper-pan-hint">{toolMode === "pan" ? `PAN: 1 finger drag = move · 2 fingers pinch = zoom + move · ↺/↻ 90° = local mapper view only. Current: ${rotationDegrees}°.` : `SELECT: tap = corner · खाली जगह drag = move · 2 fingers pinch = zoom + move. Rotation ${rotationDegrees}° सिर्फ mapper view है; website और saved polygon geometry canonical coordinates में रहती है.`}</div>
           <div
             ref={imageWrapRef}
             className="mapper-image-wrap mapper-image-v2"

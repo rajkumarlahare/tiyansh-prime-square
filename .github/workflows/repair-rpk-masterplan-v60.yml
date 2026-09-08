@@ -1,0 +1,344 @@
+name: Rekixo RPK Main Image V6.0 Repair
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type RESTORE-904-PORTRAIT to rebuild ONLY the main image assets
+        required: true
+        default: "NO"
+
+concurrency:
+  group: rekixo-rpk-masterplan-v60
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    if: ${{ inputs.confirm == 'RESTORE-904-PORTRAIT' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DB_NAME: tiyansh-production
+      DB_ID: "ac37f422-3065-4bda-9f9c-16c4b818cacd"
+      BUCKET: tiyansh-gallery-production
+      TARGET_PROJECT_ID: "904"
+      WRANGLER_VERSION: "4.92.0"
+
+    steps:
+      - name: Check out exact main
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build
+        run: npm run build
+
+      - name: Full regression suite
+        run: node --test tests/*.test.mjs
+
+      - name: Install transient image repair engine
+        run: npm install --no-save --ignore-scripts=false sharp@0.34.4
+
+      - name: Guarded main-image-only repair
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          W=(npx --yes "wrangler@${WRANGLER_VERSION}")
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+
+          cat > "$TMP/wrangler.repair.json" <<EOF
+          {
+            "name": "rekixo-rpk-masterplan-v60-repair",
+            "compatibility_date": "2026-09-08",
+            "d1_databases": [
+              {
+                "binding": "DB",
+                "database_name": "${DB_NAME}",
+                "database_id": "${DB_ID}"
+              }
+            ],
+            "r2_buckets": [
+              {
+                "binding": "BUCKET",
+                "bucket_name": "${BUCKET}"
+              }
+            ]
+          }
+          EOF
+
+          STATE_SQL="SELECT p.id,p.name,p.status,p.public_status AS publicStatus,\
+          (SELECT COUNT(*) FROM plots x WHERE x.project_id=p.id) AS total,\
+          (SELECT COUNT(*) FROM plots x WHERE x.project_id=p.id AND TRIM(COALESCE(x.polygon,''))<>'') AS mapped \
+          FROM projects p WHERE p.id='${TARGET_PROJECT_ID}' LIMIT 1;"
+          PLOTS_SQL="SELECT id,polygon FROM plots WHERE project_id='${TARGET_PROJECT_ID}' ORDER BY id;"
+          SETTINGS_SQL="SELECT key,value FROM settings WHERE project_id='${TARGET_PROJECT_ID}' AND key IN ('mapWidth','mapHeight','masterplanOriginalWidth','masterplanOriginalHeight','publicRotation') ORDER BY key;"
+
+          "${W[@]}" d1 execute DB --config "$TMP/wrangler.repair.json" --remote --json --command "$STATE_SQL" > "$TMP/state-before.json"
+          "${W[@]}" d1 execute DB --config "$TMP/wrangler.repair.json" --remote --json --command "$PLOTS_SQL" > "$TMP/plots-before.json"
+          "${W[@]}" d1 execute DB --config "$TMP/wrangler.repair.json" --remote --json --command "$SETTINGS_SQL" > "$TMP/settings-before.json"
+
+          node - "$TMP/state-before.json" "$TMP/settings-before.json" "$TMP/restore-settings.sql" <<'NODE'
+          const fs = require("fs");
+          const [statePath, settingsPath, restorePath] = process.argv.slice(2);
+
+          function rows(path) {
+            const obj = JSON.parse(fs.readFileSync(path, "utf8"));
+            const out = [];
+            const walk = (v) => {
+              if (Array.isArray(v)) return v.forEach(walk);
+              if (!v || typeof v !== "object") return;
+              if (Array.isArray(v.results)) {
+                for (const row of v.results) if (row && typeof row === "object") out.push(row);
+              }
+              for (const value of Object.values(v)) walk(value);
+            };
+            walk(obj);
+            const seen = new Set();
+            return out.filter((row) => {
+              const key = JSON.stringify(row);
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+          }
+
+          const state = rows(statePath);
+          if (state.length !== 1) throw new Error(`expected one project state row, got ${state.length}`);
+          const s = state[0];
+          if (String(s.id) !== "904") throw new Error(`wrong project ${s.id}`);
+          if (String(s.status) !== "active") throw new Error(`project 904 not active: ${s.status}`);
+          if (Number(s.total) !== 146 || Number(s.mapped) !== 146) {
+            throw new Error(`expected 146 mapped plots, got ${s.mapped}/${s.total}`);
+          }
+
+          const keys = [
+            "mapWidth",
+            "mapHeight",
+            "masterplanOriginalWidth",
+            "masterplanOriginalHeight",
+            "publicRotation",
+          ];
+          const existing = new Map(rows(settingsPath).map((row) => [String(row.key), String(row.value ?? "")]));
+          const quote = (v) => "'" + String(v).replaceAll("'", "''") + "'";
+          const sql = [];
+          for (const key of keys) {
+            if (existing.has(key)) {
+              sql.push(
+                `INSERT INTO settings (project_id,key,value,updated_at) VALUES ('904',${quote(key)},${quote(existing.get(key))},datetime('now')) ` +
+                `ON CONFLICT(project_id,key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at;`
+              );
+            } else {
+              sql.push(`DELETE FROM settings WHERE project_id='904' AND key=${quote(key)};`);
+            }
+          }
+          fs.writeFileSync(restorePath, sql.join("\n") + "\n");
+          console.log("✓ D1 project 904 = 146/146 mapped");
+          NODE
+
+          PLOTS_HASH_BEFORE="$(sha256sum "$TMP/plots-before.json" | awk '{print $1}')"
+          echo "PLOTS_HASH_BEFORE=$PLOTS_HASH_BEFORE"
+
+          CURRENT="$TMP/masterplan-current"
+          CURRENT_PUBLIC="$TMP/masterplan-public-current"
+          ORIGINAL="$TMP/masterplan-original"
+
+          "${W[@]}" r2 object get "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplan" --remote --file "$CURRENT"
+          "${W[@]}" r2 object get "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplanOriginal" --remote --file "$ORIGINAL"
+
+          HAS_PUBLIC=1
+          if ! "${W[@]}" r2 object get "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplanPublic" --remote --file "$CURRENT_PUBLIC"; then
+            HAS_PUBLIC=0
+          fi
+
+          node - "$ORIGINAL" "$TMP/masterplan-fixed.webp" "$TMP/masterplan-public-fixed.webp" "$TMP/image-meta.env" <<'NODE'
+          const fs = require("fs");
+          const sharp = require("sharp");
+          const [input, mappingOut, publicOut, metaOut] = process.argv.slice(2);
+
+          (async () => {
+            const rawMeta = await sharp(input, { failOn: "error" }).metadata();
+            if (!rawMeta.width || !rawMeta.height) throw new Error("original masterplan dimensions missing");
+
+            const orientation = Number(rawMeta.orientation || 1);
+            const swaps = [5, 6, 7, 8].includes(orientation);
+            const orientedOriginalWidth = swaps ? rawMeta.height : rawMeta.width;
+            const orientedOriginalHeight = swaps ? rawMeta.width : rawMeta.height;
+
+            await sharp(input, { failOn: "error" })
+              .rotate()
+              .resize({
+                width: 6144,
+                height: 6144,
+                fit: "inside",
+                withoutEnlargement: true,
+              })
+              .webp({ quality: 92, effort: 4 })
+              .toFile(mappingOut);
+
+            await sharp(input, { failOn: "error" })
+              .rotate()
+              .resize({
+                width: 2400,
+                height: 2400,
+                fit: "inside",
+                withoutEnlargement: true,
+              })
+              .webp({ quality: 84, effort: 4 })
+              .toFile(publicOut);
+
+            const mapMeta = await sharp(mappingOut).metadata();
+            const pubMeta = await sharp(publicOut).metadata();
+            const mw = Number(mapMeta.width || 0);
+            const mh = Number(mapMeta.height || 0);
+            const pw = Number(pubMeta.width || 0);
+            const ph = Number(pubMeta.height || 0);
+
+            const ratio = mw / mh;
+            if (!(mh > mw)) throw new Error(`STOP: rebuilt main image is not portrait: ${mw}x${mh}`);
+            if (!(ratio > 0.50 && ratio < 0.65)) {
+              throw new Error(`STOP: unexpected masterplan portrait ratio ${ratio.toFixed(4)} (${mw}x${mh})`);
+            }
+            if (fs.statSync(mappingOut).size > 12 * 1024 * 1024) {
+              throw new Error("STOP: rebuilt mapping image exceeds 12 MB");
+            }
+            if (fs.statSync(publicOut).size > 4 * 1024 * 1024) {
+              throw new Error("STOP: rebuilt public image exceeds 4 MB");
+            }
+
+            fs.writeFileSync(
+              metaOut,
+              [
+                `MAP_W=${mw}`,
+                `MAP_H=${mh}`,
+                `PUB_W=${pw}`,
+                `PUB_H=${ph}`,
+                `ORIG_W=${orientedOriginalWidth}`,
+                `ORIG_H=${orientedOriginalHeight}`,
+              ].join("\n") + "\n",
+            );
+
+            console.log(`✓ original auto-oriented = ${orientedOriginalWidth}x${orientedOriginalHeight}`);
+            console.log(`✓ mapping fixed = ${mw}x${mh}`);
+            console.log(`✓ public fixed = ${pw}x${ph}`);
+          })().catch((error) => {
+            console.error(error.stack || error.message || error);
+            process.exit(1);
+          });
+          NODE
+
+          source "$TMP/image-meta.env"
+
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          BACKUP="projects/${TARGET_PROJECT_ID}/mapper/backup-before-v6-${STAMP}"
+
+          "${W[@]}" r2 object put "${BUCKET}/${BACKUP}/masterplan" --remote --force --file "$CURRENT" --content-type application/octet-stream
+          if [[ "$HAS_PUBLIC" == "1" ]]; then
+            "${W[@]}" r2 object put "${BUCKET}/${BACKUP}/masterplanPublic" --remote --force --file "$CURRENT_PUBLIC" --content-type application/octet-stream
+          fi
+          cp "$TMP/settings-before.json" "$TMP/settings-backup.json"
+          "${W[@]}" r2 object put "${BUCKET}/${BACKUP}/settings-before.json" --remote --force --file "$TMP/settings-backup.json" --content-type application/json
+          printf '%s\n' "$PLOTS_HASH_BEFORE" > "$TMP/plots-hash-before.txt"
+          "${W[@]}" r2 object put "${BUCKET}/${BACKUP}/plots-hash-before.txt" --remote --force --file "$TMP/plots-hash-before.txt" --content-type text/plain
+          echo "✓ backup created: ${BUCKET}/${BACKUP}/"
+
+          WRITE_STARTED=0
+          rollback() {
+            local rc="$1"
+            if [[ "$WRITE_STARTED" == "1" ]]; then
+              echo "ROLLBACK: restoring pre-V6 main image/settings..."
+              "${W[@]}" r2 object put "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplan" --remote --force --file "$CURRENT" --content-type application/octet-stream || true
+              if [[ "$HAS_PUBLIC" == "1" ]]; then
+                "${W[@]}" r2 object put "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplanPublic" --remote --force --file "$CURRENT_PUBLIC" --content-type application/octet-stream || true
+              fi
+              RESTORE_SQL="$(cat "$TMP/restore-settings.sql")"
+              "${W[@]}" d1 execute DB --config "$TMP/wrangler.repair.json" --remote --command "$RESTORE_SQL" >/dev/null || true
+              echo "ROLLBACK attempted."
+            fi
+            exit "$rc"
+          }
+          trap 'rc=$?; if [[ $rc -ne 0 ]]; then rollback "$rc"; fi; rm -rf "$TMP"' EXIT
+
+          WRITE_STARTED=1
+
+          "${W[@]}" r2 object put "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplan" --remote --force --file "$TMP/masterplan-fixed.webp" --content-type image/webp
+          "${W[@]}" r2 object put "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplanPublic" --remote --force --file "$TMP/masterplan-public-fixed.webp" --content-type image/webp
+
+          SETTINGS_UPDATE="BEGIN;
+          INSERT INTO settings(project_id,key,value,updated_at) VALUES('904','mapWidth','${MAP_W}',datetime('now'))
+            ON CONFLICT(project_id,key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at;
+          INSERT INTO settings(project_id,key,value,updated_at) VALUES('904','mapHeight','${MAP_H}',datetime('now'))
+            ON CONFLICT(project_id,key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at;
+          INSERT INTO settings(project_id,key,value,updated_at) VALUES('904','masterplanOriginalWidth','${ORIG_W}',datetime('now'))
+            ON CONFLICT(project_id,key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at;
+          INSERT INTO settings(project_id,key,value,updated_at) VALUES('904','masterplanOriginalHeight','${ORIG_H}',datetime('now'))
+            ON CONFLICT(project_id,key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at;
+          INSERT INTO settings(project_id,key,value,updated_at) VALUES('904','publicRotation','0',datetime('now'))
+            ON CONFLICT(project_id,key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at;
+          COMMIT;"
+          "${W[@]}" d1 execute DB --config "$TMP/wrangler.repair.json" --remote --command "$SETTINGS_UPDATE"
+
+          "${W[@]}" r2 object get "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplan" --remote --file "$TMP/verify-masterplan.webp"
+          "${W[@]}" r2 object get "${BUCKET}/projects/${TARGET_PROJECT_ID}/mapper/masterplanPublic" --remote --file "$TMP/verify-public.webp"
+
+          [[ "$(sha256sum "$TMP/verify-masterplan.webp" | awk '{print $1}')" == "$(sha256sum "$TMP/masterplan-fixed.webp" | awk '{print $1}')" ]]
+          [[ "$(sha256sum "$TMP/verify-public.webp" | awk '{print $1}')" == "$(sha256sum "$TMP/masterplan-public-fixed.webp" | awk '{print $1}')" ]]
+
+          "${W[@]}" d1 execute DB --config "$TMP/wrangler.repair.json" --remote --json --command "$PLOTS_SQL" > "$TMP/plots-after.json"
+          PLOTS_HASH_AFTER="$(sha256sum "$TMP/plots-after.json" | awk '{print $1}')"
+          echo "PLOTS_HASH_AFTER=$PLOTS_HASH_AFTER"
+          [[ "$PLOTS_HASH_AFTER" == "$PLOTS_HASH_BEFORE" ]] || {
+            echo "CRITICAL: polygon rows changed unexpectedly" >&2
+            exit 1
+          }
+
+          "${W[@]}" d1 execute DB --config "$TMP/wrangler.repair.json" --remote --json --command "$STATE_SQL" > "$TMP/state-after.json"
+          node - "$TMP/state-after.json" <<'NODE'
+          const fs = require("fs");
+          const obj = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          const rows = [];
+          const walk = (v) => {
+            if (Array.isArray(v)) return v.forEach(walk);
+            if (!v || typeof v !== "object") return;
+            if (Array.isArray(v.results)) rows.push(...v.results.filter(Boolean));
+            Object.values(v).forEach(walk);
+          };
+          walk(obj);
+          const unique = rows.filter((r, i, a) => a.findIndex(x => JSON.stringify(x) === JSON.stringify(r)) === i);
+          if (unique.length !== 1) throw new Error(`state verify expected 1 row, got ${unique.length}`);
+          const s = unique[0];
+          if (Number(s.total) !== 146 || Number(s.mapped) !== 146) {
+            throw new Error(`post-repair mapped count changed: ${s.mapped}/${s.total}`);
+          }
+          console.log("✓ post-repair D1 still 146/146 mapped");
+          NODE
+
+          WRITE_STARTED=0
+          echo
+          echo "======================================================================"
+          echo "ASSET REPAIR SUCCESS"
+          echo "✓ main masterplan rebuilt from masterplanOriginal with EXIF auto-orient"
+          echo "✓ canonical mapping image: ${MAP_W}x${MAP_H} portrait"
+          echo "✓ public image: ${PUB_W}x${PUB_H} portrait"
+          echo "✓ publicRotation reset to 0"
+          echo "✓ 146/146 polygon rows EXACT hash unchanged"
+          echo "✓ old image/settings backup: ${BACKUP}"
+          echo "======================================================================"
+
+      - name: Post Check out exact main
+        uses: actions/checkout@v4
+
+      - name: Complete job
+        run: echo "RPK main-image-only repair complete"

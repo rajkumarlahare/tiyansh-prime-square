@@ -39,11 +39,15 @@ test("authenticated preview never caches stale masterplan response", () => {
   assert.match(route, /x-rekixo-masterplan-source/);
 });
 
-test("public renderer keeps image and normalized SVG polygons in one rotated world", () => {
+test("public renderer keeps saved SVG polygons in canonical unrotated world", () => {
   assert.match(
     publicPage,
-    /world\.style\.transform = `translate\(calc\(-50% \+ \$\{pan\.x\}px\),calc\(-50% \+ \$\{pan\.y\}px\)\) scale\(\$\{scale\}\) rotate\(\$\{PUBLIC_ROTATION\*90\}deg\)`/,
+    /world\.style\.transform = `translate\(calc\(-50% \+ \$\{pan\.x\}px\),calc\(-50% \+ \$\{pan\.y\}px\)\) scale\(\$\{scale\}\)`/,
   );
-  assert.match(publicPage, /function clientToPlan\(x,y\)/);
+  assert.doesNotMatch(publicPage, /PUBLIC_ROTATION/);
+  assert.match(
+    publicPage,
+    /function clientToPlan\(x,y\)\{const r=viewport\.getBoundingClientRect\(\),dx=\(x-r\.left-r\.width\/2-pan\.x\)\/scale,dy=\(y-r\.top-r\.height\/2-pan\.y\)\/scale;return\{x:dx\+W\/2,y:dy\+H\/2\}\}/,
+  );
   assert.match(publicPage, /setMapDimensions\(master\.naturalWidth,master\.naturalHeight\)/);
 });
