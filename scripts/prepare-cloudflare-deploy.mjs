@@ -14,10 +14,16 @@ const workersSubdomain =
   String(process.env.REKIXO_WORKERS_SUBDOMAIN || "").trim() || "ai-8f3";
 const genericHost = `rekixo-client-sites.${workersSubdomain}.workers.dev`;
 const legacyHost = `tiyansh-prime-square.${workersSubdomain}.workers.dev`;
-const platformHost = String(process.env.REKIXO_PLATFORM_HOST || "").trim();
+const platformHost = String(process.env.REKIXO_PLATFORM_HOST || "")
+  .trim()
+  .toLowerCase()
+  .replace(/\.$/, "");
 const sharedAdminHost = String(
   process.env.REKIXO_SHARED_ADMIN_HOST || "",
-).trim();
+)
+  .trim()
+  .toLowerCase()
+  .replace(/\.$/, "");
 
 config.name =
   mode === "super"
@@ -38,6 +44,34 @@ config.vars = {
     : `https://${genericHost}`,
 };
 
+// IMPORTANT: shared boss domain gets only the exact Rekixo surface.
+// Never attach a host-wide wildcard here: unmatched boss-site traffic must
+// continue to the existing Vercel origin.
+const sharedDomainRoutes = platformHost
+  ? [
+      `${platformHost}/projects/*`,
+      `${platformHost}/__rekixo/*`,
+      `${platformHost}/api/public-data`,
+      `${platformHost}/api/project-asset/*`,
+      `${platformHost}/api/admin/*`,
+      `${platformHost}/api/data`,
+      `${platformHost}/api/gallery`,
+      `${platformHost}/api/gallery/*`,
+    ]
+  : [];
+
+if (mode === "client" && sharedDomainRoutes.length) {
+  config.routes = sharedDomainRoutes.map((pattern) => ({
+    pattern,
+    zone_name: platformHost,
+  }));
+} else {
+  // dist/server/wrangler.json is reused by the sequential deploy steps.
+  // Remove client routes before legacy/super deploys so they can never steal
+  // ar3dstudio.in traffic from rekixo-client-sites.
+  delete config.routes;
+}
+
 config.d1_databases = [
   {
     binding: "DB",
@@ -55,5 +89,8 @@ config.r2_buckets = [
 
 await writeFile(path, `${JSON.stringify(config)}\n`);
 console.log(
-  `Prepared ${mode} Worker: ${config.name} · shared D1/R2 · platform ${platformHost}`,
+  `Prepared ${mode} Worker: ${config.name} · shared D1/R2 · platform ${platformHost}` +
+    (mode === "client" && sharedDomainRoutes.length
+      ? ` · routes ${sharedDomainRoutes.length}`
+      : ""),
 );

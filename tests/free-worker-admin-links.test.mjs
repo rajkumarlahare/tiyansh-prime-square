@@ -21,7 +21,7 @@ test("platform host stays empty until a real boss domain is configured", async (
 
   assert.match(
     prepare,
-    /String\(process\.env\.REKIXO_PLATFORM_HOST \|\| ""\)\.trim\(\)/,
+    /String\(process\.env\.REKIXO_PLATFORM_HOST \|\| ""\)[\s\S]*?\.trim\(\)/,
   );
   assert.doesNotMatch(
     prepare,
