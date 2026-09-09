@@ -10,7 +10,7 @@ function cssPx(name) {
   return Number(match[1]);
 }
 
-test("Gallery and Location buttons are exactly 30 percent narrower than audited baselines", () => {
+test("Amenities, Gallery and Location buttons share the same compact width contract", () => {
   const desktopBaseline = 114.5;
   const mobileBaseline = 144.5;
 
@@ -35,13 +35,17 @@ test("Gallery and Location buttons are exactly 30 percent narrower than audited 
   assert.doesNotMatch(page, /\.pill\{width:144\.5px/);
 });
 
-test("button heights, ids and icons remain unchanged", () => {
+test("button heights, ids, order and icons remain stable", () => {
+  assert.match(page, /id="amenitiesBtn"/);
   assert.match(page, /id="galleryBtn"/);
   assert.match(page, /id="locationBtn"/);
+  assert.match(page, /id="amenitiesBtn"[\s\S]*id="galleryBtn"[\s\S]*id="locationBtn"/);
   assert.match(page, /\.pill \.pin\{width:14px;height:17px/);
   assert.match(page, /\.pill \.gallery\{width:14px;height:14px/);
   assert.match(page, /height:40px/);
   assert.match(page, /height:49px/);
+  assert.match(page, /q\('#amenitiesBtn'\)\.onclick=\(\)=>toast\('Amenities details not configured'\)/);
+  assert.match(page, /document\.getElementById\('amenitiesBtn'\)[\s\S]*document\.getElementById\('galleryBtn'\)[\s\S]*document\.getElementById\('locationBtn'\)/);
 });
 
 test("trim remains presentation-only and preserves map interaction anchors", () => {
