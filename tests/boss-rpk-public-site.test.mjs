@@ -24,11 +24,11 @@ test("round header logo and mini logo badge are present", () => {
 test("Gallery and Location buttons stay compact", () => {
   assert.match(
     html,
-    /\.pill\{width:114\.5px;height:40px;padding:0 10px;border-radius:12px/,
+    /\.pill\{width:var\(--action-pill-width\);height:40px;padding:0 6px;border-radius:12px/,
   );
   assert.match(html, /\.pill \.pin\{width:14px;height:17px/);
   assert.match(html, /\.pill \.gallery\{width:14px;height:14px/);
-  assert.match(html, /\.pill\{width:144\.5px;height:49px;padding:0 12px;border-radius:14px/);
+  assert.match(html, /\.pill\{width:var\(--action-pill-mobile-width\);height:49px;padding:0 8px;border-radius:14px/);
 });
 
 test("RPK share/contact data is tenant scoped, not baked into generic HTML", async () => {

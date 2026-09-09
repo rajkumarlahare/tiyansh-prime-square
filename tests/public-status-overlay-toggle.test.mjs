@@ -45,7 +45,7 @@ test("status filters are gated by show-all", () => {
 });
 
 test("Gallery and Location width trim preserves button heights", () => {
-  assert.match(html, /\.pill\{width:114\.5px;height:40px/);
-  const mobile = html.match(/\.pill\{width:144\.5px;height:49px/g) || [];
+  assert.match(html, /\.pill\{width:var\(--action-pill-width\);height:40px/);
+  const mobile = html.match(/\.pill\{width:var\(--action-pill-mobile-width\);height:49px/g) || [];
   assert.equal(mobile.length, 2);
 });
