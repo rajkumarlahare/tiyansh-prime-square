@@ -484,10 +484,25 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
 
   let W = 1200, H = 2133;
   const GENERIC_BOOT=Boolean(window.REKIXO_GENERIC_BOOT);
-  let PHONE = GENERIC_BOOT?'':'919009995582', MAP_URL = GENERIC_BOOT?'':'https://maps.app.goo.gl/n9BjoY4BYzZfmqTL7', PROJECT_NAME=GENERIC_BOOT?'Project':'Tiyansh — The Prime Square', PROJECT_LOCATION=GENERIC_BOOT?'':'Raigarh, Chhattisgarh', ADMIN_URL='/admin/login';
+  // REKIXO_CONTACT_CHANNEL_SEPARATION_V1\n  let CALL_PHONE = GENERIC_BOOT?'':'919009995582', WHATSAPP_PHONE = CALL_PHONE, MAP_URL = GENERIC_BOOT?'':'https://maps.app.goo.gl/n9BjoY4BYzZfmqTL7', PROJECT_NAME=GENERIC_BOOT?'Project':'Tiyansh — The Prime Square', PROJECT_LOCATION=GENERIC_BOOT?'':'Raigarh, Chhattisgarh', ADMIN_URL='/admin/login';
   const plots = GENERIC_BOOT ? [] : (Array.isArray(window.TIYANSH_PLOTS) ? window.TIYANSH_PLOTS : []);
   let ACTIVE_PROJECT_ID=GENERIC_BOOT?'':REKIXO_DEFAULT_PROJECT;
   const q = s => document.querySelector(s);
+  const contactDigits = value => String(value||'').replace(/\D/g,'');
+  function applyContactChannels(settings,isDefaultProject){
+    const primary=contactDigits(settings?.phone1);
+    const secondary=contactDigits(settings?.phone2);
+    const explicitWhatsapp=contactDigits(settings?.whatsapp);
+    const resolvedCall=primary||secondary;
+    const resolvedWhatsapp=explicitWhatsapp||primary||secondary;
+    if(isDefaultProject){
+      CALL_PHONE=resolvedCall||CALL_PHONE;
+      WHATSAPP_PHONE=resolvedWhatsapp||WHATSAPP_PHONE||CALL_PHONE;
+      return;
+    }
+    CALL_PHONE=resolvedCall;
+    WHATSAPP_PHONE=resolvedWhatsapp;
+  }
   const initialMaster=q('.master');
   if(initialMaster&&!GENERIC_BOOT)initialMaster.src='masterplan.jpg';
   const viewport = q('#viewport');
@@ -803,9 +818,9 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
 
   q('#searchForm').onsubmit=e=>{e.preventDefault();const id=norm(q('#searchInput').value),p=plots.find(x=>x.id===id);if(!p)return toast('Plot not found');if(mode3D){selected=p;setSelected(p.id);engine3D?.select(p.id,true,false);toast('Plot '+p.id+' selected')}else openPlot(p,true)};
   q('#closeBtn').onclick=close; scrim.onclick=close;
-  function call(){if(!PHONE)return toast('Contact number not configured');location.href='tel:+'+PHONE}
+  function call(){if(!CALL_PHONE)return toast('Contact number not configured');location.href='tel:+'+CALL_PHONE}
   q('#callTop').onclick=call;q('#callBtn').onclick=call;
-  q('#waBtn').onclick=()=>{if(!PHONE)return toast('WhatsApp number not configured');const place=PROJECT_LOCATION?`, ${PROJECT_LOCATION}`:'';const msg=selected?`Hello, I am interested in Plot ${selected.id} at ${PROJECT_NAME}${place}. Please share current availability, price and booking details.`:`Hello, I would like details about ${PROJECT_NAME}${place}.`;window.open('https://wa.me/'+PHONE+'?text='+encodeURIComponent(msg),'_blank','noopener,noreferrer')};
+  q('#waBtn').onclick=()=>{if(!WHATSAPP_PHONE)return toast('WhatsApp number not configured');const place=PROJECT_LOCATION?`, ${PROJECT_LOCATION}`:'';const msg=selected?`Hello, I am interested in Plot ${selected.id} at ${PROJECT_NAME}${place}. Please share current availability, price and booking details.`:`Hello, I would like details about ${PROJECT_NAME}${place}.`;window.open('https://wa.me/'+WHATSAPP_PHONE+'?text='+encodeURIComponent(msg),'_blank','noopener,noreferrer')};
 
   function hud3D(s){q('#percent').textContent=s.zoomPercent+'%';const n=document.getElementById('compassNeedle');if(n)n.setAttribute('transform',`rotate(${(-s.yaw*180/Math.PI).toFixed(1)} 32 32)`)}
   function set3D(on){
@@ -883,8 +898,9 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
       }catch(_){}
     });
     plots.forEach(p=>{const row=live.get(p.id);if(row){const shape={points:p.points,center:p.center,path:p.path};Object.assign(p,row,shape)}const el=svg.querySelector(`[data-plot-id="${p.id}"]`);if(el)el.dataset.status=plotStatus(p)});
-    if(!isTiyansh){PHONE=String(s.whatsapp||s.phone1||'').replace(/\D/g,'');MAP_URL=s.mapUrl||''}
-    else {PHONE=String(s.whatsapp||s.phone1||PHONE).replace(/\D/g,'')||PHONE;MAP_URL=s.mapUrl||MAP_URL}
+    applyContactChannels(s,isTiyansh);
+    if(!isTiyansh){MAP_URL=s.mapUrl||''}
+    else {MAP_URL=s.mapUrl||MAP_URL}
     const resolvedName=String(s.projectName||data.projectName||(isTiyansh?'Tiyansh — The Prime Square':'Project')).trim()||'Project';
     const resolvedLocation=String(s.location||(isTiyansh?'Raigarh, Chhattisgarh':'')).trim();
     const resolvedAddress=String(s.address||resolvedLocation).trim();
