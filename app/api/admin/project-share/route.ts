@@ -6,7 +6,7 @@ import { currentProjectLinks } from "../../../project-links";
 
 const denied = () =>
   Response.json({ error: "Super Admin access required" }, { status: 403 });
-const SHARE_TEMPLATE = "ar3d-standard-v1";
+const SHARE_TEMPLATE = "original-image-v1";
 const SHARE_KEYS = [
   "projectName",
   "brandName",
@@ -69,6 +69,34 @@ function validateDetails(title: string, description: string) {
     throw new Error("Share title 3-120 chars me rakhein");
   if (description.length < 10 || description.length > 280)
     throw new Error("Share description 10-280 chars me rakhein");
+}
+
+async function detectShareImageMime(file: File) {
+  const bytes = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  const isJpeg =
+    bytes.length >= 3 &&
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8 &&
+    bytes[2] === 0xff;
+  const isPng =
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a;
+  const isWebp =
+    bytes.length >= 12 &&
+    String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+    String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
+
+  if (isJpeg) return "image/jpeg";
+  if (isPng) return "image/png";
+  if (isWebp) return "image/webp";
+  return "";
 }
 
 async function shareState(projectId: string) {
@@ -165,19 +193,20 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    const detectedMime = await detectShareImageMime(file);
     if (
-      file.type !== "image/jpeg" ||
-      file.size < 10_000 ||
-      file.size > 2 * 1024 * 1024
+      !detectedMime ||
+      file.size < 1 ||
+      file.size > 8 * 1024 * 1024
     )
       return Response.json(
-        { error: "Generated share card JPEG invalid hai" },
+        { error: "Share image JPG, PNG ya WebP me aur 8 MB se chhoti honi chahiye" },
         { status: 400 },
       );
 
     const version = String(Date.now());
     await env.BUCKET.put(`projects/${projectId}/share/card`, file.stream(), {
-      httpMetadata: { contentType: "image/jpeg" },
+      httpMetadata: { contentType: detectedMime },
     });
     const shareImage = `/api/project-asset/shareCard?projectId=${encodeURIComponent(projectId)}&v=${encodeURIComponent(version)}`;
     await Promise.all([
@@ -191,6 +220,8 @@ export async function POST(request: Request) {
       version,
       size: file.size,
       template: SHARE_TEMPLATE,
+      source: "original-upload",
+      mime: detectedMime,
     });
     const state = await shareState(projectId);
     return Response.json({ ok: true, ...state });

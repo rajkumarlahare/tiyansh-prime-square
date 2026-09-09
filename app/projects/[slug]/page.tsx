@@ -74,16 +74,7 @@ export async function generateMetadata({
   }
 
   const images = meta.imageUrl
-    ? [
-        meta.hasShareImage
-          ? {
-              url: meta.imageUrl,
-              width: 1200,
-              height: 630,
-              alt: meta.title,
-            }
-          : { url: meta.imageUrl, alt: meta.title },
-      ]
+    ? [{ url: meta.imageUrl, alt: meta.title }]
     : undefined;
 
   return {

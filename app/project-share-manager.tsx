@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   Copy,
@@ -25,10 +25,9 @@ type ShareState = {
   publicUrl?: string;
 };
 
-const SHARE_TEMPLATE = "ar3d-standard-v1";
-const CANVAS_WIDTH = 1200;
-const CANVAS_HEIGHT = 630;
-const MAX_COVER_BYTES = 12 * 1024 * 1024;
+const SHARE_TEMPLATE = "original-image-v1";
+const MAX_SHARE_IMAGE_BYTES = 8 * 1024 * 1024;
+const SHARE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function dispatchShareUpdate(projectId: string) {
   window.dispatchEvent(
@@ -44,7 +43,7 @@ async function apiJson(response: Response) {
   try {
     data = raw ? JSON.parse(raw) : {};
   } catch {
-    // Cloudflare can send plain text on infrastructure errors.
+    // Cloudflare can return plain text on infrastructure errors.
   }
   if (!response.ok) {
     throw new Error(
@@ -56,64 +55,8 @@ async function apiJson(response: Response) {
   return data;
 }
 
-async function loadImage(src: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Image load nahi hui"));
-    image.src = src;
-  });
-}
-
-function drawCover(
-  context: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-) {
-  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
-  const sourceWidth = width / scale;
-  const sourceHeight = height / scale;
-  const sourceX = (image.naturalWidth - sourceWidth) / 2;
-  const sourceY = (image.naturalHeight - sourceHeight) / 2;
-  context.drawImage(
-    image,
-    sourceX,
-    sourceY,
-    sourceWidth,
-    sourceHeight,
-    x,
-    y,
-    width,
-    height,
-  );
-}
-
-function drawContain(
-  context: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-) {
-  const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight);
-  const targetWidth = image.naturalWidth * scale;
-  const targetHeight = image.naturalHeight * scale;
-  context.drawImage(
-    image,
-    x + (width - targetWidth) / 2,
-    y + (height - targetHeight) / 2,
-    targetWidth,
-    targetHeight,
-  );
-}
-
 async function prepareProjectLogo(file: File) {
-  const allowed = ["image/jpeg", "image/png", "image/webp"];
-  if (!allowed.includes(file.type))
+  if (!SHARE_IMAGE_TYPES.includes(file.type))
     throw new Error("Logo JPG, PNG ya WebP me upload karein");
   if (file.size > 8 * 1024 * 1024)
     throw new Error("Logo 8 MB se chhota rakhein");
@@ -149,11 +92,13 @@ async function prepareProjectLogo(file: File) {
   return new File([blob], "project-logo.webp", { type: "image/webp" });
 }
 
-function validateCover(file: File) {
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
-    throw new Error("Cover JPG, PNG ya WebP me choose karein");
-  if (file.size > MAX_COVER_BYTES)
-    throw new Error("Cover image 12 MB se chhoti rakhein");
+function validateShareImage(file: File) {
+  if (!SHARE_IMAGE_TYPES.includes(file.type))
+    throw new Error("Share image JPG, PNG ya WebP me choose karein");
+  if (!file.size)
+    throw new Error("Share image empty hai");
+  if (file.size > MAX_SHARE_IMAGE_BYTES)
+    throw new Error("Share image 8 MB se chhoti rakhein");
 }
 
 export default function ProjectShareManager({
@@ -166,11 +111,10 @@ export default function ProjectShareManager({
   const [state, setState] = useState<ShareState>({});
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [shareImageFile, setShareImageFile] = useState<File | null>(null);
   const [localPreview, setLocalPreview] = useState("");
   const [busy, setBusy] = useState(false);
   const [logoBusy, setLogoBusy] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   async function load() {
     const response = await fetch(
@@ -181,14 +125,24 @@ export default function ProjectShareManager({
     setState(data);
     setTitle(data.shareTitle || data.projectName || "");
     setDescription(data.shareDescription || "");
-    setLocalPreview("");
   }
 
   useEffect(() => {
+    setShareImageFile(null);
     load().catch((error) =>
       notify(error instanceof Error ? error.message : "Share profile load nahi hua"),
     );
   }, [projectId]);
+
+  useEffect(() => {
+    if (!shareImageFile) {
+      setLocalPreview("");
+      return;
+    }
+    const objectUrl = URL.createObjectURL(shareImageFile);
+    setLocalPreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [shareImageFile]);
 
   const shareUrl = state.shareUrl || state.publicUrl || "";
   const previewUrl = localPreview || state.cardUrl || "";
@@ -257,95 +211,35 @@ export default function ProjectShareManager({
     }
   }
 
-  async function renderCard() {
-    if (!coverFile) throw new Error("Pehle cover image choose karein");
-    validateCover(coverFile);
-    const canvas = canvasRef.current;
-    if (!canvas) throw new Error("Preview canvas ready nahi hai");
-    const context = canvas.getContext("2d", { alpha: false });
-    if (!context) throw new Error("Preview generate nahi ho paya");
-
-    const coverUrl = URL.createObjectURL(coverFile);
-    try {
-      const cover = await loadImage(coverUrl);
-      const logo = state.logoUrl
-        ? await loadImage(state.logoUrl).catch(() => null)
-        : null;
-
-      canvas.width = CANVAS_WIDTH;
-      canvas.height = CANVAS_HEIGHT;
-      context.fillStyle = "#07101f";
-      context.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-      drawCover(context, cover, 0, 0, CANVAS_WIDTH, 552);
-
-      const gradient = context.createLinearGradient(0, 270, 0, 552);
-      gradient.addColorStop(0, "rgba(3,8,18,0)");
-      gradient.addColorStop(1, "rgba(3,8,18,0.72)");
-      context.fillStyle = gradient;
-      context.fillRect(0, 250, CANVAS_WIDTH, 302);
-
-      if (logo) {
-        context.fillStyle = "rgba(255,255,255,0.97)";
-        context.beginPath();
-        context.roundRect(44, 42, 206, 206, 26);
-        context.fill();
-        drawContain(context, logo, 64, 62, 166, 166);
-      }
-
-      context.fillStyle = "rgba(6,13,25,0.96)";
-      context.fillRect(0, 552, CANVAS_WIDTH, 78);
-      context.fillStyle = "#f0b323";
-      context.font = "800 29px Arial, sans-serif";
-      context.fillText("AR 3D VISION", 48, 601);
-      context.fillStyle = "#d7deea";
-      context.font = "600 22px Arial, sans-serif";
-      const label = "INTERACTIVE PROJECT PREVIEW";
-      const labelWidth = context.measureText(label).width;
-      context.fillText(label, CANVAS_WIDTH - labelWidth - 48, 601);
-
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
-      setLocalPreview(dataUrl);
-      return new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob(
-          (blob) => (blob ? resolve(blob) : reject(new Error("Card encode nahi hua"))),
-          "image/jpeg",
-          0.9,
-        ),
-      );
-    } finally {
-      URL.revokeObjectURL(coverUrl);
-    }
-  }
-
-  async function generatePreview() {
-    try {
-      await renderCard();
-      notify("Preview ready hai");
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Preview generate nahi hua");
-    }
-  }
-
-  async function generateAndSave() {
+  async function saveShareImage() {
     if (!validDetails) {
       notify("Title kam se kam 3 aur description 10 characters rakhein");
       return;
     }
+    if (!shareImageFile) {
+      notify("Pehle final share image choose karein");
+      return;
+    }
+
+    try {
+      validateShareImage(shareImageFile);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Share image invalid hai");
+      return;
+    }
+
     setBusy(true);
     try {
-      const blob = await renderCard();
-      if (blob.size > 2 * 1024 * 1024)
-        throw new Error("Generated share card bahut bada hai");
       const form = new FormData();
       form.set("projectId", projectId);
       form.set("kind", "card");
       form.set("shareTemplate", SHARE_TEMPLATE);
       form.set("shareTitle", title.trim());
       form.set("shareDescription", description.trim());
-      form.set(
-        "file",
-        new File([blob], "share-card.jpg", { type: "image/jpeg" }),
-      );
+
+      // Important: upload the user's final poster directly.
+      // Do not crop, resize, redraw, overlay a logo, or burn AR3D branding into it.
+      form.set("file", shareImageFile);
 
       const data = (await apiJson(
         await fetch("/api/admin/project-share", {
@@ -353,12 +247,13 @@ export default function ProjectShareManager({
           body: form,
         }),
       )) as ShareState;
+
       setState((current) => ({ ...current, ...data }));
-      setLocalPreview("");
+      setShareImageFile(null);
       dispatchShareUpdate(projectId);
-      notify("Share card generate ho kar save ho gaya");
+      notify("Original share image save ho gayi");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Share card save nahi hua");
+      notify(error instanceof Error ? error.message : "Share image save nahi hui");
     } finally {
       setBusy(false);
     }
@@ -368,7 +263,7 @@ export default function ProjectShareManager({
     if (!canCopyShare) {
       notify(
         published
-          ? "Pehle share card generate karein"
+          ? "Pehle share image save karein"
           : "Project publish hone ke baad share link copy hoga",
       );
       return;
@@ -388,7 +283,8 @@ export default function ProjectShareManager({
         <div>
           <h2>Share & Branding</h2>
           <p>
-            Ek reusable 1200×630 card, project metadata aur fresh versioned link.
+            Final customer poster ko as-is use karein. System image ko crop,
+            redesign ya logo-overlay nahi karega.
           </p>
         </div>
       </div>
@@ -400,7 +296,7 @@ export default function ProjectShareManager({
         </span>
         <span className={state.cardUrl ? "ready" : "warn"}>
           {state.cardUrl ? <CheckCircle2 /> : <ImagePlus />}
-          {state.cardUrl ? "Share card ready" : "Share card pending"}
+          {state.cardUrl ? "Original share image ready" : "Share image pending"}
         </span>
         <span className={published ? "ready" : "warn"}>
           {published ? <CheckCircle2 /> : <Share2 />}
@@ -454,24 +350,38 @@ export default function ProjectShareManager({
           </label>
 
           <label>
-            <span>CARD COVER IMAGE</span>
+            <span>SHARE IMAGE / WHATSAPP POSTER</span>
             <label className="rekixo-cover-picker">
               <ImagePlus />
-              <b>{coverFile ? coverFile.name : "Choose cover image"}</b>
-              <small>JPG / PNG / WebP · max 12 MB</small>
+              <b>
+                {shareImageFile
+                  ? shareImageFile.name
+                  : state.cardUrl
+                    ? "Choose a new image to replace the current poster"
+                    : "Choose final share image"}
+              </b>
+              <small>
+                JPG / PNG / WebP · max 8 MB · original aspect ratio · no crop
+              </small>
               <input
+                key={
+                  shareImageFile
+                    ? `${shareImageFile.name}-${shareImageFile.lastModified}`
+                    : "share-image"
+                }
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
                 onChange={(event) => {
                   const file = event.target.files?.[0] || null;
                   if (!file) return;
                   try {
-                    validateCover(file);
-                    setCoverFile(file);
-                    setLocalPreview("");
+                    validateShareImage(file);
+                    setShareImageFile(file);
                   } catch (error) {
                     notify(
-                      error instanceof Error ? error.message : "Cover invalid hai",
+                      error instanceof Error
+                        ? error.message
+                        : "Share image invalid hai",
                     );
                     event.currentTarget.value = "";
                   }
@@ -484,15 +394,12 @@ export default function ProjectShareManager({
             <button onClick={saveDetails} disabled={busy || !validDetails}>
               <Save /> {busy ? "Saving…" : "Save details"}
             </button>
-            <button onClick={generatePreview} disabled={busy || !coverFile}>
-              <ImagePlus /> Generate preview
-            </button>
             <button
               className="primary"
-              onClick={generateAndSave}
-              disabled={busy || !coverFile || !validDetails}
+              onClick={saveShareImage}
+              disabled={busy || !shareImageFile || !validDetails}
             >
-              <ImagePlus /> {busy ? "Generating…" : "Generate & save card"}
+              <ImagePlus /> {busy ? "Saving…" : "Save share image"}
             </button>
             <button onClick={copyLink} disabled={!canCopyShare}>
               <Copy /> Copy share link
@@ -509,10 +416,11 @@ export default function ProjectShareManager({
           <div className="rekixo-whatsapp-head">LINK PREVIEW</div>
           <div className="rekixo-whatsapp-card">
             {previewUrl ? (
-              <img src={previewUrl} alt="Share card preview" />
+              <img src={previewUrl} alt="Share image preview" />
             ) : (
               <div className="rekixo-share-empty">
-                Cover choose karke preview generate karein
+                Final poster choose karein. Yahan wahi image bina crop ke dikhai
+                degi.
               </div>
             )}
             <div className="rekixo-whatsapp-copy">
@@ -527,8 +435,6 @@ export default function ProjectShareManager({
           </div>
         </div>
       </div>
-
-      <canvas ref={canvasRef} hidden />
     </section>
   );
 }
