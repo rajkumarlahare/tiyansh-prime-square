@@ -103,7 +103,11 @@ export async function GET(request: Request) {
         publishedAt: project.publishedAt,
         adminUrl: links.adminUrl,
         platformUrl: links.platformUrl,
-        plots: plotRows,
+        plots: plotRows.map((plot) => {
+          const { notes, ...publicPlot } = plot;
+          void notes;
+          return publicPlot;
+        }),
         settings: Object.fromEntries(
           settingRows
             .filter((item) => PUBLIC_SETTING_KEYS.has(item.key))

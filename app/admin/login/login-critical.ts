@@ -148,6 +148,13 @@ body {
   width: 21px;
   height: 21px;
 }
+.login-hint {
+  display: block;
+  margin: -8px 0 22px;
+  color: #8290a8;
+  font-size: 12px;
+  line-height: 1.5;
+}
 .login-error {
   margin: -7px 0 20px;
   padding: 12px 14px;

@@ -17,5 +17,5 @@ export default async function ProjectChangePasswordPage({ params }: { params: Pr
   const session = await getAdminSession();
   if (!session || session.role !== "client_admin" || session.projectId !== project.id) redirect(`${base}/admin-login`);
   if (!session.mustChangePassword) redirect(`${base}/admin`);
-  return <ChangePasswordForm email={session.email} successPath={`${base}/admin`} />;
+  return <ChangePasswordForm email={session.email} projectName={project.name} successPath={`${base}/admin`} />;
 }

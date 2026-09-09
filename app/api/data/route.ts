@@ -3,6 +3,7 @@ import { getDb } from "../../../db";
 import { gallery, plots, settings } from "../../../db/schema";
 import { desc, eq } from "drizzle-orm";
 import { sameOrigin, validAdminSession } from "../../admin-auth";
+import { isClientEditableSettingKey, pickClientVisibleSettings, validClientPlotStatus } from "../../client-admin-policy";
 import { writeAudit } from "../../audit";
 
 const denied = () => Response.json({ error: "Admin login required" }, { status: 401 });
@@ -30,6 +31,7 @@ export async function GET(request: Request) {
         .where(eq(gallery.projectId, projectId))
         .orderBy(desc(gallery.sortOrder)),
     ]);
+    const allSettings = Object.fromEntries(settingRows.map((item) => [item.key, item.value]));
 
     return Response.json(
       {
@@ -38,7 +40,7 @@ export async function GET(request: Request) {
         publicHost: project?.publicHost || null,
         adminHost: project?.adminHost || null,
         plots: plotRows,
-        settings: Object.fromEntries(settingRows.map((item) => [item.key, item.value])),
+        settings: session.role === "client_admin" ? pickClientVisibleSettings(allSettings) : allSettings,
         gallery: galleryRows,
       },
       { headers: { "cache-control": "no-store" } },
@@ -61,10 +63,27 @@ export async function POST(request: Request) {
       type?: string;
       plot?: Record<string, unknown>;
       settings?: Record<string, string>;
+      plotId?: string;
+      status?: string;
     };
     const db = getDb();
     const now = new Date().toISOString();
     const projectId = session.projectId;
+
+    if (body.type === "plotStatus") {
+      const plotId = String(body.plotId || "").trim();
+      const status = String(body.status || "");
+      if (!plotId || plotId.length > 80 || !validClientPlotStatus(status))
+        return Response.json({ error: "Invalid plot status" }, { status: 400 });
+      const existing = await env.DB.prepare("SELECT id FROM plots WHERE project_id=? AND id=? LIMIT 1").bind(projectId, plotId).first();
+      if (!existing) return Response.json({ error: "Plot nahi mila" }, { status: 404 });
+      await env.DB.prepare("UPDATE plots SET status=?, updated_at=? WHERE project_id=? AND id=?").bind(status, now, projectId, plotId).run();
+      await writeAudit(session, "project.plot_status_updated", projectId, plotId, { status });
+      return Response.json({ ok: true, plotId, status });
+    }
+
+    if (session.role === "client_admin" && body.type === "plot")
+      return Response.json({ error: "Client can update plot status only" }, { status: 403 });
 
     if (body.type === "plot" && body.plot?.id) {
       const p = body.plot;
@@ -128,7 +147,10 @@ export async function POST(request: Request) {
     }
 
     if (body.type === "settings" && body.settings) {
-      const entries = Object.entries(body.settings)
+      const rawEntries = Object.entries(body.settings);
+      if (session.role === "client_admin" && rawEntries.some(([key]) => !isClientEditableSettingKey(key)))
+        return Response.json({ error: "Client setting not allowed" }, { status: 403 });
+      const entries = rawEntries
         .filter(([key, value]) => key.length <= 80 && typeof value === "string")
         .map(([key, value]) => [key, value.slice(0, 2000)] as const);
       if (!entries.length) {
