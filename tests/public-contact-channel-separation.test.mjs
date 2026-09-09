@@ -8,6 +8,16 @@ test("public customer site keeps Call and WhatsApp as independent contact channe
   assert.match(html, /REKIXO_CONTACT_CHANNEL_SEPARATION_V1/);
   assert.match(html, /let CALL_PHONE = GENERIC_BOOT\?'':'919009995582', WHATSAPP_PHONE = CALL_PHONE/);
   assert.doesNotMatch(html, /let PHONE =/);
+
+  // A literal "\\n" after a // marker comments out the following declaration.
+  // Guard the exact runtime line shape, not only the presence of the declaration text.
+  assert.doesNotMatch(html, /REKIXO_CONTACT_CHANNEL_SEPARATION_V1\\\\n/);
+  assert.match(html, /\/\/ REKIXO_CONTACT_CHANNEL_SEPARATION_V1\n\s*let CALL_PHONE/);
+  const callDeclarationLine = html
+    .split("\n")
+    .find((line) => line.includes("let CALL_PHONE"));
+  assert.ok(callDeclarationLine);
+  assert.ok(!callDeclarationLine.trimStart().startsWith("//"));
 });
 
 test("Call always prefers primary phone then secondary phone, never WhatsApp", () => {
