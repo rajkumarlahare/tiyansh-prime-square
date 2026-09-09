@@ -44,7 +44,7 @@ test("draft projects remain previewable only through authenticated preview", asy
 
 test("technical CAD/PDF internals stay protected while public branding assets are allowed", async () => {
   const asset = await source("../app/api/project-asset/[kind]/route.ts");
-  assert.match(asset, /PUBLIC_KINDS = new Set\(\["masterplan", "logo"\]\)/);
+  assert.match(asset, /PUBLIC_KINDS = new Set\(\["masterplan", "logo", "shareCard"\]\)/);
   assert.match(asset, /ADMIN_KINDS = new Set\(\["sourcePdf"\]\)/);
   assert.match(asset, /SUPER_ADMIN_ONLY/);
   assert.match(asset, /"sourceCad"/);

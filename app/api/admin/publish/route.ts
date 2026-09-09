@@ -55,7 +55,7 @@ async function publishState(projectId: string) {
       .bind(projectId)
       .all<{ id: string; polygon: string }>(),
     env.DB.prepare(
-      "SELECT key,value FROM settings WHERE project_id=? AND key IN ('masterplanName','mapWidth','mapHeight')",
+      "SELECT key,value FROM settings WHERE project_id=? AND key IN ('masterplanName','mapWidth','mapHeight','shareTitle','shareDescription','shareImage')",
     )
       .bind(projectId)
       .all<{ key: string; value: string }>(),
@@ -75,6 +75,9 @@ async function publishState(projectId: string) {
   if (!legacy) {
     if (!settings.masterplanName) reasons.push("Masterplan image upload required");
     if (!settings.mapWidth || !settings.mapHeight) reasons.push("Masterplan dimensions missing");
+    if (!settings.shareTitle) reasons.push("Share title required");
+    if (!settings.shareDescription) reasons.push("Share description required");
+    if (!settings.shareImage) reasons.push("Share preview image required");
     if (!plots.length) reasons.push("Plot inventory empty");
     if (mapped !== plots.length)
       reasons.push(`${plots.length - mapped} plots ki boundary pending hai`);

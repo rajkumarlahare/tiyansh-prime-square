@@ -43,8 +43,19 @@ async function readProjectMeta(slug: string) {
   const imagePath = settings.shareImage || logoPath;
   const imageUrl =
     imagePath && origin ? new URL(imagePath, origin).toString() : imagePath || "";
+  const logoUrl =
+    logoPath && origin ? new URL(logoPath, origin).toString() : logoPath || "";
 
-  return { project, title, description, imageUrl, origin };
+  return {
+    project,
+    title,
+    description,
+    imageUrl,
+    logoUrl,
+    hasShareImage: Boolean(settings.shareImage),
+    brandName: settings.brandName || "AR 3D Vision",
+    origin,
+  };
 }
 
 export async function generateMetadata({
@@ -63,24 +74,34 @@ export async function generateMetadata({
   }
 
   const images = meta.imageUrl
-    ? [{ url: meta.imageUrl, alt: meta.title }]
+    ? [
+        meta.hasShareImage
+          ? {
+              url: meta.imageUrl,
+              width: 1200,
+              height: 630,
+              alt: meta.title,
+            }
+          : { url: meta.imageUrl, alt: meta.title },
+      ]
     : undefined;
 
   return {
     metadataBase: meta.origin ? new URL(meta.origin) : undefined,
     title: meta.title,
     description: meta.description,
-    icons: meta.imageUrl
-      ? { icon: meta.imageUrl, shortcut: meta.imageUrl }
+    icons: meta.logoUrl
+      ? { icon: meta.logoUrl, shortcut: meta.logoUrl }
       : undefined,
     openGraph: {
       type: "website",
+      siteName: meta.brandName,
       title: meta.title,
       description: meta.description,
       images,
     },
     twitter: {
-      card: meta.imageUrl ? "summary_large_image" : "summary",
+      card: meta.hasShareImage ? "summary_large_image" : "summary",
       title: meta.title,
       description: meta.description,
       images: meta.imageUrl ? [meta.imageUrl] : undefined,

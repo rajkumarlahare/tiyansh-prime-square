@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { getAdminSession } from "../../../admin-auth";
 import { publicProjectId } from "../../../project-context";
 
-const PUBLIC_KINDS = new Set(["masterplan", "logo"]);
+const PUBLIC_KINDS = new Set(["masterplan", "logo", "shareCard"]);
 const ADMIN_KINDS = new Set(["sourcePdf"]);
 const SUPER_ADMIN_ONLY = new Set([
   "sourceCad",
@@ -70,7 +70,8 @@ export async function GET(
     : kind === "masterplan"
       ? "masterplan"
       : kind;
-  let object = await env.BUCKET.get(`projects/${projectId}/mapper/${objectKind}`);
+  const objectKey = kind === "shareCard" ? `projects/${projectId}/share/card` : `projects/${projectId}/mapper/${objectKind}`;
+  let object = await env.BUCKET.get(objectKey);
   let servedMasterplanSource =
     kind === "masterplan"
       ? wantsPublicMasterplan
@@ -98,9 +99,13 @@ export async function GET(
           ? "public,max-age=31536000,immutable"
           : kind === "masterplan"
             ? "public,max-age=0,must-revalidate"
-          : kind === "logo"
-            ? "public,max-age=31536000,immutable"
-            : "private,no-store",
+          : kind === "shareCard"
+            ? versionedRequest
+              ? "public,max-age=31536000,immutable"
+              : "public,max-age=0,must-revalidate"
+            : kind === "logo"
+              ? "public,max-age=31536000,immutable"
+              : "private,no-store",
     "x-content-type-options": "nosniff",
   });
   headers.set("x-rekixo-project", projectId);

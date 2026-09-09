@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, ExternalLink, Eye, Globe2, ShieldAlert } from "lucide-react";
+import {
+  CheckCircle2,
+  ExternalLink,
+  Eye,
+  Globe2,
+  ShieldAlert,
+} from "lucide-react";
 
 type State = {
   projectId?: string;
@@ -38,27 +44,42 @@ export default function ProjectPublishPanel({
       { cache: "no-store" },
     );
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Publish status load nahi hua");
+    if (!response.ok)
+      throw new Error(data.error || "Publish status load nahi hua");
     setState(data);
   }
 
   useEffect(() => {
     load().catch((error) =>
-      notify(error instanceof Error ? error.message : "Publish status load nahi hua"),
+      notify(
+        error instanceof Error ? error.message : "Publish status load nahi hua",
+      ),
     );
   }, [projectId, notify]);
 
   useEffect(() => {
-    const handleMapperUpdate = (event: Event) => {
+    const handleProjectUpdate = (event: Event) => {
       const detail = (event as CustomEvent<{ projectId?: string }>).detail;
       if (detail?.projectId && detail.projectId !== projectId) return;
       load().catch((error) =>
-        notify(error instanceof Error ? error.message : "Publish status refresh nahi hua"),
+        notify(
+          error instanceof Error
+            ? error.message
+            : "Publish status refresh nahi hua",
+        ),
       );
     };
-    window.addEventListener("rekixo:mapper-settings-updated", handleMapperUpdate);
+    const events = [
+      "rekixo:mapper-settings-updated",
+      "rekixo:share-profile-updated",
+    ] as const;
+    events.forEach((name) =>
+      window.addEventListener(name, handleProjectUpdate),
+    );
     return () =>
-      window.removeEventListener("rekixo:mapper-settings-updated", handleMapperUpdate);
+      events.forEach((name) =>
+        window.removeEventListener(name, handleProjectUpdate),
+      );
   }, [projectId, notify]);
 
   async function action(next: "publish" | "unpublish") {
@@ -85,7 +106,11 @@ export default function ProjectPublishPanel({
             : data.error || "Publish update nahi hua",
         );
       setState(data);
-      notify(next === "publish" ? "Project LIVE publish ho gaya" : "Project draft mode me hai");
+      notify(
+        next === "publish"
+          ? "Project LIVE publish ho gaya"
+          : "Project draft mode me hai",
+      );
     } catch (error) {
       notify(error instanceof Error ? error.message : "Publish update nahi hua");
     } finally {
@@ -98,12 +123,18 @@ export default function ProjectPublishPanel({
   return (
     <section className="card rekixo-publish-panel">
       <div className="section-title">
-        {published ? <Globe2 /> : state.ready ? <CheckCircle2 /> : <ShieldAlert />}
+        {published ? (
+          <Globe2 />
+        ) : state.ready ? (
+          <CheckCircle2 />
+        ) : (
+          <ShieldAlert />
+        )}
         <div>
           <h2>Review & Publish</h2>
           <p>
-            Public site tabhi open hogi jab required masterplan + plot boundaries
-            complete हों.
+            Public site tabhi open hogi jab masterplan, plot boundaries aur share
+            preview complete hon.
           </p>
         </div>
       </div>
@@ -166,11 +197,25 @@ export default function ProjectPublishPanel({
 
       {published ? (
         <div>
-          {state.publicUrl ? <small>Canonical site: {state.publicUrl}</small> : null}
+          {state.publicUrl ? (
+            <small>Canonical site: {state.publicUrl}</small>
+          ) : null}
           {state.publicUrl && state.adminUrl ? <br /> : null}
-          {state.adminUrl ? <small>Canonical admin: {state.adminUrl}</small> : null}
-          {state.fallbackUrl ? <><br /><small>Free fallback site: {state.fallbackUrl}</small></> : null}
-          {state.fallbackAdminUrl ? <><br /><small>Free fallback admin: {state.fallbackAdminUrl}</small></> : null}
+          {state.adminUrl ? (
+            <small>Canonical admin: {state.adminUrl}</small>
+          ) : null}
+          {state.fallbackUrl ? (
+            <>
+              <br />
+              <small>Free fallback site: {state.fallbackUrl}</small>
+            </>
+          ) : null}
+          {state.fallbackAdminUrl ? (
+            <>
+              <br />
+              <small>Free fallback admin: {state.fallbackAdminUrl}</small>
+            </>
+          ) : null}
         </div>
       ) : null}
     </section>

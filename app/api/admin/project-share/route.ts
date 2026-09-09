@@ -1,0 +1,235 @@
+import { env } from "cloudflare:workers";
+import { requireSuperAdmin, sameOrigin } from "../../../admin-auth";
+import { writeAudit } from "../../../audit";
+import { activeProjectDomain } from "../../../project-domains";
+import { currentProjectLinks } from "../../../project-links";
+
+const denied = () =>
+  Response.json({ error: "Super Admin access required" }, { status: 403 });
+const SHARE_TEMPLATE = "ar3d-standard-v1";
+const SHARE_KEYS = [
+  "projectName",
+  "brandName",
+  "location",
+  "address",
+  "logoName",
+  "logoVersion",
+  "shareTitle",
+  "shareDescription",
+  "shareImage",
+  "shareVersion",
+  "shareTemplate",
+] as const;
+
+async function ensureProject(projectId: string) {
+  return env.DB.prepare(
+    "SELECT id,name,slug,public_status AS publicStatus,public_host AS publicHost,admin_host AS adminHost,status FROM projects WHERE id=? AND status!='deleted' LIMIT 1",
+  )
+    .bind(projectId)
+    .first<{
+      id: string;
+      name: string;
+      slug: string;
+      publicStatus: string;
+      publicHost: string | null;
+      adminHost: string | null;
+      status: string;
+    }>();
+}
+
+async function readSettings(projectId: string) {
+  const placeholders = SHARE_KEYS.map(() => "?").join(",");
+  const rows = await env.DB.prepare(
+    "SELECT key,value FROM settings WHERE project_id=? AND key IN (" +
+      placeholders +
+      ")",
+  )
+    .bind(projectId, ...SHARE_KEYS)
+    .all<{ key: string; value: string }>();
+  return Object.fromEntries(
+    (rows.results || []).map((row) => [row.key, row.value]),
+  );
+}
+
+async function writeSetting(
+  projectId: string,
+  key: string,
+  value: string,
+  now: string,
+) {
+  await env.DB.prepare(
+    "INSERT INTO settings (project_id,key,value,updated_at) VALUES (?,?,?,?) ON CONFLICT(project_id,key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
+  )
+    .bind(projectId, key, value, now)
+    .run();
+}
+
+function validateDetails(title: string, description: string) {
+  if (title.length < 3 || title.length > 120)
+    throw new Error("Share title 3-120 chars me rakhein");
+  if (description.length < 10 || description.length > 280)
+    throw new Error("Share description 10-280 chars me rakhein");
+}
+
+async function shareState(projectId: string) {
+  const project = await ensureProject(projectId);
+  if (!project) return null;
+
+  const settings = await readSettings(projectId);
+  const [primaryDomain, primaryAdminDomain] = await Promise.all([
+    activeProjectDomain(projectId, "public"),
+    activeProjectDomain(projectId, "admin"),
+  ]);
+  const links = currentProjectLinks(
+    project.slug,
+    primaryDomain || project.publicHost,
+    primaryAdminDomain || project.adminHost,
+  );
+
+  const shareVersion = settings.shareVersion || "1";
+  const shareTitle = settings.shareTitle || settings.projectName || project.name;
+  const shareDescription =
+    settings.shareDescription ||
+    [settings.brandName, settings.address || settings.location]
+      .filter(Boolean)
+      .join(" | ") ||
+    `${shareTitle} interactive visualization.`;
+  const cardUrl = settings.shareImage || "";
+  const shareUrl = links.publicUrl
+    ? `${links.publicUrl}${links.publicUrl.includes("?") ? "&" : "?"}share=${encodeURIComponent(shareVersion)}`
+    : "";
+  const logoUrl = settings.logoName
+    ? `/api/project-asset/logo?projectId=${encodeURIComponent(project.id)}&v=${encodeURIComponent(settings.logoVersion || settings.logoName)}`
+    : "";
+
+  return {
+    projectId: project.id,
+    projectName: project.name,
+    publicStatus: project.publicStatus,
+    shareTitle,
+    shareDescription,
+    shareVersion,
+    shareTemplate: settings.shareTemplate || SHARE_TEMPLATE,
+    logoUrl,
+    cardUrl,
+    shareUrl,
+    publicUrl: links.publicUrl,
+    adminUrl: links.adminUrl,
+  };
+}
+
+export async function GET(request: Request) {
+  const actor = await requireSuperAdmin();
+  if (!actor) return denied();
+  const projectId = new URL(request.url).searchParams.get("projectId") || "";
+  if (!projectId)
+    return Response.json({ error: "Project required" }, { status: 400 });
+  const state = await shareState(projectId);
+  if (!state)
+    return Response.json({ error: "Project nahi mila" }, { status: 404 });
+  return Response.json(state, { headers: { "cache-control": "no-store" } });
+}
+
+export async function POST(request: Request) {
+  const actor = await requireSuperAdmin();
+  if (!actor) return denied();
+  if (!sameOrigin(request))
+    return Response.json({ error: "Invalid request origin" }, { status: 403 });
+
+  const contentType = request.headers.get("content-type") || "";
+  const now = new Date().toISOString();
+
+  if (contentType.includes("multipart/form-data")) {
+    const form = await request.formData();
+    const projectId = String(form.get("projectId") || "");
+    const kind = String(form.get("kind") || "");
+    const file = form.get("file");
+    const shareTitle = String(form.get("shareTitle") || "").trim();
+    const shareDescription = String(form.get("shareDescription") || "").trim();
+    const shareTemplate = String(form.get("shareTemplate") || SHARE_TEMPLATE);
+
+    if (!(await ensureProject(projectId)))
+      return Response.json({ error: "Project nahi mila" }, { status: 404 });
+    if (kind !== "card" || !(file instanceof File))
+      return Response.json(
+        { error: "Valid share card file required" },
+        { status: 400 },
+      );
+    if (shareTemplate !== SHARE_TEMPLATE)
+      return Response.json({ error: "Share template invalid hai" }, { status: 400 });
+    try {
+      validateDetails(shareTitle, shareDescription);
+    } catch (error) {
+      return Response.json(
+        { error: error instanceof Error ? error.message : "Share details invalid hain" },
+        { status: 400 },
+      );
+    }
+    if (
+      file.type !== "image/jpeg" ||
+      file.size < 10_000 ||
+      file.size > 2 * 1024 * 1024
+    )
+      return Response.json(
+        { error: "Generated share card JPEG invalid hai" },
+        { status: 400 },
+      );
+
+    const version = String(Date.now());
+    await env.BUCKET.put(`projects/${projectId}/share/card`, file.stream(), {
+      httpMetadata: { contentType: "image/jpeg" },
+    });
+    const shareImage = `/api/project-asset/shareCard?projectId=${encodeURIComponent(projectId)}&v=${encodeURIComponent(version)}`;
+    await Promise.all([
+      writeSetting(projectId, "shareVersion", version, now),
+      writeSetting(projectId, "shareImage", shareImage, now),
+      writeSetting(projectId, "shareTitle", shareTitle, now),
+      writeSetting(projectId, "shareDescription", shareDescription, now),
+      writeSetting(projectId, "shareTemplate", SHARE_TEMPLATE, now),
+    ]);
+    await writeAudit(actor, "project.share_card_saved", projectId, null, {
+      version,
+      size: file.size,
+      template: SHARE_TEMPLATE,
+    });
+    const state = await shareState(projectId);
+    return Response.json({ ok: true, ...state });
+  }
+
+  const body = (await request.json().catch(() => ({}))) as {
+    projectId?: string;
+    shareTitle?: string;
+    shareDescription?: string;
+  };
+  const projectId = String(body.projectId || "");
+  const shareTitle = String(body.shareTitle || "").trim();
+  const shareDescription = String(body.shareDescription || "").trim();
+  if (!projectId)
+    return Response.json({ error: "Project required" }, { status: 400 });
+  if (!(await ensureProject(projectId)))
+    return Response.json({ error: "Project nahi mila" }, { status: 404 });
+  try {
+    validateDetails(shareTitle, shareDescription);
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : "Share details invalid hain" },
+      { status: 400 },
+    );
+  }
+
+  // Any metadata edit gets a fresh share URL so WhatsApp/social crawlers do not
+  // keep serving an older title/description from their URL cache.
+  const version = String(Date.now());
+  await Promise.all([
+    writeSetting(projectId, "shareTitle", shareTitle, now),
+    writeSetting(projectId, "shareDescription", shareDescription, now),
+    writeSetting(projectId, "shareVersion", version, now),
+    writeSetting(projectId, "shareTemplate", SHARE_TEMPLATE, now),
+  ]);
+  await writeAudit(actor, "project.share_details_saved", projectId, null, {
+    version,
+    template: SHARE_TEMPLATE,
+  });
+  const state = await shareState(projectId);
+  return Response.json({ ok: true, ...state });
+}

@@ -27,7 +27,7 @@ test("logo upload is project-scoped, validated and versioned in R2", () => {
 });
 
 test("customer website and Client Admin consume the same project logo", () => {
-  assert.match(asset, /new Set\(\["masterplan", "logo"\]\)/);
+  assert.match(asset, /new Set\(\["masterplan", "logo", "shareCard"\]\)/);
   assert.match(publicData, /"logoName"/);
   assert.match(publicData, /"logoVersion"/);
   assert.match(admin, /className="client-project-logo"/);
