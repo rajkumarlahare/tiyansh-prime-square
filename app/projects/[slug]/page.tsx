@@ -14,7 +14,7 @@ async function readProjectMeta(slug: string) {
   if (!project) return null;
 
   const rows = await env.DB.prepare(
-    "SELECT key,value FROM settings WHERE project_id=? AND key IN ('projectName','brandName','location','address','logoName','logoVersion','shareTitle','shareDescription','shareImage')",
+    "SELECT key,value FROM settings WHERE project_id=? AND key IN ('projectName','brandName','location','address','logoName','logoVersion','shareTitle','shareDescription','shareImage','shareVersion')",
   )
     .bind(project.id)
     .all<{ key: string; value: string }>();
@@ -40,7 +40,10 @@ async function readProjectMeta(slug: string) {
   const logoPath = settings.logoName
     ? `/api/project-asset/logo?projectId=${encodeURIComponent(project.id)}&v=${encodeURIComponent(settings.logoVersion || settings.logoName)}`
     : "";
-  const imagePath = settings.shareImage || logoPath;
+  const shareImagePath = settings.shareImage
+    ? `/projects/${encodeURIComponent(project.slug)}/share-image/${encodeURIComponent(settings.shareVersion || "1")}`
+    : "";
+  const imagePath = shareImagePath || logoPath;
   const imageUrl =
     imagePath && origin ? new URL(imagePath, origin).toString() : imagePath || "";
   const logoUrl =

@@ -205,9 +205,19 @@ export async function POST(request: Request) {
       );
 
     const version = String(Date.now());
-    await env.BUCKET.put(`projects/${projectId}/share/card`, file.stream(), {
-      httpMetadata: { contentType: detectedMime },
-    });
+    const bytes = await file.arrayBuffer();
+    await Promise.all([
+      env.BUCKET.put(`projects/${projectId}/share/card`, bytes, {
+        httpMetadata: { contentType: detectedMime },
+      }),
+      env.BUCKET.put(`projects/${projectId}/share/cards/${version}`, bytes, {
+        httpMetadata: { contentType: detectedMime },
+        customMetadata: {
+          source: "original-upload",
+          version,
+        },
+      }),
+    ]);
     const shareImage = `/api/project-asset/shareCard?projectId=${encodeURIComponent(projectId)}&v=${encodeURIComponent(version)}`;
     await Promise.all([
       writeSetting(projectId, "shareVersion", version, now),

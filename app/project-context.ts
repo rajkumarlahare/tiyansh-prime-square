@@ -103,6 +103,23 @@ async function legacyProjectForHost(host: string) {
 export async function publicProjectId(request: Request): Promise<string | null> {
   const host = requestHost(request);
 
+  // Shared platform routes are explicitly tenant-scoped by projectId/projectSlug.
+  // Resolve that selector before legacy exact-domain fallbacks so a shared boss
+  // host can never make a crawler fetch another project's public asset.
+  if (isPlatformAccessHost(host)) {
+    const url = new URL(request.url);
+    const requestedId = url.searchParams.get("projectId");
+    const requestedSlug = url.searchParams.get("projectSlug");
+    if (requestedId) {
+      const project = await projectById(requestedId);
+      if (project) return project.id;
+    }
+    if (requestedSlug) {
+      const project = await projectBySlug(requestedSlug);
+      if (project) return project.id;
+    }
+  }
+
   const domain = await exactDomain(host);
   if (
     domain &&
@@ -123,20 +140,6 @@ export async function publicProjectId(request: Request): Promise<string | null> 
   if (slugFromHost) {
     const project = await projectBySlug(slugFromHost);
     if (project) return project.id;
-  }
-
-  if (isPlatformAccessHost(host)) {
-    const url = new URL(request.url);
-    const requestedId = url.searchParams.get("projectId");
-    const requestedSlug = url.searchParams.get("projectSlug");
-    if (requestedId) {
-      const project = await projectById(requestedId);
-      if (project) return project.id;
-    }
-    if (requestedSlug) {
-      const project = await projectBySlug(requestedSlug);
-      if (project) return project.id;
-    }
   }
 
   if (host === legacyFallbackHost()) {

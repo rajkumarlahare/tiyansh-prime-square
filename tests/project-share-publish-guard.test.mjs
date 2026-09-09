@@ -28,6 +28,8 @@ test("Open Graph uses the poster URL without fake dimensions and favicon stays p
   assert.ok(page.includes("hasShareImage"));
   assert.ok(page.includes('const images = meta.imageUrl'));
   assert.ok(page.includes('{ url: meta.imageUrl, alt: meta.title }'));
+  assert.ok(page.includes("/share-image/"));
+  assert.ok(page.includes("settings.shareVersion"));
   assert.ok(!page.includes("width: 1200"));
   assert.ok(!page.includes("height: 630"));
   assert.ok(page.includes("icons: meta.logoUrl"));
