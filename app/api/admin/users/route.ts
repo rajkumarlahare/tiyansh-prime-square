@@ -4,6 +4,7 @@ import { writeAudit } from "../../../audit";
 import { upsertPrimaryProjectDomain } from "../../../project-domains";
 import { clientFallbackHost } from "../../../project-context";
 import { currentProjectLinks } from "../../../project-links";
+import { validClientPassword } from "../../../client-password-policy";
 
 const unauthorized=()=>Response.json({error:"Super Admin access required"},{status:403});
 const emailPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -14,7 +15,6 @@ const validHost=(host:string|null)=>!host||hostPattern.test(host);
 const slugify=(value:string)=>value.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"project";
 const projectBrand=(value:string)=>{const clean=value.replace(/[—–-].*$/g,"").trim()||value.trim(),words=clean.split(/\s+/).filter(Boolean),short=(words.length>1?words.map(word=>word[0]).join(""):clean.slice(0,3)).replace(/[^a-z0-9]/gi,"").toUpperCase().slice(0,4)||"PRJ";return {brandName:clean.toUpperCase().slice(0,50),brandShort:short}};
 const clientAdminUrl=(slug="",adminHost?:string|null)=>slug?currentProjectLinks(slug,null,adminHost).adminUrl:`https://${clientFallbackHost()}/admin/login`;
-const strongPassword=(value:string)=>value.length>=12&&value.length<=128&&/[A-Z]/.test(value)&&/[a-z]/.test(value)&&/\d/.test(value)&&/[^A-Za-z0-9]/.test(value);
 
 export async function GET(){
   const actor=await requireSuperAdmin();if(!actor)return unauthorized();
@@ -30,7 +30,7 @@ export async function POST(request:Request){
   const actor=await requireSuperAdmin();if(!actor)return unauthorized();if(!sameOrigin(request))return Response.json({error:"Invalid request origin"},{status:403});
   const body=await request.json().catch(()=>({})) as {email?:string;name?:string;password?:string;projectId?:string;projectName?:string;publicHost?:string;adminHost?:string};
   const email=String(body.email||"").trim().toLowerCase(),name=String(body.name||"").trim(),password=String(body.password||""),projectName=String(body.projectName||"").trim(),publicHost=cleanHost(body.publicHost),adminHost=cleanHost(body.adminHost);
-  if(!emailPattern.test(email)||name.length<2||name.length>80||!strongPassword(password)||!validHost(publicHost)||!validHost(adminHost))return Response.json({error:"Valid details और strong 12+ character password required"},{status:400});
+  if(!emailPattern.test(email)||name.length<2||name.length>80||!validClientPassword(password)||!validHost(publicHost)||!validHost(adminHost))return Response.json({error:"Valid details aur 8+ character password with letter + number required"},{status:400});
   if(email===(env as unknown as Record<string,string>).ADMIN_EMAIL?.toLowerCase())return Response.json({error:"Owner email client account me use nahi ho sakta"},{status:409});
   if(await env.DB.prepare("SELECT id FROM admin_users WHERE email=? LIMIT 1").bind(email).first())return Response.json({error:"Is email ka account pehle se hai"},{status:409});
   let projectId=String(body.projectId||"").trim(),resolvedName=projectName,resolvedSlug="";
@@ -49,7 +49,7 @@ export async function PATCH(request:Request){
   if(action==="toggle"){const status=current.status==="active"?"disabled":"active";await env.DB.prepare("UPDATE admin_users SET status=?,session_version=session_version+1,updated_at=? WHERE id=?").bind(status,now,id).run();await writeAudit(actor,`client.${status}`,current.projectId,id);return Response.json({ok:true,status})}
   if(action==="domains"){const publicHost=cleanHost(body.publicHost),adminHost=cleanHost(body.adminHost);if(!validHost(publicHost)||!validHost(adminHost))return Response.json({error:"Valid domain लिखें, https:// या path नहीं"},{status:400});try{await upsertPrimaryProjectDomain(current.projectId,"public",publicHost,now);await upsertPrimaryProjectDomain(current.projectId,"admin",adminHost,now)}catch{return Response.json({error:"Domain kisi aur project me use ho raha hai"},{status:409})}await writeAudit(actor,"project.domains_updated",current.projectId,id,{publicHost,adminHost});return Response.json({ok:true,publicHost,adminHost})}
   if(action==="rename"){const name=String(body.name||"").trim();if(name.length<2||name.length>80)return Response.json({error:"Valid name required"},{status:400});await env.DB.prepare("UPDATE admin_users SET name=?,updated_at=? WHERE id=?").bind(name,now,id).run();await writeAudit(actor,"client.renamed",current.projectId,id);return Response.json({ok:true,name})}
-  if(action==="reset_password"){const password=String(body.password||"");if(!strongPassword(password))return Response.json({error:"Password में uppercase, lowercase, number और special character जरूरी है"},{status:400});const hash=await hashAdminPassword(password);await env.DB.prepare("UPDATE admin_users SET password_hash=?,password_salt=?,must_change_password=1,session_version=session_version+1,updated_at=? WHERE id=?").bind(hash.passwordHash,hash.passwordSalt,now,id).run();await writeAudit(actor,"client.password_reset",current.projectId,id);return Response.json({ok:true})}
+  if(action==="reset_password"){const password=String(body.password||"");if(!validClientPassword(password))return Response.json({error:"Password kam se kam 8 characters ka ho; letter + number zaroori hain, special optional hai"},{status:400});const hash=await hashAdminPassword(password);await env.DB.prepare("UPDATE admin_users SET password_hash=?,password_salt=?,must_change_password=1,session_version=session_version+1,updated_at=? WHERE id=?").bind(hash.passwordHash,hash.passwordSalt,now,id).run();await writeAudit(actor,"client.password_reset",current.projectId,id);return Response.json({ok:true})}
   return Response.json({error:"Invalid action"},{status:400});
 }
 

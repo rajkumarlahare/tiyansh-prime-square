@@ -1,5 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getAdminSession,hashAdminPassword,sameOrigin,sessionCookie } from "../../../admin-auth";
+import { validClientPassword } from "../../../client-password-policy";
+
 export async function POST(request:Request){
   if(!sameOrigin(request))return Response.json({error:"Invalid request origin"},{status:403});
   const session=await getAdminSession();
@@ -7,8 +9,7 @@ export async function POST(request:Request){
   const body=await request.json().catch(()=>({})) as {password?:string;confirmPassword?:string};
   const password=String(body.password||"");
   if(password!==String(body.confirmPassword||""))return Response.json({error:"Passwords match nahi karte"},{status:400});
-  if(password.length<12||password.length>128)return Response.json({error:"Password 12 se 128 characters ka hona chahiye"},{status:400});
-  if(!/[A-Z]/.test(password)||!/[a-z]/.test(password)||!/[0-9]/.test(password)||!/[!@#$%^&*()_+\-=]/.test(password))return Response.json({error:"Uppercase, lowercase, number aur special character जरूरी है"},{status:400});
+  if(!validClientPassword(password))return Response.json({error:"Password kam se kam 8 characters ka ho; letter + number zaroori hain, special character optional hai"},{status:400});
   const hash=await hashAdminPassword(password),now=new Date().toISOString(),nextVersion=session.sessionVersion+1;
   await env.DB.batch([
     env.DB.prepare("UPDATE admin_users SET password_hash=?, password_salt=?, must_change_password=0, session_version=?, password_changed_at=?, updated_at=? WHERE id=? AND project_id=?").bind(hash.passwordHash,hash.passwordSalt,nextVersion,now,now,session.id,session.projectId),
