@@ -61,11 +61,11 @@ html.rekixo-project-error body::after{content:"Project preview load nahi hua. Re
 .status-body{position:absolute;left:0;bottom:calc(100% + 6px);width:100%;max-height:0;opacity:0;overflow:hidden;pointer-events:none;padding:0 10px;background:transparent;border:0;box-shadow:none;transform:translateY(18px) scale(.94);transform-origin:bottom center;filter:blur(3px);transition:max-height .42s cubic-bezier(.22,1,.36,1),opacity .25s ease,transform .42s cubic-bezier(.22,1,.36,1),filter .25s ease;will-change:transform,opacity}.status.expanded .status-body{max-height:190px;opacity:1;overflow:visible;pointer-events:auto;transform:translateY(0) scale(1);filter:blur(0)}.status-line{width:100%;margin-top:12px;display:flex;justify-content:space-between;align-items:center;color:#fff;font-size:12px;font-weight:800;text-shadow:0 1px 4px #000,0 0 8px #000}.status-line b{font-size:12px}.status-option{appearance:none;border:0;background:transparent;padding:7px 7px;margin-left:-4px;margin-right:-4px;border-radius:9px;text-align:left;cursor:pointer;opacity:0;transform:translateY(12px);transition:background .15s,transform .38s cubic-bezier(.22,1,.36,1),opacity .25s ease}.status.expanded .status-option{opacity:1;transform:translateY(0)}.status.expanded .status-option:nth-child(1){transition-delay:.04s}.status.expanded .status-option:nth-child(2){transition-delay:.09s}.status.expanded .status-option:nth-child(3){transition-delay:.14s}.status-option:active{transform:scale(.985)}.status-option.active{background:transparent}.status-option:focus-visible{outline:2px solid #7aa7ff;outline-offset:1px}.status-option.available b{color:#21df82}.status-option.booked b{color:#ffd044}.status-option.sold b{color:#ff5a72}
 .status-line b{color:#697794;font-size:12px}.status-line.total{padding-top:10px;border-top:1px solid #263149;color:#697794}.status-line.total b{color:#ffd900;font-size:18px}.sdot{width:11px;height:11px;border:2px solid currentColor;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:-1px}.available{color:#15c86d}.booked{color:#f5b716}.sold{color:#f23b56}
 .status-option.available b{color:#21df82}.status-option.booked b{color:#ffd044}.status-option.sold b{color:#ff5a72}
-.status-filter-available .plot[data-status="available"]{fill:rgba(20,196,105,.28);stroke:rgba(28,239,129,.72);stroke-width:1}.status-filter-booked .plot[data-status="booked"]{fill:rgba(245,181,22,.29);stroke:rgba(255,203,44,.82);stroke-width:1}.status-filter-sold .plot[data-status="sold"]{fill:rgba(240,49,76,.30);stroke:rgba(255,70,94,.86);stroke-width:1}.status-filter-available .plot:not([data-status="available"]),.status-filter-booked .plot:not([data-status="booked"]),.status-filter-sold .plot:not([data-status="sold"]){fill:rgba(0,0,0,0);stroke:transparent}.plot.selected{stroke:#fff;stroke-width:1.45}
+.show-all.status-filter-available .plot[data-status="available"]{fill:rgba(20,196,105,.28);stroke:rgba(28,239,129,.72);stroke-width:1}.show-all.status-filter-booked .plot[data-status="booked"]{fill:rgba(245,181,22,.29);stroke:rgba(255,203,44,.82);stroke-width:1}.show-all.status-filter-sold .plot[data-status="sold"]{fill:rgba(240,49,76,.30);stroke:rgba(255,70,94,.86);stroke-width:1}.show-all.status-filter-available .plot:not([data-status="available"]),.show-all.status-filter-booked .plot:not([data-status="booked"]),.show-all.status-filter-sold .plot:not([data-status="sold"]){fill:rgba(0,0,0,0);stroke:transparent}.plot.selected{stroke:#fff;stroke-width:1.45}
 .controls{position:absolute;right:9px;bottom:11px;z-index:7;display:flex;flex-direction:column;gap:8px}.ctrl,.percent{width:49px;border-radius:13px;border:1px solid #263654;background:#0a1428ee;color:#91b4fb;box-shadow:0 8px 24px #0007}
 .ctrl{height:49px;font-size:20px;font-weight:800}.ctrl.text{font-size:12px;color:#8592ad}.percent{height:43px;display:grid;place-items:center;font-size:12px;font-weight:950;color:#73a6ff}
 .bottom-links{position:absolute;right:9px;bottom:234px;z-index:7;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
-.pill{width:118px;height:40px;padding:0 10px;border-radius:12px;border:1px solid #2b3854;background:#0a1325e8;color:#f2f5ff;display:flex;align-items:center;justify-content:center;gap:6px;font-size:9px;font-weight:950;letter-spacing:.05em;box-shadow:0 7px 18px #0007}.pill .pin{width:14px;height:17px;flex:none}.pill .gallery{width:14px;height:14px;flex:none;color:#f4c246;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.pill{width:114.5px;height:40px;padding:0 10px;border-radius:12px;border:1px solid #2b3854;background:#0a1325e8;color:#f2f5ff;display:flex;align-items:center;justify-content:center;gap:6px;font-size:9px;font-weight:950;letter-spacing:.05em;box-shadow:0 7px 18px #0007}.pill .pin{width:14px;height:17px;flex:none}.pill .gallery{width:14px;height:14px;flex:none;color:#f4c246;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .toast{position:absolute;left:50%;bottom:92px;z-index:12;transform:translateX(-50%) translateY(14px);opacity:0;background:#030711ec;border:1px solid #ffffff1c;border-radius:999px;padding:10px 15px;pointer-events:none;transition:.16s;white-space:nowrap}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .scrim{position:fixed;inset:0;z-index:29;background:#000a;opacity:0;pointer-events:none;transition:.18s;backdrop-filter:blur(4px)}.scrim.open{opacity:1;pointer-events:auto}
 .gallery-modal{position:fixed;inset:0;z-index:120;display:none;align-items:center;justify-content:center;padding:18px;background:#02050dcc;backdrop-filter:blur(8px)}.gallery-modal.open{display:flex}.gallery-panel{width:min(920px,100%);max-height:calc(100dvh - 36px);overflow:auto;border:1px solid #2b3a55;border-radius:22px;background:#0b1528;box-shadow:0 28px 80px #000c;padding:20px}.gallery-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}.gallery-head h2{margin:0;color:#fff;font-size:24px}.gallery-head p{margin:5px 0 0;color:#8492ac;font-size:13px}.gallery-close{width:44px;height:44px;flex:none;border:1px solid #33435e;border-radius:50%;background:#17233a;color:#fff;font-size:25px}.client-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}.client-gallery article{overflow:hidden;border:1px solid #263651;border-radius:14px;background:#07111f}.gallery-thumb{display:block;width:100%;padding:0;border:0;background:#07111f;cursor:zoom-in}.client-gallery img{display:block;width:100%;height:190px;object-fit:cover;transition:transform .22s ease}.gallery-thumb:active img{transform:scale(.98)}.client-gallery b{display:block;padding:11px 12px;color:#fff;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.gallery-state{grid-column:1/-1;display:grid;place-items:center;min-height:220px;color:#93a1bb;text-align:center;padding:30px}.image-lightbox{position:fixed;inset:0;z-index:180;display:none;align-items:center;justify-content:center;padding:12px;background:#01030af5;backdrop-filter:blur(10px)}.image-lightbox.open{display:flex}.lightbox-figure{position:relative;width:100%;height:100%;margin:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px}.lightbox-image{display:block;max-width:100%;max-height:calc(100dvh - 72px);width:auto;height:auto;object-fit:contain;border-radius:8px;box-shadow:0 20px 70px #000}.lightbox-caption{max-width:min(760px,88vw);color:#fff;font-size:14px;text-align:center;text-shadow:0 2px 5px #000}.lightbox-close{position:fixed;right:14px;top:14px;z-index:2;width:46px;height:46px;border-radius:50%;border:1px solid #ffffff45;background:#0a1325dd;color:#fff;font-size:28px;line-height:1}
@@ -129,7 +129,7 @@ html.rekixo-project-error body::after{content:"Project preview load nahi hua. Re
   .ctrl{height:38px;font-size:16px}.ctrl.text{font-size:9px}.percent{height:32px;font-size:9px}
 
   .bottom-links{right:7px;left:auto;bottom:177px;transform:none;flex-direction:column;gap:6px;max-width:none;align-items:flex-end}
-  .pill{width:149px;height:49px;padding:0 12px;border-radius:14px;font-size:9.6px;gap:7px;white-space:nowrap}
+  .pill{width:144.5px;height:49px;padding:0 12px;border-radius:14px;font-size:9.6px;gap:7px;white-space:nowrap}
 
   .toast{bottom:55px;font-size:11px;padding:8px 12px;max-width:84vw;overflow:hidden;text-overflow:ellipsis}
 
@@ -149,7 +149,7 @@ html.rekixo-project-error body::after{content:"Project preview load nahi hua. Re
   .icon{width:39px;height:39px}.brandmark{width:39px;height:39px}.brandmark .monogram{width:32px;height:32px}
   .search{height:44px}
   .bottom-links{max-width:none}
-  .pill{width:149px;height:49px;padding:0 12px;border-radius:14px;font-size:9.6px;gap:7px}
+  .pill{width:144.5px;height:49px;padding:0 12px;border-radius:14px;font-size:9.6px;gap:7px}
 }
 
 
@@ -318,7 +318,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
   <div class="three-host" id="threeHost"></div>
   <div class="world" id="world">
     <img class="master" width="1200" height="2133" alt="Project masterplan" decoding="async" fetchpriority="high" draggable="false">
-    <svg class="hotspots show-all" id="hotspots" viewBox="0 0 1200 2133" width="1200" height="2133" aria-label="Interactive plot overlay"></svg>
+    <svg class="hotspots" id="hotspots" viewBox="0 0 1200 2133" width="1200" height="2133" aria-label="Interactive plot overlay"></svg>
   </div>
 
   <div class="map-badge compass" aria-hidden="true">
@@ -335,7 +335,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
   <div class="map-badge mini-logo" aria-label="TPS 3D"><strong>TPS</strong><span>3D</span></div>
 
   <div class="status expanded" id="statusCard">
-    <div class="status-head"><span>STATUS</span><button type="button" class="toggle on" id="outlineToggle" aria-label="Expand status filters" aria-expanded="true"></button></div>
+    <div class="status-head"><span>STATUS</span><button type="button" class="toggle" id="outlineToggle" aria-label="Toggle plot boundaries" aria-pressed="false"></button></div>
     <div class="status-body" id="statusBody">
       <button type="button" class="status-line status-option available" data-status-filter="available"><span><i class="sdot"></i>Available</span><b id="countAvailable">0</b></button>
       <button type="button" class="status-line status-option booked" data-status-filter="booked"><span><i class="sdot"></i>Booked</span><b id="countBooked">0</b></button>
@@ -445,7 +445,7 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   const imageLightbox = q('#imageLightbox'),lightboxImage=q('#lightboxImage'),lightboxCaption=q('#lightboxCaption');
 
   let fit = 1, scale = 1, pan = {x:0,y:0};
-  let selected = null, showAll = true, statusExpanded = true, statusFilter = null;
+  let selected = null, showAll = false, statusExpanded = true, statusFilter = null;
   let toastTimer = null, mode3D = false, engine3D = null, mapRaf = 0, resizeRaf = 0;
   let PUBLIC_READY = false, HAS_MASTERPLAN = false;
   let publicRotation = 0;
@@ -708,8 +708,9 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
 
   function clearStatusFilter(){statusFilter=null;svg.classList.remove('status-filter-available','status-filter-booked','status-filter-sold');document.querySelectorAll('.status-option').forEach(b=>b.classList.remove('active'));engine3D?.setStatusFilter?.(null)}
   function setStatusFilter(st,keepSelected=false){st=st||null;if(statusFilter===st){if(keepSelected)return;clearStatusFilter();toast('Status filter cleared');return}statusFilter=st;svg.classList.remove('status-filter-available','status-filter-booked','status-filter-sold');if(st)svg.classList.add('status-filter-'+st);document.querySelectorAll('.status-option').forEach(b=>b.classList.toggle('active',b.dataset.statusFilter===st));engine3D?.setStatusFilter?.(st);toast(st?st.charAt(0).toUpperCase()+st.slice(1)+' plots':'Status filter cleared')}
-  function toggleStatusPanel(){statusExpanded=!statusExpanded;showAll=statusExpanded;statusCard.classList.toggle('expanded',statusExpanded);q('#outlineToggle').classList.toggle('on',statusExpanded);q('#outlineToggle').setAttribute('aria-expanded',String(statusExpanded));svg.classList.toggle('show-all',showAll);engine3D?.setShowAll(showAll);if(!statusExpanded)clearStatusFilter()}
-  function toggleBoundaries(){showAll=!showAll;svg.classList.toggle('show-all',showAll);engine3D?.setShowAll(showAll);toast(showAll?'Plot boundaries ON':'Plot boundaries OFF')}
+  function syncBoundaryToggle(){const toggle=q('#outlineToggle');toggle.classList.toggle('on',showAll);toggle.setAttribute('aria-pressed',String(showAll))}
+  function toggleStatusPanel(){toggleBoundaries()}
+  function toggleBoundaries(){showAll=!showAll;syncBoundaryToggle();svg.classList.toggle('show-all',showAll);engine3D?.setShowAll(showAll);toast(showAll?'Plot boundaries ON':'Plot boundaries OFF')}
 
   // Keep status gestures isolated from the map; retain glass finger-follow effect.
   ['pointerdown','pointermove','pointerup','pointercancel'].forEach(type=>statusCard.addEventListener(type,e=>e.stopPropagation()));

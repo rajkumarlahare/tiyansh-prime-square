@@ -9,14 +9,16 @@ const source = await readFile(
 
 test("mobile map width-fit keeps image and polygons together", () => {
   assert.match(source, /fit = mobile \? fw : Math\.min\(fw,fh\)/);
-  assert.match(source, /<svg class="hotspots show-all"/);
+  assert.match(source, /<svg class="hotspots" id="hotspots"/);
+  assert.doesNotMatch(source, /<svg class="hotspots show-all"/);
 });
 
 test("mobile controls use requested defaults", () => {
   assert.match(source, /\.bottom-links\{right:51px;bottom:14px\}/);
-  assert.match(source, /let selected = null, showAll = true, statusExpanded = true/);
+  assert.match(source, /let selected = null, showAll = false, statusExpanded = true/);
   assert.match(source, /<div class="status expanded" id="statusCard">/);
-  assert.match(source, /class="toggle on" id="outlineToggle"/);
+  assert.match(source, /class="toggle" id="outlineToggle"/);
+  assert.match(source, /aria-label="Toggle plot boundaries" aria-pressed="false"/);
 });
 
 test("project header prefers address under title", () => {
