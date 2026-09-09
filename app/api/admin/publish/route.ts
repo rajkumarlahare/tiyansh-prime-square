@@ -3,6 +3,7 @@ import { requireSuperAdmin, sameOrigin } from "../../../admin-auth";
 import { writeAudit } from "../../../audit";
 import { activeProjectDomain } from "../../../project-domains";
 import { currentProjectLinks } from "../../../project-links";
+import { missingRequiredProjectContact } from "../../../project-profile-policy";
 
 const denied = () => Response.json({ error: "Super Admin access required" }, { status: 403 });
 const LEGACY_PROJECT = "tiyansh-prime-square";
@@ -55,7 +56,7 @@ async function publishState(projectId: string) {
       .bind(projectId)
       .all<{ id: string; polygon: string }>(),
     env.DB.prepare(
-      "SELECT key,value FROM settings WHERE project_id=? AND key IN ('masterplanName','mapWidth','mapHeight','shareTitle','shareDescription','shareImage')",
+      "SELECT key,value FROM settings WHERE project_id=? AND key IN ('masterplanName','mapWidth','mapHeight','shareTitle','shareDescription','shareImage','location','address','phone1')",
     )
       .bind(projectId)
       .all<{ key: string; value: string }>(),
@@ -78,6 +79,11 @@ async function publishState(projectId: string) {
     if (!settings.shareTitle) reasons.push("Share title required");
     if (!settings.shareDescription) reasons.push("Share description required");
     if (!settings.shareImage) reasons.push("Share preview image required");
+    for (const key of missingRequiredProjectContact(settings)) {
+      if (key === "location") reasons.push("Project location required");
+      if (key === "address") reasons.push("Full address required");
+      if (key === "phone1") reasons.push("Primary phone required");
+    }
     if (!plots.length) reasons.push("Plot inventory empty");
     if (mapped !== plots.length)
       reasons.push(`${plots.length - mapped} plots ki boundary pending hai`);

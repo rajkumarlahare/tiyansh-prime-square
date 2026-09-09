@@ -72,6 +72,7 @@ export default function ProjectPublishPanel({
     const events = [
       "rekixo:mapper-settings-updated",
       "rekixo:share-profile-updated",
+      "rekixo:project-profile-updated",
     ] as const;
     events.forEach((name) =>
       window.addEventListener(name, handleProjectUpdate),

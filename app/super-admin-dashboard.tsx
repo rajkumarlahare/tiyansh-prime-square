@@ -5,6 +5,7 @@ import {
   ExternalLink,
   LogOut,
   MapPinned,
+  ContactRound,
   Share2,
   ShieldCheck,
   Users,
@@ -13,6 +14,7 @@ import ClientAdminManager from "./client-admin-manager";
 import PlotMapper from "./plot-mapper";
 import ProjectDomainManager from "./project-domain-manager";
 import ProjectPublishPanel from "./project-publish-panel";
+import ProjectProfileManager from "./project-profile-manager";
 import ProjectShareManager from "./project-share-manager";
 
 type Project = {
@@ -22,7 +24,7 @@ type Project = {
   adminCount: number;
 };
 
-type WorkspaceTab = "clients" | "mapper" | "share";
+type WorkspaceTab = "clients" | "profile" | "mapper" | "share";
 
 export default function SuperAdminDashboard({
   user,
@@ -95,15 +97,19 @@ export default function SuperAdminDashboard({
   const title =
     tab === "clients"
       ? "Projects & Access"
-      : tab === "mapper"
-        ? "Plot Mapper Engine"
-        : "Share Preview Builder";
+      : tab === "profile"
+        ? "Project Profile"
+        : tab === "mapper"
+          ? "Plot Mapper Engine"
+          : "Share Preview Builder";
   const subtitle =
     tab === "clients"
       ? "Create projects, assign client access and manage domains."
-      : tab === "mapper"
-        ? "Company masterplan से client website के clickable plots तैयार करें।"
-        : "Har project ka branded WhatsApp / social link preview ek jagah se manage karein.";
+      : tab === "profile"
+        ? "One canonical contact profile — Super Admin, Client Admin aur public site sab isi data ko use karte hain."
+        : tab === "mapper"
+          ? "Company masterplan से client website के clickable plots तैयार करें।"
+          : "Har project ka branded WhatsApp / social link preview ek jagah se manage karein.";
 
   return (
     <div className="super-shell">
@@ -143,6 +149,12 @@ export default function SuperAdminDashboard({
             <Users /> Clients
           </button>
           <button
+            className={tab === "profile" ? "active" : ""}
+            onClick={() => setTab("profile")}
+          >
+            <ContactRound /> Project Profile
+          </button>
+          <button
             className={tab === "mapper" ? "active" : ""}
             onClick={() => setTab("mapper")}
           >
@@ -168,6 +180,15 @@ export default function SuperAdminDashboard({
               <div className="card empty">
                 पहले client project बनाएँ या project चुनें।
               </div>
+            ) : tab === "profile" ? (
+              <>
+                <ProjectProfileManager
+                  key={projectId}
+                  projectId={projectId}
+                  notify={notify}
+                />
+                <ProjectPublishPanel projectId={projectId} notify={notify} />
+              </>
             ) : tab === "mapper" ? (
               <>
                 <PlotMapper key={projectId} projectId={projectId} notify={notify} />

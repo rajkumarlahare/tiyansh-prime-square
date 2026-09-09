@@ -289,6 +289,60 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
 .mini-logo.has-project-logo strong,.mini-logo.has-project-logo span,.mini-logo.has-project-logo small{display:none !important}
 .mini-logo .mini-project-logo{width:100%;height:100%;display:block;object-fit:cover;border-radius:50%;padding:2px;box-sizing:border-box;background:#fff}
 
+
+/* REKIXO_REFERENCE_STATUS_PARITY_V1
+   Reference-style status parity. Presentation only: canonical plot coordinates stay untouched. */
+:root{
+  --status-available:#20d978;
+  --status-booked:#f6b91b;
+  --status-sold:#ef334e;
+}
+
+/* Selected plot always reflects its real status, even while the global overlay toggle is OFF. */
+.plot.selected[data-status="available"]{fill:rgba(32,217,120,.42)!important;stroke:var(--status-available)!important;stroke-width:1.7!important;filter:drop-shadow(0 0 4px rgba(32,217,120,.72))}
+.plot.selected[data-status="booked"]{fill:rgba(246,185,27,.44)!important;stroke:var(--status-booked)!important;stroke-width:1.7!important;filter:drop-shadow(0 0 4px rgba(246,185,27,.72))}
+.plot.selected[data-status="sold"]{fill:rgba(239,51,78,.48)!important;stroke:var(--status-sold)!important;stroke-width:1.7!important;filter:drop-shadow(0 0 4px rgba(239,51,78,.74))}
+
+/* Stronger, easier-to-read all-status overlay, matching the reference behavior. */
+.show-all .plot[data-status="available"]{fill:rgba(32,217,120,.24)!important;stroke:rgba(32,217,120,.86)!important}
+.show-all .plot[data-status="booked"]{fill:rgba(246,185,27,.31)!important;stroke:rgba(246,185,27,.92)!important}
+.show-all .plot[data-status="sold"]{fill:rgba(239,51,78,.34)!important;stroke:rgba(239,51,78,.94)!important}
+
+/* Plot-details drawer follows the selected status end-to-end. */
+.drawer[data-status="available"]{border-top-color:var(--status-available)!important}
+.drawer[data-status="booked"]{border-top-color:var(--status-booked)!important}
+.drawer[data-status="sold"]{border-top-color:var(--status-sold)!important}
+.drawer[data-status="available"] .chip,.drawer[data-status="available"] .diagram polygon,.drawer[data-status="available"] .plotnum{color:var(--status-available);stroke:var(--status-available);fill:rgba(32,217,120,.08)}
+.drawer[data-status="booked"] .chip,.drawer[data-status="booked"] .diagram polygon,.drawer[data-status="booked"] .plotnum{color:var(--status-booked);stroke:var(--status-booked);fill:rgba(246,185,27,.08)}
+.drawer[data-status="sold"] .chip,.drawer[data-status="sold"] .diagram polygon,.drawer[data-status="sold"] .plotnum{color:var(--status-sold);stroke:var(--status-sold);fill:rgba(239,51,78,.09)}
+.drawer[data-status="available"] .plotnum{fill:var(--status-available)}
+.drawer[data-status="booked"] .plotnum{fill:var(--status-booked)}
+.drawer[data-status="sold"] .plotnum{fill:var(--status-sold)}
+.chip.available{border-color:rgba(32,217,120,.52);background:rgba(32,217,120,.10);color:var(--status-available)}
+.chip.booked{border-color:rgba(246,185,27,.52);background:rgba(246,185,27,.10);color:var(--status-booked)}
+.chip.sold{border-color:rgba(239,51,78,.55);background:rgba(239,51,78,.10);color:var(--status-sold)}
+
+/* Screen-facing 3D plot badges. Geometry remains in canonical map coordinates. */
+.three-label-layer{position:absolute;inset:0;z-index:4;overflow:hidden;pointer-events:none;display:none}
+.three-label-layer.visible{display:block}
+.three-plot-label{position:absolute;left:0;top:0;min-width:22px;height:22px;padding:0 5px;display:grid;place-items:center;border:1.5px solid currentColor;border-radius:6px;background:rgba(4,10,20,.90);color:#fff;font-size:10px;font-weight:950;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.62);transform:translate(-50%,-50%);white-space:nowrap;will-change:transform}
+.three-plot-label.available{border-color:var(--status-available)}
+.three-plot-label.booked{border-color:var(--status-booked)}
+.three-plot-label.sold{border-color:var(--status-sold)}
+
+@media(max-width:700px){
+  /* Reference layout: STATUS header first, permanent rows underneath, Total visible. */
+  .status{left:10px;top:auto;bottom:10px;width:168px;padding:0 10px 10px;border:1px solid rgba(122,167,255,.22);border-radius:17px;background:rgba(8,18,34,.90);box-shadow:0 12px 34px #0009;backdrop-filter:blur(12px) saturate(135%);-webkit-backdrop-filter:blur(12px) saturate(135%);overflow:hidden}
+  .status-head,.status.expanded .status-head{height:46px;padding:0;border:0;border-bottom:1px solid rgba(122,167,255,.16);border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+  .status-body,.status.expanded .status-body{position:relative;left:auto;bottom:auto;width:100%;max-height:none!important;padding:0;opacity:1;overflow:visible!important;pointer-events:auto;filter:none;transform:none;clip-path:none;background:transparent}
+  .status-option,.status.expanded .status-option{opacity:1;transform:none;transition:background .14s ease,opacity .14s ease;animation:none!important;margin:4px 0 0;padding:6px 0;border-radius:8px}
+  .status-option::before,.status-option::after{display:none!important;animation:none!important}
+  .status-option.touch-glass,.status-option.active{transform:none!important;animation:none!important;box-shadow:none!important}
+  .status-body .status-line{margin-top:2px}
+  .status-body .status-line.total{display:flex!important;margin-top:5px;padding-top:8px;border-top:1px solid rgba(122,167,255,.16)}
+  .status-body .status-line.total b{font-size:15px}
+}
+
 </style>
 
 </head>
@@ -360,10 +414,10 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
 </div>
 
 <div class="scrim" id="scrim"></div>
-<aside class="drawer" id="drawer" aria-hidden="true">
+<aside class="drawer" id="drawer" data-status="available" aria-hidden="true">
   <div class="dhead">
     <div>
-      <span class="chip">ENQUIRE</span>
+      <span class="chip available" id="plotStatusChip">AVAILABLE</span>
       <h2 id="plotTitle">Plot A-01</h2>
       <div class="sub">RAIGARH, CHHATTISGARH</div>
     </div>
@@ -388,7 +442,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
     <div class="fact"><span>SQ. FEET</span><b id="sqft">—</b></div>
     <div class="fact"><span>SQ. YARDS</span><b id="sqyd">—</b></div>
     <div class="fact"><span>DIMENSIONS</span><b id="dims">—</b></div>
-    <div class="fact"><span>ROAD ACCESS</span><b id="road">—</b></div>
+    <div class="fact"><span id="roadLabel">ROAD ACCESS</span><b id="road">—</b></div>
     <div class="fact"><span>STATUS</span><b id="plotStatusValue" class="available">Available</b></div>
   </div>
 
@@ -487,16 +541,21 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   }
 
   function displaySize(){return publicRotation%2?{w:H,h:W}:{w:W,h:H}}
+  function isMobilePanorama(){
+    return window.matchMedia('(max-width:700px)').matches && publicRotation%2===1
+  }
   function calcFit(){
     const mobile = window.matchMedia('(max-width:700px)').matches;
+    const panorama=isMobilePanorama();
     const size=displaySize();
     viewportWidth=viewport.clientWidth;
     viewportHeight=viewport.clientHeight;
     const fw = viewportWidth / size.w;
     const fh = viewportHeight / size.h;
-    // Mobile uses full width. Image + SVG remain in one uniformly-scaled world,
-    // so side gutters disappear without stretching or changing polygon coordinates.
-    fit = mobile ? fw : Math.min(fw,fh);
+    // Normal mobile keeps the proven width-fit behavior. A 90°/270° public
+    // presentation becomes a horizontal panorama: height fills the viewport,
+    // width intentionally extends off-screen, and the SAME image+SVG world pans.
+    fit = panorama ? fh : (mobile ? fw : Math.min(fw,fh));
     if(!Number.isFinite(fit) || fit <= 0) fit = .3;
   }
   function limits(){
@@ -513,14 +572,21 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
     if(percent!==lastPercent){lastPercent=percent;percentEl.textContent=percent+'%'}
   }
   function scheduleRender(){if(!mapRaf)mapRaf=requestAnimationFrame(()=>{mapRaf=0;render()})}
-  function reset(){calcFit();scale=fit;pan={x:0,y:0};render()}
+  function initialPanForPresentation(){
+    if(!isMobilePanorama())return{x:0,y:0};
+    // Positive X moves the centered world right, aligning its displayed left
+    // edge with the viewport. User then drags left to reveal the right side.
+    const l=limits();
+    return{x:l.x,y:0}
+  }
+  function reset(){calcFit();scale=fit;pan={x:0,y:0};pan=initialPanForPresentation();render()}
   function toast(t){const el=q('#toast');el.textContent=t;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),1800)}
   function openFullImage(src,caption){lightboxImage.src=src;lightboxImage.alt=caption;lightboxCaption.textContent=caption;imageLightbox.classList.add('open');imageLightbox.setAttribute('aria-hidden','false')}
   function closeFullImage(){imageLightbox.classList.remove('open');imageLightbox.setAttribute('aria-hidden','true');lightboxImage.removeAttribute('src')}
   async function openGallery(){galleryModal.classList.add('open');galleryModal.setAttribute('aria-hidden','false');clientGallery.replaceChildren(Object.assign(document.createElement('div'),{className:'gallery-state',textContent:'Loading gallery…'}));try{const response=await fetch('/api/public-data'+(window.REKIXO_PROJECT_QUERY||''),{cache:'no-store'});if(!response.ok)throw new Error();const data=await response.json(),items=Array.isArray(data.gallery)?data.gallery:[];clientGallery.replaceChildren();if(!items.length){clientGallery.append(Object.assign(document.createElement('div'),{className:'gallery-state',textContent:'Gallery me abhi koi image nahi hai.'}));return}items.forEach(item=>{const card=document.createElement('article'),thumb=document.createElement('button'),img=document.createElement('img'),label=document.createElement('b'),caption=item.caption||item.filename||'Project image';thumb.type='button';thumb.className='gallery-thumb';thumb.setAttribute('aria-label','View full size: '+caption);img.src='/api/gallery/'+encodeURIComponent(item.id)+(window.REKIXO_PROJECT_QUERY||'');img.alt=caption;img.loading='lazy';img.decoding='async';label.textContent=caption;thumb.onclick=()=>openFullImage(img.src,caption);thumb.append(img);card.append(thumb,label);clientGallery.append(card)})}catch(_){clientGallery.replaceChildren(Object.assign(document.createElement('div'),{className:'gallery-state',textContent:'Gallery load nahi hui. Dobara try karein.'}))}}
   function closeGallery(){galleryModal.classList.remove('open');galleryModal.setAttribute('aria-hidden','true')}
   function norm(v){let s=v.trim().toUpperCase().replace(/\s+/g,'').replace(/_/g,'-');if(plots.some(p=>String(p.id).toUpperCase()===s))return s;if(ACTIVE_PROJECT_ID===REKIXO_DEFAULT_PROJECT&&/^\d{1,2}$/.test(s))s='A-'+s;const m=s.match(/^([ABC])-?(\d{1,2})$/);return m?m[1]+'-'+String(+m[2]).padStart(2,'0'):s}
-  function plotStatus(p){const s=String(p?.status||'available').toLowerCase();return s==='enquire'?'available':(s==='booked'?'booked':(s==='sold'?'sold':'available'))}
+  function plotStatus(p){const s=String(p?.status||'available').trim().toLowerCase();return s==='enquire'?'available':(s==='booked'?'booked':(s==='sold'?'sold':'available'))}
   function updateStatusCounts(){const c={available:0,booked:0,sold:0};plots.forEach(p=>c[plotStatus(p)]++);q('#countAvailable').textContent=c.available;q('#countBooked').textContent=c.booked;q('#countSold').textContent=c.sold;q('#countTotal').textContent=plots.length}
   function polyPoints(p){return p.points.map(x=>x.join(',')).join(' ')}
 
@@ -557,11 +623,17 @@ fetch('/api/public-data'+REKIXO_PROJECT_QUERY,{cache:'no-store'}).then(r=>r.ok?r
   function openPlot(p,focus=false){
     if(!p) return;
     selected=p; setSelected(p.id); if(focus) focusPlot(p);
-    q('#plotTitle').textContent='Plot '+p.id;
+    const st=plotStatus(p),statusLabel=st.charAt(0).toUpperCase()+st.slice(1);
+    drawer.dataset.status=st;
+    const chip=q('#plotStatusChip');if(chip){chip.textContent=statusLabel.toUpperCase();chip.className='chip '+st}
+    q('#plotTitle').textContent='Plot #'+p.id;
     q('#sqm').textContent=Number(p.sqm).toLocaleString('en-IN')+' Sq.M';
     q('#sqft').textContent=Number(p.sqft).toLocaleString('en-IN')+' Sq.Ft';
     q('#sqyd').textContent=Number(p.sqyd).toLocaleString('en-IN')+' Sq.Yd';
-    q('#dims').textContent=p.dimensions||'—'; q('#road').textContent=p.road||'—';const st=plotStatus(p),statusEl=q('#plotStatusValue');statusEl.textContent=st.charAt(0).toUpperCase()+st.slice(1);statusEl.className=st;diagram(p);
+    q('#dims').textContent=p.dimensions||'—';
+    const facing=String(p.facing||'').trim(),roadLabel=q('#roadLabel');if(roadLabel)roadLabel.textContent=facing?'FACING':'ROAD ACCESS';
+    q('#road').textContent=facing||p.road||'—';
+    const statusEl=q('#plotStatusValue');statusEl.textContent=statusLabel;statusEl.className=st;diagram(p);
     drawer.scrollTop=0; drawer.classList.add('open'); drawer.setAttribute('aria-hidden','false'); scrim.classList.add('open');
     lastPlotOpenAt=performance.now();
   }

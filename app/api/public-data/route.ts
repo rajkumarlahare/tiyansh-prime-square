@@ -6,6 +6,7 @@ import { getAdminSession } from "../../admin-auth";
 import { publicProjectId } from "../../project-context";
 import { activeProjectDomain } from "../../project-domains";
 import { currentProjectLinks } from "../../project-links";
+import { withProjectContactFallbacks } from "../../project-profile-policy";
 
 const PUBLIC_SETTING_KEYS = new Set([
   "projectName",
@@ -92,6 +93,12 @@ export async function GET(request: Request) {
 
     const adminHost = adminDomain || project.adminHost;
     const links = currentProjectLinks(project.slug, null, adminHost);
+    const publicSettings = Object.fromEntries(
+      settingRows
+        .filter((item) => PUBLIC_SETTING_KEYS.has(item.key))
+        .map((item) => [item.key, item.value]),
+    );
+    const effectivePublicSettings = withProjectContactFallbacks(publicSettings);
 
     return Response.json(
       {
@@ -108,11 +115,7 @@ export async function GET(request: Request) {
           void notes;
           return publicPlot;
         }),
-        settings: Object.fromEntries(
-          settingRows
-            .filter((item) => PUBLIC_SETTING_KEYS.has(item.key))
-            .map((item) => [item.key, item.value]),
-        ),
+        settings: effectivePublicSettings,
         gallery: galleryRows,
       },
       {

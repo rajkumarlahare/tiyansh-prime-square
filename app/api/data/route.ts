@@ -5,6 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { sameOrigin, validAdminSession } from "../../admin-auth";
 import { isClientEditableSettingKey, pickClientVisibleSettings, validClientPlotStatus } from "../../client-admin-policy";
 import { writeAudit } from "../../audit";
+import { validateProjectContactPatch } from "../../project-profile-policy";
 
 const denied = () => Response.json({ error: "Admin login required" }, { status: 401 });
 
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
       type?: string;
       plot?: Record<string, unknown>;
       settings?: Record<string, string>;
+      changes?: Record<string, string>;
       plotId?: string;
       status?: string;
     };
@@ -146,16 +148,37 @@ export async function POST(request: Request) {
       return Response.json({ ok: true, plot: row });
     }
 
-    if (body.type === "settings" && body.settings) {
-      const rawEntries = Object.entries(body.settings);
-      if (session.role === "client_admin" && rawEntries.some(([key]) => !isClientEditableSettingKey(key)))
+    if (
+      (body.type === "settings" && body.settings) ||
+      (body.type === "settingsPatch" && body.changes)
+    ) {
+      const incoming =
+        body.type === "settingsPatch" ? body.changes || {} : body.settings || {};
+      const rawEntries = Object.entries(incoming);
+      if (
+        session.role === "client_admin" &&
+        rawEntries.some(([key]) => !isClientEditableSettingKey(key))
+      )
         return Response.json({ error: "Client setting not allowed" }, { status: 403 });
-      const entries = rawEntries
-        .filter(([key, value]) => key.length <= 80 && typeof value === "string")
-        .map(([key, value]) => [key, value.slice(0, 2000)] as const);
-      if (!entries.length) {
-        return Response.json({ error: "Invalid settings" }, { status: 400 });
+
+      let entries: readonly (readonly [string, string])[];
+      if (session.role === "client_admin") {
+        const checked = validateProjectContactPatch(
+          Object.fromEntries(rawEntries),
+        );
+        if (!checked.ok)
+          return Response.json({ error: checked.error }, { status: 400 });
+        entries = Object.entries(checked.values).map(
+          ([key, value]) => [key, String(value ?? "")] as const,
+        );
+      } else {
+        entries = rawEntries
+          .filter(([key, value]) => key.length <= 80 && typeof value === "string")
+          .map(([key, value]) => [key, value.slice(0, 2000)] as const);
       }
+
+      if (!entries.length) return Response.json({ ok: true, unchanged: true });
+
       await db.batch(
         entries.map(([key, value]) =>
           db
@@ -168,6 +191,7 @@ export async function POST(request: Request) {
         ),
       );
       await writeAudit(session, "project.settings_updated", projectId, null, {
+        mode: body.type === "settingsPatch" ? "patch" : "replace-compatible",
         keys: entries.map(([key]) => key),
       });
       return Response.json({ ok: true });

@@ -7,8 +7,10 @@ const source = await readFile(
   "utf8",
 );
 
-test("mobile map width-fit keeps image and polygons together", () => {
-  assert.match(source, /fit = mobile \? fw : Math\.min\(fw,fh\)/);
+test("mobile presentation keeps normal width-fit and uses height-fit after quarter-turn", () => {
+  assert.match(source, /function isMobilePanorama\(\)/);
+  assert.match(source, /publicRotation%2===1/);
+  assert.match(source, /fit = panorama \? fh : \(mobile \? fw : Math\.min\(fw,fh\)\)/);
   assert.match(source, /<svg class="hotspots" id="hotspots"/);
   assert.doesNotMatch(source, /<svg class="hotspots show-all"/);
 });

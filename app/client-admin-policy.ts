@@ -1,12 +1,9 @@
-export const CLIENT_EDITABLE_SETTING_KEYS = [
-  "location",
-  "address",
-  "phone1",
-  "phone2",
-  "whatsapp",
-  "mapUrl",
-  "brochureUrl",
-] as const;
+import {
+  PROJECT_CONTACT_KEYS,
+  pickProjectContactSettings,
+} from "./project-profile-policy";
+
+export const CLIENT_EDITABLE_SETTING_KEYS = PROJECT_CONTACT_KEYS;
 
 // Client Admin needs a few additional read-only branding values so its own shell
 // stays correctly branded. Mapper, CAD, share-builder and publish metadata are
@@ -31,9 +28,10 @@ export function isClientEditableSettingKey(key: string): key is ClientEditableSe
 }
 
 export function pickClientVisibleSettings(values: Record<string, string>) {
-  return Object.fromEntries(
+  const branding = Object.fromEntries(
     Object.entries(values).filter(([key]) => visibleSettingKeys.has(key)),
   );
+  return { ...branding, ...pickProjectContactSettings(values) };
 }
 
 export function validClientPlotStatus(value: string) {

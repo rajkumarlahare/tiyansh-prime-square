@@ -42,11 +42,23 @@ test("generic preview cannot flash or bootstrap Tiyansh tenant data", () => {
 
 test("generic public map contains the full natural masterplan and keeps rotated hit testing aligned", () => {
   assert.match(publicPage, /function displaySize/);
-  assert.match(publicPage, /fit = mobile \? fw : Math\.min\(fw,fh\)/);
-  assert.match(publicPage, /Math\.min\(fw,fh\)/);
+
+  // Future-proof presentation contract:
+  // normal mobile keeps width-fit; 90/270 degree presentation uses height-fit
+  // to create the horizontal panorama. This is presentation-only.
+  assert.match(publicPage, /function isMobilePanorama\(\)/);
+  assert.match(publicPage, /const panorama=isMobilePanorama\(\)/);
+  assert.match(
+    publicPage,
+    /fit = panorama \? fh : \(mobile \? fw : Math\.min\(fw,fh\)\)/,
+  );
+
+  // Canonical source dimensions and geometry conversion remain the source of truth.
   assert.match(publicPage, /function rescaleNormalizedPlots/);
   assert.match(publicPage, /master\.naturalWidth/);
   assert.match(publicPage, /publicRotation=normalizeQuarterTurn\(s\.publicRotation\)/);
+
+  // Rotated tap/hit testing still inverts presentation rotation back to source coordinates.
   assert.match(publicPage, /u=rotateOffset\(dx,dy,\(4-publicRotation\)%4\)/);
   assert.match(publicPage, /rotate\(\$\{publicRotation\*90\}deg\)/);
 });

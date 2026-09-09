@@ -11,7 +11,10 @@ test("share builder uses the final customer poster as-is", async () => {
     readFile(new URL("../app/api/admin/users/route.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.ok(dashboard.includes('type WorkspaceTab = "clients" | "mapper" | "share"'));
+  // Workspace membership is intentionally tested without freezing the exact tab
+  // union, so adding future workspaces (for example Project Profile) cannot break
+  // an unrelated Share Builder regression.
+  assert.match(dashboard, /type WorkspaceTab = [^;]*"share"[^;]*;/);
   assert.ok(dashboard.includes("Share Builder"));
   assert.ok(manager.includes('const SHARE_TEMPLATE = "original-image-v1"'));
   assert.ok(manager.includes("SHARE IMAGE / WHATSAPP POSTER"));

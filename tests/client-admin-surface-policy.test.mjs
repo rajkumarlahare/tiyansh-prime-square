@@ -4,13 +4,17 @@ import test from "node:test";
 
 const source = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("client settings policy has a small explicit allowlist and excludes technical metadata", async () => {
-  const policy = await source("../app/client-admin-policy.ts");
+test("client settings policy consumes one canonical project-contact allowlist and excludes technical metadata", async () => {
+  const [policy,profile] = await Promise.all([
+    source("../app/client-admin-policy.ts"),
+    source("../app/project-profile-policy.ts"),
+  ]);
+  assert.match(policy, /CLIENT_EDITABLE_SETTING_KEYS = PROJECT_CONTACT_KEYS/);
   for (const key of ["location","address","phone1","phone2","whatsapp","mapUrl","brochureUrl"]) {
-    assert.ok(policy.includes(`"${key}"`), `missing editable key ${key}`);
+    assert.ok(profile.includes(`"${key}"`), `missing canonical contact key ${key}`);
   }
   for (const key of ["cadBounds","homography","mapWidth","mapHeight","plotSheetName","sourceCadName","shareVersion","shareTemplate","shareImage"]) {
-    assert.equal(policy.includes(`"${key}"`), false, `technical key leaked into client policy: ${key}`);
+    assert.equal(profile.includes(`"${key}"`), false, `technical key leaked into project profile: ${key}`);
   }
   for (const key of ["brandName","brandShort","accentColor","logoName","logoVersion"]) {
     assert.ok(policy.includes(`"${key}"`), `missing read-only branding key ${key}`);
@@ -24,7 +28,8 @@ test("client dashboard renders only explicit contact fields and status-only plot
   assert.match(dashboard, /Contact & Location/);
   assert.match(dashboard, /type:"plotStatus"/);
   assert.match(dashboard, /selected&&user\.role==="super_admin"/);
-  assert.match(dashboard, /user\.role==="client_admin"\?editable:settings/);
+  assert.match(dashboard, /type:"settingsPatch",changes/);
+  assert.match(dashboard, /savedClientSettings/);
 });
 
 test("client data API filters reads and rejects unauthorized settings/full plot edits", async () => {
