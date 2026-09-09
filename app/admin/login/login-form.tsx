@@ -12,6 +12,7 @@ type LoginFormProps = {
   successPath?: string;
   changePasswordPath?: string;
   backPath?: string;
+  initialError?: string;
 };
 
 export default function LoginForm({
@@ -22,16 +23,20 @@ export default function LoginForm({
   successPath = "/admin",
   changePasswordPath = "/admin/change-password",
   backPath = "",
+  initialError = "",
 }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
   const isSuper = mode === "super";
   const tenantLabel = projectName.trim() || projectSlug.trim() || "Your project";
   const resolvedBackPath =
     backPath || (projectSlug ? `/projects/${encodeURIComponent(projectSlug)}` : "/");
+  const resolvedLoginPath = projectSlug
+    ? `/projects/${encodeURIComponent(projectSlug)}/admin-login`
+    : "/admin/login";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -69,7 +74,12 @@ export default function LoginForm({
             {isSuper ? "Central client & project management" : <>Project: <b>{tenantLabel}</b></>}
           </p>
 
-          <form onSubmit={submit} aria-busy={busy}>
+          <form action="/api/admin/login" method="post" onSubmit={submit} aria-busy={busy}>
+            <input type="hidden" name="projectId" value={projectId} />
+            <input type="hidden" name="projectSlug" value={projectSlug} />
+            <input type="hidden" name="successPath" value={successPath} />
+            <input type="hidden" name="changePasswordPath" value={changePasswordPath} />
+            <input type="hidden" name="returnPath" value={resolvedLoginPath} />
             <label htmlFor="login-email">
               <span>EMAIL ADDRESS</span>
               <div className="login-input">

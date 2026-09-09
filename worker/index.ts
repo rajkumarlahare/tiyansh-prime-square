@@ -79,18 +79,41 @@ async function rewriteSharedAssets(response: Response) {
   });
 }
 
+function frameworkAssetUsable(response: Response, pathname: string) {
+  if (response.status === 404) return false;
+  const type = (response.headers.get("content-type") || "").toLowerCase();
+  const lower = pathname.toLowerCase();
+  if (lower.endsWith(".js") || lower.endsWith(".mjs")) return type.includes("javascript");
+  if (lower.endsWith(".css")) return type.includes("text/css");
+  // Never let an HTML app fallback masquerade as a framework asset.
+  return !type.includes("text/html");
+}
+
+async function fetchAssetCandidate(request: Request, env: Env) {
+  try {
+    return await env.ASSETS.fetch(request);
+  } catch {
+    return null;
+  }
+}
+
 async function fetchPrefixedFrameworkAsset(request: Request, env: Env) {
   const url = new URL(request.url);
   if (!isPrefixedFrameworkAssetPath(url.pathname)) return null;
   if (request.method !== "GET" && request.method !== "HEAD") return null;
 
-  try {
-    // New assetPrefix builds store framework assets at the exact /__rekixo URL.
-    const asset = await env.ASSETS.fetch(request);
-    return asset.status === 404 ? null : asset;
-  } catch {
-    return null;
-  }
+  const exact = await fetchAssetCandidate(request, env);
+  if (exact && frameworkAssetUsable(exact, url.pathname)) return exact;
+
+  // assetPrefix changes browser URLs, but Cloudflare's static bundle may still
+  // store the physical file at /_next, /_vinext or /assets. Try that exact
+  // static object before allowing the application router to see the request.
+  const strippedRequest=stripSharedAssetPrefix(request);
+  const strippedUrl=new URL(strippedRequest.url);
+  const fallback=await fetchAssetCandidate(strippedRequest,env);
+  if (fallback && frameworkAssetUsable(fallback,strippedUrl.pathname)) return fallback;
+
+  return null;
 }
 
 function isSensitiveClientPath(pathname: string) {
