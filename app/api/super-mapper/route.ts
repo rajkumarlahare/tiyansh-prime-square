@@ -173,7 +173,7 @@ async function savePlots(
   const saved = cleaned.filter((plot): plot is NonNullable<typeof plot> => Boolean(plot));
   const statement = preserveGeometry
     ? "INSERT INTO plots (project_id,id,sqft,sqm,sqyd,dimensions,road,polygon,status,notes,featured,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id,id) DO UPDATE SET sqft=excluded.sqft,sqm=excluded.sqm,sqyd=excluded.sqyd,dimensions=excluded.dimensions,road=excluded.road,notes=excluded.notes,updated_at=excluded.updated_at"
-    : "INSERT INTO plots (project_id,id,sqft,sqm,sqyd,dimensions,road,polygon,status,notes,featured,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id,id) DO UPDATE SET sqft=excluded.sqft,sqm=excluded.sqm,sqyd=excluded.sqyd,dimensions=excluded.dimensions,road=excluded.road,polygon=excluded.polygon,status=excluded.status,notes=excluded.notes,featured=excluded.featured,updated_at=excluded.updated_at";
+    : "INSERT INTO plots (project_id,id,sqft,sqm,sqyd,dimensions,road,polygon,status,notes,featured,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id,id) DO UPDATE SET sqft=excluded.sqft,sqm=excluded.sqm,sqyd=excluded.sqyd,dimensions=excluded.dimensions,road=excluded.road,polygon=excluded.polygon,notes=excluded.notes,updated_at=excluded.updated_at";
 
   for (let index = 0; index < saved.length; index += 80) {
     const chunk = saved.slice(index, index + 80);

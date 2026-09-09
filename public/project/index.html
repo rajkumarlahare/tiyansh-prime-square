@@ -474,6 +474,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
   </div>
 </section>
 <section class="image-lightbox" id="imageLightbox" aria-hidden="true" aria-label="Full size gallery image"><button type="button" class="lightbox-close" id="lightboxClose" aria-label="Close full size image">×</button><figure class="lightbox-figure"><img class="lightbox-image" id="lightboxImage" alt=""><figcaption class="lightbox-caption" id="lightboxCaption"></figcaption></figure></section>
+<script src="project-geometry.js"></script>
 <script src="plots-data.js"></script>
 <script src="three-view.js"></script>
 <script>
@@ -730,9 +731,11 @@ rekixoStartPublicBoot();
   function plotStatus(p){const s=String(p?.status||'available').trim().toLowerCase();return s==='enquire'?'available':(s==='booked'?'booked':(s==='sold'?'sold':'available'))}
   function updateStatusCounts(){const c={available:0,booked:0,sold:0};plots.forEach(p=>c[plotStatus(p)]++);q('#countAvailable').textContent=c.available;q('#countBooked').textContent=c.booked;q('#countSold').textContent=c.sold;q('#countTotal').textContent=plots.length}
   function polyPoints(p){return p.points.map(x=>x.join(',')).join(' ')}
+  function projectLabelPoint(points){const shared=globalThis.RekixoProjectGeometry?.labelPoint;if(typeof shared==='function'){const c=shared(points);if(Array.isArray(c)&&c.length>=2&&Number.isFinite(c[0])&&Number.isFinite(c[1]))return c}if(!Array.isArray(points)||!points.length)return[0,0];return[points.reduce((sum,v)=>sum+Number(v[0]||0),0)/points.length,points.reduce((sum,v)=>sum+Number(v[1]||0),0)/points.length]}
 
   // SVG is visual/keyboard hit-area only. Touch selection is resolved from plot geometry below.
   plots.forEach(p=>{
+    if(Array.isArray(p.points)&&p.points.length>=3)p.center=projectLabelPoint(p.points);
     const poly=document.createElementNS('http://www.w3.org/2000/svg',p.path?'path':'polygon');
     if(p.path) poly.setAttribute('d',p.path); else poly.setAttribute('points',polyPoints(p));
     poly.setAttribute('class','plot'); poly.dataset.plotId=p.id; poly.dataset.status=plotStatus(p);
@@ -980,7 +983,7 @@ rekixoStartPublicBoot();
       if(!Array.isArray(p._normalized)||p._normalized.length<3)return;
       const mapped=p._normalized.map(([x,y])=>[x*W,y*H]);
       p.points=mapped;
-      p.center=[mapped.reduce((sum,v)=>sum+v[0],0)/mapped.length,mapped.reduce((sum,v)=>sum+v[1],0)/mapped.length];
+      p.center=projectLabelPoint(mapped);
       const el=svg.querySelector(`[data-plot-id="${p.id}"]`);
       if(el)el.setAttribute('points',polyPoints(p));
     });
@@ -1016,7 +1019,7 @@ rekixoStartPublicBoot();
       try{
         const normalized=JSON.parse(row.polygon);if(!Array.isArray(normalized)||normalized.length<3)return;
         const mapped=normalized.map(([x,y])=>[x*W,y*H]);
-        const p={...row,_normalized:normalized,points:mapped,center:[mapped.reduce((sum,v)=>sum+v[0],0)/mapped.length,mapped.reduce((sum,v)=>sum+v[1],0)/mapped.length]};
+        const p={...row,_normalized:normalized,points:mapped,center:projectLabelPoint(mapped)};
         plots.push(p);addPlotPolygon(p);
       }catch(_){}
     });

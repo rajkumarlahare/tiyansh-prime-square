@@ -59,3 +59,22 @@ test("canonical polygon and hit-test engines remain present", () => {
   assert.match(three, /function inside\(/);
   assert.match(three, /pick\(x,y\)/);
 });
+
+
+test("3D status filter hides stale labels synchronously and clears a mismatched selected plot", () => {
+  assert.match(three, /syncLabelVisibility\(\)/);
+  assert.match(three, /this\.selected&&this\.statusFilter&&statusOf\(this\.selected\)!==this\.statusFilter/);
+  assert.match(three, /el\.hidden=true/);
+});
+
+test("public 2D focus and 3D badges share the same robust geometry label point", () => {
+  assert.match(html, /project-geometry\.js/);
+  assert.match(html, /projectLabelPoint\(mapped\)/);
+  assert.match(three, /RekixoProjectGeometry/);
+  assert.match(three, /plotLabelPoint\(p\)/);
+});
+
+test("3D label layout suppresses only overlapping badges while keeping the selected label first", () => {
+  assert.match(three, /const cellW=34,cellH=24,buckets=new Map\(\)/);
+  assert.match(three, /if\(!item\.selected&&collision\(item\.x,item\.y\)\)continue/);
+});

@@ -124,6 +124,18 @@ function isSensitiveClientPath(pathname: string) {
   );
 }
 
+function isPublicProjectRuntimeAsset(pathname: string) {
+  const canonical = pathname.startsWith("/__rekixo/")
+    ? pathname.slice("/__rekixo".length)
+    : pathname;
+  return (
+    canonical === "/project/index.html" ||
+    canonical === "/project/project-geometry.js" ||
+    canonical === "/project/three-view.js" ||
+    canonical === "/project/plots-data.js"
+  );
+}
+
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const externalUrl = new URL(request.url);
@@ -186,6 +198,11 @@ const worker = {
       isSensitiveClientPath(externalUrl.pathname)
     ) {
       secured.headers.set("cache-control", "no-store");
+    } else if (isPublicProjectRuntimeAsset(externalUrl.pathname)) {
+      // Runtime shell/scripts are tiny but behavior-critical. Revalidate them so
+      // a browser never pins an old 3D engine after a safe deploy. Heavy images
+      // remain cacheable through their own asset endpoints.
+      secured.headers.set("cache-control", "no-cache");
     }
 
     return secured;

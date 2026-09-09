@@ -121,7 +121,7 @@ export default async function SharedProjectPage({
     <main style={{ position: "fixed", inset: 0, background: "#050914" }}>
       <iframe
         title={`${project.name} website`}
-        src={`/__rekixo/project/index.html?projectSlug=${encodeURIComponent(project.slug)}`}
+        src={`/__rekixo/project/index.html?projectSlug=${encodeURIComponent(project.slug)}&v=52`}
         loading="eager"
         style={{ width: "100%", height: "100%", border: 0, display: "block" }}
       />
