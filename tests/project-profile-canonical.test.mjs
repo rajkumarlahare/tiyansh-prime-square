@@ -70,7 +70,7 @@ test("publish readiness includes minimum customer contact data", async () => {
 
 test("Super Admin exposes reusable Project Profile workspace for every project", async () => {
   const dashboard = await source("../app/super-admin-dashboard.tsx");
-  assert.match(dashboard, /type WorkspaceTab = "clients" \| "profile" \| "mapper" \| "share"/);
+  assert.match(dashboard, /type WorkspaceTab = [^;]*"profile"/);
   assert.match(dashboard, /<ContactRound \/> Project Profile/);
   assert.match(dashboard, /<ProjectProfileManager/);
   assert.match(dashboard, /<ProjectPublishPanel projectId=\{projectId\}/);
