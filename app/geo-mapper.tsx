@@ -84,6 +84,31 @@ const emptyState = (projectId: string): GeoState => ({
   },
 });
 
+function controlPointsSignature(points: ControlPoint[]) {
+  return JSON.stringify(
+    points.map((point) => [
+      point.id,
+      Number(point.source[0]),
+      Number(point.source[1]),
+      Number(point.target[0]),
+      Number(point.target[1]),
+      String(point.label || ""),
+    ]),
+  );
+}
+
+function importIdPart(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "source";
+}
+
+function stableImportId(filename: string, featureIndex: number, pieceIndex = 0) {
+  return `import:${importIdPart(filename)}:${featureIndex + 1}${pieceIndex ? `:${pieceIndex + 1}` : ""}`;
+}
+
 function parseCoordinateText(type: "Point" | "LineString" | "Polygon", raw: string): GeoGeometry {
   const points = raw
     .split(/\n|;/)
@@ -143,7 +168,9 @@ function parseGeoJson(text: string, filename: string): ImportFeature[] {
     pieces.forEach((piece, pieceIndex) => {
       const baseId = String(feature.id || properties.id || "").trim();
       output.push({
-        id: baseId ? `${baseId}${pieces.length > 1 ? `-${pieceIndex + 1}` : ""}` : undefined,
+        id: baseId
+          ? `${baseId}${pieces.length > 1 ? `-${pieceIndex + 1}` : ""}`
+          : stableImportId(filename, featureIndex, pieceIndex),
         name: String(properties.name || properties.Name || `Imported ${featureIndex + 1}`),
         layer: String(properties.layer || properties.Layer || filename.replace(/\.[^.]+$/, "") || "imported"),
         geometry: piece,
@@ -175,22 +202,23 @@ function parseKml(text: string, filename: string): ImportFeature[] {
   xmlElements(xml, "Placemark").forEach((placemark, index) => {
     const name = xmlElements(placemark, "name")[0]?.textContent?.trim() || `Placemark ${index + 1}`;
     const layer = filename.replace(/\.[^.]+$/, "") || "kml";
+    const id = stableImportId(filename, index);
     const point = xmlElements(placemark, "Point")[0];
     const line = xmlElements(placemark, "LineString")[0];
     const polygon = xmlElements(placemark, "Polygon")[0];
     if (point) {
       const coords = parseKmlCoordinates(xmlElements(point, "coordinates")[0]?.textContent || "");
-      if (coords[0]) output.push({ name, layer, geometry: { type: "Point", coordinates: coords[0] }, source: "kml" });
+      if (coords[0]) output.push({ id, name, layer, geometry: { type: "Point", coordinates: coords[0] }, source: "kml" });
     } else if (line) {
       const coords = parseKmlCoordinates(xmlElements(line, "coordinates")[0]?.textContent || "");
       if (coords.length >= 2)
-        output.push({ name, layer, geometry: { type: "LineString", coordinates: coords }, source: "kml" });
+        output.push({ id, name, layer, geometry: { type: "LineString", coordinates: coords }, source: "kml" });
     } else if (polygon) {
       const rings = xmlElements(polygon, "LinearRing")
         .map((ring) => parseKmlCoordinates(xmlElements(ring, "coordinates")[0]?.textContent || ""))
         .filter((ring) => ring.length >= 3);
       if (rings.length)
-        output.push({ name, layer, geometry: { type: "Polygon", coordinates: rings }, source: "kml" });
+        output.push({ id, name, layer, geometry: { type: "Polygon", coordinates: rings }, source: "kml" });
     }
   });
   return output;
@@ -228,6 +256,10 @@ export default function GeoMapper({
   const [manualLayer, setManualLayer] = useState("site");
   const [manualPlot, setManualPlot] = useState("");
   const [manualCoordinates, setManualCoordinates] = useState("");
+  const calibrationDirty = useMemo(
+    () => controlPointsSignature(controlPoints) !== controlPointsSignature(state.controlPoints || []),
+    [controlPoints, state.controlPoints],
+  );
 
   async function load() {
     setLoading(true);
@@ -281,9 +313,13 @@ export default function GeoMapper({
   }
 
   async function generatePlots() {
+    if (calibrationDirty) {
+      notify("Calibration me unsaved changes hain. Pehle Save Calibration karein.");
+      return;
+    }
     setBusy(true);
     try {
-      const data = (await action({ action: "generate_plot_features" })) as Partial<GeoState> & { generated?: number };
+      const data = (await action({ action: "generate_plot_features", controlPoints })) as Partial<GeoState> & { generated?: number };
       notify(`${Number(data.generated || 0)} Plot Mapper polygons Geo me generate hue`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Geo plots generate nahi hue");
@@ -317,26 +353,36 @@ export default function GeoMapper({
   }
 
   async function importFile(file: File) {
+    if (file.size < 1 || file.size > 5 * 1024 * 1024) {
+      notify("Geo source file 5 MB se chhoti honi chahiye");
+      return;
+    }
     setBusy(true);
+    let saved = 0;
     try {
       const parsed = importedFeatures(file, await file.text());
       if (!parsed.length) throw new Error("File me supported Geo features nahi mile");
-      for (let index = 0; index < parsed.length; index += 80) {
-        await action(
-          { action: "import_features", features: parsed.slice(index, index + 80) },
-          false,
-        );
-      }
+
+      // Archive first so every live import has source provenance. Server SHA-256 dedupe
+      // makes retry safe; stable generated IDs make the same file re-import repairable.
       const form = new FormData();
       form.set("projectId", projectId);
       form.set("file", file);
       const archive = await fetch("/api/super-geo-mapper", { method: "POST", body: form });
       const archiveData = (await archive.json()) as { error?: string };
       if (!archive.ok) throw new Error(archiveData.error || "Source archive nahi hui");
+
+      for (let index = 0; index < parsed.length; index += 80) {
+        const chunk = parsed.slice(index, index + 80);
+        await action({ action: "import_features", features: chunk }, false);
+        saved += chunk.length;
+      }
       await load();
       notify(`${parsed.length} Geo features import hue aur original source archive ho gaya`);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Geo import fail hua");
+      await load().catch(() => undefined);
+      const message = error instanceof Error ? error.message : "Geo import fail hua";
+      notify(saved ? `${message}. ${saved} features save hue; same file dobara import karke safely repair karein.` : message);
     } finally {
       setBusy(false);
     }
@@ -357,7 +403,10 @@ export default function GeoMapper({
   async function publishGeo() {
     setBusy(true);
     try {
-      await action({ action: state.publish.publicEnabled ? "unpublish" : "publish" });
+      await action({
+        action: state.publish.publicEnabled ? "unpublish" : "publish",
+        expectedDraftRevision: state.publish.draftRevision,
+      });
       notify(state.publish.publicEnabled ? "Geo public flag off ho gaya" : "Geo snapshot publish ho gaya");
     } catch (error) {
       notify(error instanceof Error ? error.message : "Geo publish action fail hua");
@@ -484,8 +533,9 @@ export default function GeoMapper({
           </div>
           <div className={styles.actions}>
             <button className={styles.primary} onClick={saveControlPoints} disabled={busy}><Save /> Save Calibration</button>
-            <button onClick={generatePlots} disabled={busy || controlPoints.length < 4 || !state.plots.length}><MapPinned /> Generate Geo Plots</button>
+            <button onClick={generatePlots} disabled={busy || calibrationDirty || controlPoints.length < 4 || !state.plots.length}><MapPinned /> Generate Geo Plots</button>
           </div>
+          {calibrationDirty ? <p className={styles.inlineWarn}>Unsaved calibration changes hain. Generate se pehle Save Calibration karein.</p> : null}
         </div>
 
         <div className={styles.block}>

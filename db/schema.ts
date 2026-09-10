@@ -36,3 +36,34 @@ export const auditLogs = sqliteTable("audit_logs", {
   id:text("id").primaryKey(), actorId:text("actor_id").notNull(), actorEmail:text("actor_email").notNull(),
   action:text("action").notNull(), projectId:text("project_id"), targetId:text("target_id"), details:text("details").notNull().default("{}"), createdAt:text("created_at").notNull()
 },table=>({projectCreatedIndex:index("idx_audit_logs_project_created").on(table.projectId,table.createdAt)}));
+
+// Mirrors the already-applied additive migration 0009_rekixo_geo_mapper.sql.
+// No core project/plot table is altered by these declarations.
+export const geoProjectSettings = sqliteTable("geo_project_settings", {
+  projectId:text("project_id").primaryKey(),
+  draftRevision:integer("draft_revision").notNull().default(0),
+  publishedRevision:integer("published_revision").notNull().default(0),
+  publicEnabled:integer("public_enabled",{mode:"boolean"}).notNull().default(false),
+  publishedAt:text("published_at"),
+  updatedAt:text("updated_at").notNull()
+});
+export const geoControlPoints = sqliteTable("geo_control_points", {
+  projectId:text("project_id").notNull(), id:text("id").notNull(),
+  sourceX:real("source_x").notNull(), sourceY:real("source_y").notNull(),
+  longitude:real("longitude").notNull(), latitude:real("latitude").notNull(),
+  label:text("label").notNull().default(""), sortOrder:integer("sort_order").notNull().default(0),
+  updatedAt:text("updated_at").notNull()
+},table=>({pk:primaryKey({columns:[table.projectId,table.id]}),projectSortIndex:index("idx_geo_control_points_project_sort").on(table.projectId,table.sortOrder)}));
+export const geoFeatures = sqliteTable("geo_features", {
+  projectId:text("project_id").notNull(), id:text("id").notNull(), name:text("name").notNull().default(""),
+  layer:text("layer").notNull().default("default"), geometryType:text("geometry_type").notNull(), geometry:text("geometry").notNull(),
+  linkedPlotId:text("linked_plot_id"), source:text("source").notNull().default("manual"), properties:text("properties").notNull().default("{}"),
+  updatedAt:text("updated_at").notNull()
+},table=>({pk:primaryKey({columns:[table.projectId,table.id]}),projectLayerIndex:index("idx_geo_features_project_layer").on(table.projectId,table.layer,table.name),projectPlotIndex:index("idx_geo_features_project_plot").on(table.projectId,table.linkedPlotId)}));
+export const geoSources = sqliteTable("geo_sources", {
+  projectId:text("project_id").notNull(), id:text("id").notNull(), filename:text("filename").notNull(), contentType:text("content_type").notNull(),
+  sizeBytes:integer("size_bytes").notNull(), sha256:text("sha256").notNull(), objectKey:text("object_key").notNull(), createdAt:text("created_at").notNull()
+},table=>({pk:primaryKey({columns:[table.projectId,table.id]}),projectCreatedIndex:index("idx_geo_sources_project_created").on(table.projectId,table.createdAt)}));
+export const geoVersions = sqliteTable("geo_versions", {
+  projectId:text("project_id").notNull(), version:integer("version").notNull(), snapshot:text("snapshot").notNull(), createdAt:text("created_at").notNull()
+},table=>({pk:primaryKey({columns:[table.projectId,table.version]}),projectCreatedIndex:index("idx_geo_versions_project_created").on(table.projectId,table.createdAt)}));

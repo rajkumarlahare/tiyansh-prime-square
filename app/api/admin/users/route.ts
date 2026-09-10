@@ -15,6 +15,7 @@ const validHost=(host:string|null)=>!host||hostPattern.test(host);
 const slugify=(value:string)=>value.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"project";
 const projectBrand=(value:string)=>{const clean=value.replace(/[—–-].*$/g,"").trim()||value.trim(),words=clean.split(/\s+/).filter(Boolean),short=(words.length>1?words.map(word=>word[0]).join(""):clean.slice(0,3)).replace(/[^a-z0-9]/gi,"").toUpperCase().slice(0,4)||"PRJ";return {brandName:clean.toUpperCase().slice(0,50),brandShort:short}};
 const clientAdminUrl=(slug="",adminHost?:string|null)=>slug?currentProjectLinks(slug,null,adminHost).adminUrl:`https://${clientFallbackHost()}/admin/login`;
+const deleteGeoProjectData=async(projectId:string)=>{try{await env.DB.batch([env.DB.prepare("DELETE FROM geo_versions WHERE project_id=?").bind(projectId),env.DB.prepare("DELETE FROM geo_sources WHERE project_id=?").bind(projectId),env.DB.prepare("DELETE FROM geo_features WHERE project_id=?").bind(projectId),env.DB.prepare("DELETE FROM geo_control_points WHERE project_id=?").bind(projectId),env.DB.prepare("DELETE FROM geo_project_settings WHERE project_id=?").bind(projectId)])}catch(error){if(error instanceof Error&&/no such table:\\s*geo_/i.test(error.message))return;throw error}};
 
 export async function GET(){
   const actor=await requireSuperAdmin();if(!actor)return unauthorized();
@@ -60,6 +61,7 @@ export async function DELETE(request:Request){
   const count=await env.DB.prepare("SELECT COUNT(*) AS total FROM admin_users WHERE project_id=?").bind(current.projectId).first<{total:number}>();
   if(Number(count?.total||0)>1){await env.DB.prepare("DELETE FROM admin_users WHERE id=?").bind(id).run();await writeAudit(actor,"client.admin_removed",current.projectId,id);return Response.json({ok:true,projectDeleted:false})}
   let cursor:string|undefined;do{const objects=await env.BUCKET.list({prefix:`projects/${current.projectId}/`,cursor});if(objects.objects.length)await Promise.all(objects.objects.map(object=>env.BUCKET.delete(object.key)));cursor=objects.truncated?objects.cursor:undefined}while(cursor);
+  await deleteGeoProjectData(current.projectId);
   await env.DB.batch([env.DB.prepare("DELETE FROM gallery WHERE project_id=?").bind(current.projectId),env.DB.prepare("DELETE FROM plots WHERE project_id=?").bind(current.projectId),env.DB.prepare("DELETE FROM settings WHERE project_id=?").bind(current.projectId),env.DB.prepare("DELETE FROM project_domains WHERE project_id=?").bind(current.projectId),env.DB.prepare("DELETE FROM admin_users WHERE project_id=?").bind(current.projectId),env.DB.prepare("UPDATE projects SET status='deleted',public_host=NULL,admin_host=NULL,updated_at=? WHERE id=?").bind(new Date().toISOString(),current.projectId)]);
   await writeAudit(actor,"client.project_deleted",current.projectId,id);return Response.json({ok:true,projectDeleted:true});
 }

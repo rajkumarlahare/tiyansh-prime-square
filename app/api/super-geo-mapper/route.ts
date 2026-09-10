@@ -92,6 +92,22 @@ async function loadControlPoints(projectId: string) {
   }));
 }
 
+function sameControlPoints(a: GeoControlPoint[], b: GeoControlPoint[]) {
+  if (a.length !== b.length) return false;
+  return a.every((point, index) => {
+    const other = b[index];
+    return Boolean(
+      other &&
+        point.id === other.id &&
+        point.source[0] === other.source[0] &&
+        point.source[1] === other.source[1] &&
+        point.target[0] === other.target[0] &&
+        point.target[1] === other.target[1] &&
+        String(point.label || "") === String(other.label || ""),
+    );
+  });
+}
+
 async function loadFeatures(projectId: string) {
   const rows = await env.DB.prepare(
     "SELECT id,project_id AS projectId,name,layer,geometry_type AS geometryType,geometry,linked_plot_id AS linkedPlotId,source,properties,updated_at AS updatedAt FROM geo_features WHERE project_id=? ORDER BY layer,name,id",
@@ -194,10 +210,31 @@ function parsePlotPolygon(value: string): MapperPoint[] {
   return points.map((point) => [Number(point[0]), Number(point[1])] as MapperPoint);
 }
 
+async function assertLinkedPlotsExist(
+  projectId: string,
+  features: Array<ReturnType<typeof normalizeGeoFeature>>,
+) {
+  const linkedPlotIds = [...new Set(
+    features.map((feature) => feature.linkedPlotId).filter((value): value is string => Boolean(value)),
+  )];
+  if (!linkedPlotIds.length) return;
+  const placeholders = linkedPlotIds.map(() => "?").join(",");
+  const rows = await env.DB.prepare(
+    `SELECT id FROM plots WHERE project_id=? AND id IN (${placeholders})`,
+  )
+    .bind(projectId, ...linkedPlotIds)
+    .all<{ id: string }>();
+  const found = new Set(rows.results.map((row) => row.id));
+  const missing = linkedPlotIds.filter((id) => !found.has(id));
+  if (missing.length)
+    throw new Error(`Linked plot project me nahi mila: ${missing.slice(0, 5).join(", ")}`);
+}
+
 async function saveFeatureBatch(projectId: string, rawFeatures: unknown[], actor: Awaited<ReturnType<typeof requireSuperAdmin>>) {
   if (!rawFeatures.length || rawFeatures.length > 80)
     throw new Error("Ek request me 1 se 80 Geo features bhejein");
   const features = rawFeatures.map(normalizeGeoFeature);
+  await assertLinkedPlotsExist(projectId, features);
   const now = new Date().toISOString();
   await ensureProjectState(projectId, now);
   const statements = features.map((feature) => {
@@ -234,6 +271,12 @@ async function archiveSource(projectId: string, file: File, actor: NonNullable<A
   const buffer = await file.arrayBuffer();
   const hash = await crypto.subtle.digest("SHA-256", buffer);
   const sha256 = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const existing = await env.DB.prepare(
+    "SELECT id,filename,size_bytes AS sizeBytes,sha256,created_at AS createdAt FROM geo_sources WHERE project_id=? AND sha256=? ORDER BY created_at LIMIT 1",
+  )
+    .bind(projectId, sha256)
+    .first<{ id: string; filename: string; sizeBytes: number; sha256: string; createdAt: string }>();
+  if (existing) return Response.json({ ok: true, source: existing, reused: true });
   const id = crypto.randomUUID();
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 180) || `source.${extension}`;
   const objectKey = `projects/${projectId}/geo/sources/${id}/${safeName}`;
@@ -310,6 +353,7 @@ export async function POST(request: Request) {
     feature?: unknown;
     features?: unknown[];
     controlPoints?: unknown[];
+    expectedDraftRevision?: number;
     id?: string;
   };
   const projectId = String(body.projectId || "").trim();
@@ -373,7 +417,15 @@ export async function POST(request: Request) {
     }
 
     if (body.action === "generate_plot_features") {
+      const requestedControlPoints = Array.isArray(body.controlPoints)
+        ? body.controlPoints.map(cleanControlPoint)
+        : [];
       const controlPoints = await loadControlPoints(projectId);
+      if (!sameControlPoints(requestedControlPoints, controlPoints))
+        return Response.json(
+          { error: "Calibration badli hai. Save Calibration/Refresh karke phir Generate karein." },
+          { status: 409 },
+        );
       const calibration = solveGeoCalibration(controlPoints);
       const plotRows = await env.DB.prepare(
         "SELECT id,status,polygon FROM plots WHERE project_id=? AND TRIM(COALESCE(polygon,''))<>'' ORDER BY id",
@@ -389,7 +441,7 @@ export async function POST(request: Request) {
         layer: "plots",
         linkedPlotId: plot.id,
         source: "plot_mapper",
-        properties: { plotStatus: plot.status },
+        properties: {},
         geometry: {
           type: "Polygon" as const,
           coordinates: [mapNormalizedPolygonToGeo(calibration, parsePlotPolygon(plot.polygon))],
@@ -412,12 +464,30 @@ export async function POST(request: Request) {
         .bind(projectId)
         .first<{ draftRevision: number; publishedRevision: number; publicEnabled: number }>();
       const revision = Number(state?.draftRevision || 0);
+      const expectedRevision = Number(body.expectedDraftRevision);
+      if (!Number.isInteger(expectedRevision) || expectedRevision < 1)
+        return Response.json({ error: "Valid draft revision required" }, { status: 400 });
+      if (expectedRevision !== revision)
+        return Response.json(
+          { error: "Geo draft badal chuka hai. Refresh/review karke phir publish karein." },
+          { status: 409 },
+        );
       const features = await loadFeatures(projectId);
       if (!features.length || revision < 1)
         return Response.json({ error: "Publish se pehle kam se kam ek Geo feature save karein" }, { status: 400 });
       if (Number(state?.publishedRevision || 0) === revision && Boolean(state?.publicEnabled))
         return Response.json(await loadState(projectId));
       const controlPoints = await loadControlPoints(projectId);
+      const verifiedState = await env.DB.prepare(
+        "SELECT draft_revision AS draftRevision FROM geo_project_settings WHERE project_id=?",
+      )
+        .bind(projectId)
+        .first<{ draftRevision: number }>();
+      if (Number(verifiedState?.draftRevision || 0) !== revision)
+        return Response.json(
+          { error: "Geo draft publish ke dauran badal gaya. Refresh karke retry karein." },
+          { status: 409 },
+        );
       const snapshot = JSON.stringify({
         schemaVersion: 1,
         revision,
@@ -425,14 +495,23 @@ export async function POST(request: Request) {
         featureCollection: featuresToFeatureCollection(features),
         controlPoints,
       });
-      await env.DB.batch([
-        env.DB.prepare(
-          "INSERT INTO geo_versions (project_id,version,snapshot,created_at) VALUES (?,?,?,?) ON CONFLICT(project_id,version) DO UPDATE SET snapshot=excluded.snapshot,created_at=excluded.created_at",
-        ).bind(projectId, revision, snapshot, now),
-        env.DB.prepare(
-          "UPDATE geo_project_settings SET published_revision=?,public_enabled=1,published_at=?,updated_at=? WHERE project_id=?",
-        ).bind(revision, now, now, projectId),
-      ]);
+      // Published snapshots are append-only. Re-enabling the same revision reuses
+      // its original snapshot instead of overwriting historical evidence.
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO geo_versions (project_id,version,snapshot,created_at) VALUES (?,?,?,?)",
+      )
+        .bind(projectId, revision, snapshot, now)
+        .run();
+      const publishResult = await env.DB.prepare(
+        "UPDATE geo_project_settings SET published_revision=?,public_enabled=1,published_at=?,updated_at=? WHERE project_id=? AND draft_revision=?",
+      )
+        .bind(revision, now, now, projectId, revision)
+        .run();
+      if (Number(publishResult.meta.changes || 0) !== 1)
+        return Response.json(
+          { error: "Geo draft publish se pehle badal gaya. Refresh karke retry karein." },
+          { status: 409 },
+        );
       await writeAudit(actor, "geo.published", projectId, String(revision), {
         featureCount: features.length,
       });
