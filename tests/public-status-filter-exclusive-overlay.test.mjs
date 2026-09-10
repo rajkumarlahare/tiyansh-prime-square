@@ -12,19 +12,27 @@ test("Available / Booked / Sold filters force-hide every non-matching 2D overlay
   );
 });
 
-test("exclusive filter rule cannot be overridden by the later all-status !important palette", () => {
+test("exclusive filter rule cannot be overridden by the all-status !important palette", () => {
   assert.match(
     html,
-    /\.show-all \.plot\[data-status="available"\]\{fill:rgba\(32,217,120,\.24\)!important;stroke:rgba\(32,217,120,\.86\)!important\}/,
+    /\.show-all\.status-filter-available \.plot:not\(\[data-status="available"\]\),\.show-all\.status-filter-booked \.plot:not\(\[data-status="booked"\]\),\.show-all\.status-filter-sold \.plot:not\(\[data-status="sold"\]\)\{fill:rgba\(0,0,0,0\)!important;stroke:transparent!important;filter:none!important\}/,
   );
   assert.match(
     html,
-    /\.show-all \.plot\[data-status="booked"\]\{fill:rgba\(246,185,27,\.31\)!important;stroke:rgba\(246,185,27,\.92\)!important\}/,
+    /\.show-all \.plot\[data-status="available"\]\{fill:rgba\(var\(--status-overlay-available-rgb\),\.24\)!important;stroke:rgba\(var\(--status-overlay-available-rgb\),\.86\)!important\}/,
   );
   assert.match(
     html,
-    /\.show-all \.plot\[data-status="sold"\]\{fill:rgba\(239,51,78,\.34\)!important;stroke:rgba\(239,51,78,\.94\)!important\}/,
+    /\.show-all \.plot\[data-status="booked"\]\{fill:rgba\(var\(--status-overlay-booked-rgb\),\.31\)!important;stroke:rgba\(var\(--status-overlay-booked-rgb\),\.92\)!important\}/,
   );
+  assert.match(
+    html,
+    /\.show-all \.plot\[data-status="sold"\]\{fill:rgba\(var\(--status-overlay-sold-rgb\),\.34\)!important;stroke:rgba\(var\(--status-overlay-sold-rgb\),\.94\)!important\}/,
+  );
+  // The exclusive selector has an additional status-filter class and therefore
+  // remains more specific than the generic all-status selector; both still use
+  // !important exactly as production requires.
+  assert.match(html, /\.show-all\.status-filter-available \.plot:not/);
 });
 
 test("single-select status behavior remains unchanged", () => {
