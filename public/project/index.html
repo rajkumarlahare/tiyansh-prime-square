@@ -334,6 +334,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
 .three-label-layer{position:absolute;inset:0;z-index:4;overflow:hidden;pointer-events:none;display:none}
 .three-label-layer.visible{display:block}
 .three-plot-label{position:absolute;left:0;top:0;min-width:22px;height:22px;padding:0 5px;display:grid;place-items:center;border:1.5px solid currentColor;border-radius:6px;background:rgba(4,10,20,.90);color:#fff;font-size:10px;font-weight:950;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.62);transform:translate(-50%,-50%);white-space:nowrap;will-change:transform}
+.three-plot-label[hidden]{display:none!important}
 .three-plot-label.available{border-color:var(--status-available)}
 .three-plot-label.booked{border-color:var(--status-booked)}
 .three-plot-label.sold{border-color:var(--status-sold)}
