@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ExternalLink,
+  Globe2,
   LogOut,
   MapPinned,
   ContactRound,
@@ -11,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import ClientAdminManager from "./client-admin-manager";
+import GeoMapper from "./geo-mapper";
 import PlotMapper from "./plot-mapper";
 import ProjectDomainManager from "./project-domain-manager";
 import ProjectPublishPanel from "./project-publish-panel";
@@ -24,7 +26,7 @@ type Project = {
   adminCount: number;
 };
 
-type WorkspaceTab = "clients" | "profile" | "mapper" | "share";
+type WorkspaceTab = "clients" | "profile" | "mapper" | "geo" | "share";
 
 export default function SuperAdminDashboard({
   user,
@@ -101,7 +103,9 @@ export default function SuperAdminDashboard({
         ? "Project Profile"
         : tab === "mapper"
           ? "Plot Mapper Engine"
-          : "Share Preview Builder";
+          : tab === "geo"
+            ? "Geo Mapper"
+            : "Share Preview Builder";
   const subtitle =
     tab === "clients"
       ? "Create projects, assign client access and manage domains."
@@ -109,7 +113,9 @@ export default function SuperAdminDashboard({
         ? "One canonical contact profile — Super Admin, Client Admin aur public site sab isi data ko use karte hain."
         : tab === "mapper"
           ? "Company masterplan से client website के clickable plots तैयार करें।"
-          : "Har project ka branded WhatsApp / social link preview ek jagah se manage karein.";
+          : tab === "geo"
+            ? "Project boundaries, GPS control points aur GIS exchange data ko isolated Geo workspace me manage karein."
+            : "Har project ka branded WhatsApp / social link preview ek jagah se manage karein.";
 
   return (
     <div className="super-shell">
@@ -161,6 +167,12 @@ export default function SuperAdminDashboard({
             <MapPinned /> Plot Mapper
           </button>
           <button
+            className={tab === "geo" ? "active" : ""}
+            onClick={() => setTab("geo")}
+          >
+            <Globe2 /> Geo Mapper
+          </button>
+          <button
             className={tab === "share" ? "active" : ""}
             onClick={() => setTab("share")}
           >
@@ -194,6 +206,8 @@ export default function SuperAdminDashboard({
                 <PlotMapper key={projectId} projectId={projectId} notify={notify} />
                 <ProjectPublishPanel projectId={projectId} notify={notify} />
               </>
+            ) : tab === "geo" ? (
+              <GeoMapper key={projectId} projectId={projectId} notify={notify} />
             ) : (
               <>
                 <ProjectShareManager
