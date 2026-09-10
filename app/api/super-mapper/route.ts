@@ -5,6 +5,19 @@ import { parseCadGeometry } from "../../cad-import";
 import { cleanPlotId, type HomographyPair } from "../../mapper-geometry";
 import { parsePlotSheetText } from "../../plot-sheet";
 
+const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
+
+function imageUploadLooksValid(file: File) {
+  const type = String(file.type || "").toLowerCase();
+  if (IMAGE_MIME_TYPES.has(type)) return true;
+  const extension = file.name.toLowerCase().split(".").pop() || "";
+  return (
+    IMAGE_EXTENSIONS.has(extension) &&
+    (!type || type === "image/jpg" || type === "application/octet-stream")
+  );
+}
+
 const denied = () =>
   Response.json({ error: "Super Admin access required" }, { status: 403 });
 const COMPLETED_PROJECT_ID = "tiyansh-prime-square";
@@ -263,7 +276,7 @@ export async function POST(request: Request) {
 
     const extension = file.name.toLowerCase().split(".").pop() || "";
     const valid =
-      (kind === "masterplan" && ["image/jpeg", "image/png", "image/webp"].includes(file.type)) ||
+      (kind === "masterplan" && imageUploadLooksValid(file)) ||
       (kind === "logo" && ["image/jpeg", "image/png", "image/webp"].includes(file.type)) ||
       (kind === "sourcePdf" && (file.type === "application/pdf" || extension === "pdf")) ||
       (kind === "sourceCad" && ["dwg", "dxf"].includes(extension)) ||
@@ -319,15 +332,14 @@ export async function POST(request: Request) {
       }
       const originalFile = form.get("originalFile");
       const publicFile = form.get("publicFile");
-      const imageTypes = ["image/jpeg", "image/png", "image/webp"];
       if (
         originalFile instanceof File &&
-        (!imageTypes.includes(originalFile.type) || originalFile.size > 40 * 1024 * 1024)
+        (!imageUploadLooksValid(originalFile) || originalFile.size > 40 * 1024 * 1024)
       )
         return Response.json({ error: "Original masterplan invalid hai" }, { status: 400 });
       if (
         publicFile instanceof File &&
-        (!imageTypes.includes(publicFile.type) || publicFile.size > 4 * 1024 * 1024)
+        (!imageUploadLooksValid(publicFile) || publicFile.size > 4 * 1024 * 1024)
       )
         return Response.json({ error: "Public masterplan invalid hai" }, { status: 400 });
 
