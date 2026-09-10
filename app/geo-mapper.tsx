@@ -14,6 +14,7 @@ import {
   Upload,
 } from "lucide-react";
 import type { GeoGeometry } from "./geo-model";
+import GeoVisualCalibration from "./geo-visual-calibration";
 import styles from "./geo-mapper.module.css";
 
 type ControlPoint = {
@@ -518,6 +519,13 @@ export default function GeoMapper({
       <div className={styles.grid}>
         <div className={styles.block}>
           <div className={styles.blockHead}><div><h3>Masterplan → WGS84 calibration</h3><p>Source X/Y normalized 0..1; target longitude/latitude real GPS coordinates.</p></div><button onClick={() => setControlPoints((items) => [...items, { id: crypto.randomUUID(), source: [0.5, 0.5], target: [0, 0], label: "" }])} disabled={controlPoints.length >= 12 || busy}><Plus /> Point</button></div>
+          <GeoVisualCalibration
+            projectId={projectId}
+            controlPoints={controlPoints}
+            onChange={setControlPoints}
+            disabled={busy}
+            notify={notify}
+          />
           <div className={styles.controlList}>
             {controlPoints.map((point, index) => (
               <div className={styles.controlRow} key={point.id}>
