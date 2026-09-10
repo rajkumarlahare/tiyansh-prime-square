@@ -56,7 +56,7 @@ async function publishState(projectId: string) {
       .bind(projectId)
       .all<{ id: string; polygon: string }>(),
     env.DB.prepare(
-      "SELECT key,value FROM settings WHERE project_id=? AND key IN ('masterplanName','mapWidth','mapHeight','shareTitle','shareDescription','shareImage','location','address','phone1')",
+      "SELECT key,value FROM settings WHERE project_id=? AND key IN ('masterplanName','mapWidth','mapHeight','shareTitle','shareDescription','shareImage','location','address','phone1','geoLabMode')",
     )
       .bind(projectId)
       .all<{ key: string; value: string }>(),
@@ -71,9 +71,11 @@ async function publishState(projectId: string) {
     (plot) => Boolean(plot.polygon) && !validPolygon(plot.polygon),
   ).length;
   const legacy = projectId === LEGACY_PROJECT;
+  const geoLab = settings.geoLabMode === "1";
   const reasons: string[] = [];
 
   if (!legacy) {
+    if (geoLab) reasons.push("Geo Lab project public publish ke liye locked hai");
     if (!settings.masterplanName) reasons.push("Masterplan image upload required");
     if (!settings.mapWidth || !settings.mapHeight) reasons.push("Masterplan dimensions missing");
     if (!settings.shareTitle) reasons.push("Share title required");
@@ -112,6 +114,7 @@ async function publishState(projectId: string) {
     primaryAdminDomain: primaryAdminDomain || project.adminHost,
     ...links,
     legacy,
+    geoLab,
   };
 }
 
@@ -145,6 +148,11 @@ export async function POST(request: Request) {
 
   const now = new Date().toISOString();
   if (action === "publish") {
+    if (state.geoLab)
+      return Response.json(
+        { error: "Geo Lab project ko public publish nahi kiya ja sakta" },
+        { status: 409 },
+      );
     if (!state.ready)
       return Response.json(
         { error: "Project publish-ready nahi hai", reasons: state.reasons },

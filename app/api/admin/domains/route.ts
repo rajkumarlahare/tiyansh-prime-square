@@ -22,6 +22,15 @@ import {
 import { currentProjectLinks } from "../../../project-links";
 
 const denied = () => Response.json({ error: "Super Admin access required" }, { status: 403 });
+async function isGeoLab(projectId: string) {
+  return Boolean(
+    await env.DB.prepare(
+      "SELECT 1 FROM settings WHERE project_id=? AND key='geoLabMode' AND value='1' LIMIT 1",
+    )
+      .bind(projectId)
+      .first(),
+  );
+}
 
 type DomainRow = {
   host: string;
@@ -141,6 +150,8 @@ export async function POST(request: Request) {
     .bind(projectId)
     .first<{ id: string }>();
   if (!project) return Response.json({ error: "Project nahi mila" }, { status: 404 });
+  if (await isGeoLab(projectId))
+    return Response.json({ error: "Geo Lab project par domain attach disabled hai" }, { status: 409 });
 
   try {
     await assertDomainAvailable(host, projectId);
@@ -214,6 +225,8 @@ export async function PATCH(request: Request) {
   }
 
   if (body.action === "set_primary") {
+    if (await isGeoLab(projectId))
+      return Response.json({ error: "Geo Lab project par primary domain disabled hai" }, { status: 409 });
     const kind = body.kind === "admin" ? "admin" : "public";
     const host = cleanHostInput(body.host);
     if (!host) return Response.json({ error: "Hostname required" }, { status: 400 });

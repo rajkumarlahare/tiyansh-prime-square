@@ -1,0 +1,22 @@
+.card { display: grid; gap: 14px; color: #eef4ff; border-color: #284266; background: #0b1728; }
+.header h2 { display: flex; align-items: center; gap: 9px; margin: 3px 0 6px; font-size: 18px; color: #f7f9ff; }
+.header h2 svg { width: 20px; height: 20px; color: #63e6ad; }
+.header span { color: #8f9db4; font-size: 13px; }
+.eyebrow { margin: 0; color: #8aa4ff; font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.safe, .blocked { display: grid; gap: 3px; border: 1px solid; border-radius: 11px; padding: 11px 13px; }
+.safe { border-color: #1f6f56; background: #0c3028; color: #a6f4d5; }
+.blocked { border-color: #7b5c21; background: #3a2a12; color: #ffd778; }
+.safe span, .blocked span { font-size: 12px; opacity: .86; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid label { display: grid; gap: 6px; }
+.grid label > span { color: #9eacc3; font-size: 12px; font-weight: 700; }
+.grid select, .grid input { width: 100%; min-width: 0; border: 1px solid #2d3d58; border-radius: 9px; background: #071221; color: #eef4ff; padding: 10px 11px; font: inherit; color-scheme: dark; }
+.grid input::placeholder { color: #687995; }
+.rules { border-left: 3px solid #4b67a1; padding: 2px 0 2px 11px; color: #9eacc3; font-size: 12px; line-height: 1.5; }
+.cloneButton { justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; border: 1px solid #238a65; border-radius: 9px; background: #176b4d; color: #fff; padding: 9px 13px; font: inherit; font-weight: 800; cursor: pointer; }
+.cloneButton svg { width: 17px; height: 17px; }
+.cloneButton:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 700px) {
+  .grid { grid-template-columns: 1fr; }
+  .cloneButton { width: 100%; justify-content: center; }
+}

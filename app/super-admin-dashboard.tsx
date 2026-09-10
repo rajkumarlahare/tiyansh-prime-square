@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import ClientAdminManager from "./client-admin-manager";
+import GeoLabClone from "./geo-lab-clone";
 import GeoMapper from "./geo-mapper";
 import PlotMapper from "./plot-mapper";
 import ProjectDomainManager from "./project-domain-manager";
@@ -207,7 +208,15 @@ export default function SuperAdminDashboard({
                 <ProjectPublishPanel projectId={projectId} notify={notify} />
               </>
             ) : tab === "geo" ? (
-              <GeoMapper key={projectId} projectId={projectId} notify={notify} />
+              <>
+                <GeoLabClone
+                  key={`geo-lab:${projectId}`}
+                  projectId={projectId}
+                  projects={projects}
+                  notify={notify}
+                />
+                <GeoMapper key={projectId} projectId={projectId} notify={notify} />
+              </>
             ) : (
               <>
                 <ProjectShareManager
