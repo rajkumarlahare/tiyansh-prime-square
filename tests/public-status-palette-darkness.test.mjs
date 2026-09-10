@@ -5,19 +5,19 @@ import test from "node:test";
 const html = await readFile(new URL("../public/project/index.html", import.meta.url), "utf8");
 const three = await readFile(new URL("../public/project/three-view.js", import.meta.url), "utf8");
 
-test("2D customer-site overlay palette is exactly 40 percent darker", () => {
-  assert.match(html, /--status-overlay-available-rgb:19,130,72/);
-  assert.match(html, /--status-overlay-booked-rgb:148,111,16/);
-  assert.match(html, /--status-overlay-sold-rgb:143,31,47/);
+test("2D customer-site overlay palette is 20 percent darker for better visibility", () => {
+  assert.match(html, /--status-overlay-available-rgb:26,174,96/);
+  assert.match(html, /--status-overlay-booked-rgb:197,148,22/);
+  assert.match(html, /--status-overlay-sold-rgb:191,41,62/);
 
-  // Exact integer rounding of bright RGB * 0.60.
+  // Exact integer rounding of bright RGB * 0.80.
   assert.deepEqual(
     [
-      [Math.round(32 * .60), Math.round(217 * .60), Math.round(120 * .60)],
-      [Math.round(246 * .60), Math.round(185 * .60), Math.round(27 * .60)],
-      [Math.round(239 * .60), Math.round(51 * .60), Math.round(78 * .60)],
+      [Math.round(32 * .80), Math.round(217 * .80), Math.round(120 * .80)],
+      [Math.round(246 * .80), Math.round(185 * .80), Math.round(27 * .80)],
+      [Math.round(239 * .80), Math.round(51 * .80), Math.round(78 * .80)],
     ],
-    [[19,130,72],[148,111,16],[143,31,47]],
+    [[26,174,96],[197,148,22],[191,41,62]],
   );
 });
 
@@ -39,8 +39,8 @@ test("legend and 3D number-badge identity colors stay bright and readable", () =
   assert.match(html, /\.three-plot-label\.sold\{border-color:var\(--status-sold\)\}/);
 });
 
-test("3D plot surfaces use one explicit 0.60 RGB multiplier", () => {
-  assert.match(three, /const STATUS_OVERLAY_DARKEN=\.60/);
+test("3D plot surfaces use one explicit 0.80 RGB multiplier", () => {
+  assert.match(three, /const STATUS_OVERLAY_DARKEN=\.80/);
   assert.match(
     three,
     /const dimStatus=c=>\[c\[0\]\*STATUS_OVERLAY_DARKEN,c\[1\]\*STATUS_OVERLAY_DARKEN,c\[2\]\*STATUS_OVERLAY_DARKEN,c\[3\]\]/,

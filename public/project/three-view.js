@@ -7,7 +7,7 @@ function cameraMetrics(worldW,worldH){const diag=Math.max(.001,Math.hypot(worldW
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 // REKIXO_REFERENCE_STATUS_PARITY_V1
 const statusOf=p=>{const s=String(p?.status||'available').trim().toLowerCase();return s==='enquire'?'available':(s==='booked'?'booked':(s==='sold'?'sold':'available'))};
-const STATUS_OVERLAY_DARKEN=.60;
+const STATUS_OVERLAY_DARKEN=.80;
 const dimStatus=c=>[c[0]*STATUS_OVERLAY_DARKEN,c[1]*STATUS_OVERLAY_DARKEN,c[2]*STATUS_OVERLAY_DARKEN,c[3]];
 const statusPalette=st=>st==='sold'?{top:dimStatus([.94,.08,.15,.52]),side:dimStatus([.72,.035,.09,.76]),edge:dimStatus([1,.22,.30,.98])}:st==='booked'?{top:dimStatus([.98,.68,.04,.48]),side:dimStatus([.72,.46,.02,.74]),edge:dimStatus([1,.79,.20,.98])}:{top:dimStatus([.02,.82,.37,.46]),side:dimStatus([.01,.62,.27,.72]),edge:dimStatus([.17,1,.55,.98])};
 function mul4v(m,v){return[m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3],m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3],m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3],m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]]}
