@@ -36,7 +36,7 @@ export default function ProjectPublishPanel({
   notify: (message: string) => void;
 }) {
   const [state, setState] = useState<State>({});
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<"publish" | "unpublish" | null>(null);
 
   async function load() {
     const response = await fetch(
@@ -84,15 +84,19 @@ export default function ProjectPublishPanel({
   }, [projectId, notify]);
 
   async function action(next: "publish" | "unpublish") {
+    const republishing =
+      next === "publish" && state.publicStatus === "published";
     if (
       !confirm(
         next === "publish"
-          ? "Project ko public website par publish karein?"
+          ? republishing
+            ? "Latest project changes ko public website par publish karein?"
+            : "Project ko public website par publish karein?"
           : "Public website ko draft mode me le jayein?",
       )
     )
       return;
-    setBusy(true);
+    setBusyAction(next);
     try {
       const response = await fetch("/api/admin/publish", {
         method: "POST",
@@ -109,13 +113,15 @@ export default function ProjectPublishPanel({
       setState(data);
       notify(
         next === "publish"
-          ? "Project LIVE publish ho gaya"
+          ? republishing
+            ? "Latest changes LIVE publish ho gaye"
+            : "Project LIVE publish ho gaya"
           : "Project draft mode me hai",
       );
     } catch (error) {
       notify(error instanceof Error ? error.message : "Publish update nahi hua");
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
@@ -181,17 +187,25 @@ export default function ProjectPublishPanel({
             <ExternalLink /> Client admin
           </a>
         ) : null}
-        {!published ? (
+        {!published || !state.legacy ? (
           <button
             className="primary"
-            disabled={busy || !state.ready}
+            disabled={Boolean(busyAction) || !state.ready}
             onClick={() => action("publish")}
           >
-            <CheckCircle2 /> {busy ? "Publishing…" : "Publish Website"}
+            <CheckCircle2 />{" "}
+            {busyAction === "publish"
+              ? published
+                ? "Publishing update…"
+                : "Publishing…"
+              : published
+                ? "Publish Update"
+                : "Publish Website"}
           </button>
-        ) : !state.legacy ? (
-          <button disabled={busy} onClick={() => action("unpublish")}>
-            {busy ? "Updating…" : "Unpublish"}
+        ) : null}
+        {published && !state.legacy ? (
+          <button disabled={Boolean(busyAction)} onClick={() => action("unpublish")}>
+            {busyAction === "unpublish" ? "Updating…" : "Unpublish"}
           </button>
         ) : null}
       </div>
