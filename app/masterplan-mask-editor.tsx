@@ -31,8 +31,9 @@ const ZOOM_MAX = 8;
 const ZOOM_STEP = 0.5;
 const HISTORY_LIMIT = 6;
 const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
-const WAVE_AMPLITUDE_SCALE = 0.3;
-const ZIGZAG_AMPLITUDE_SCALE = 0.3;
+const WAVE_AMPLITUDE_SCALE = 0.255;
+const ZIGZAG_AMPLITUDE_SCALE = 0.255;
+const DECORATIVE_CUT_WIDTH_SCALE = 1.8;
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -251,12 +252,12 @@ export default function MasterplanMaskEditor({
     };
   }
 
-  function dab(point: Point, restore: boolean) {
+  function dab(point: Point, restore: boolean, size = brushSize) {
     const canvas = canvasRef.current;
     const original = originalRef.current;
     const context = canvas?.getContext("2d", { willReadFrequently: true });
     if (!canvas || !original || !context) return;
-    const radius = Math.max(2, brushSize / 2);
+    const radius = Math.max(2, size / 2);
 
     if (restore) {
       context.save();
@@ -277,9 +278,9 @@ export default function MasterplanMaskEditor({
     context.restore();
   }
 
-  function stroke(from: Point, to: Point, restore: boolean) {
+  function stroke(from: Point, to: Point, restore: boolean, size = brushSize) {
     const distance = Math.hypot(to.x - from.x, to.y - from.y);
-    const spacing = Math.max(1, brushSize * 0.22);
+    const spacing = Math.max(1, size * 0.22);
     const steps = Math.max(1, Math.ceil(distance / spacing));
     for (let index = 0; index <= steps; index += 1) {
       const t = index / steps;
@@ -289,15 +290,16 @@ export default function MasterplanMaskEditor({
           y: from.y + (to.y - from.y) * t,
         },
         restore,
+        size,
       );
     }
   }
 
-  function drawPointSeries(points: Point[], restore: boolean) {
+  function drawPointSeries(points: Point[], restore: boolean, size = brushSize) {
     if (!points.length) return;
-    dab(points[0], restore);
+    dab(points[0], restore, size);
     for (let index = 1; index < points.length; index += 1) {
-      stroke(points[index - 1], points[index], restore);
+      stroke(points[index - 1], points[index], restore, size);
     }
   }
 
@@ -368,8 +370,16 @@ export default function MasterplanMaskEditor({
     return buildZigzagPoints(start, end);
   }
 
+  function decorativeCutSize(shapeTool: ShapeTool) {
+    return shapeTool === "line" ? brushSize : brushSize * DECORATIVE_CUT_WIDTH_SCALE;
+  }
+
   function applyDecorativeCut(shapeTool: ShapeTool, start: Point, end: Point) {
-    drawPointSeries(buildDecorativePoints(shapeTool, start, end), false);
+    drawPointSeries(
+      buildDecorativePoints(shapeTool, start, end),
+      false,
+      decorativeCutSize(shapeTool),
+    );
   }
 
   const shapePreviewPoints = useMemo(() => {
@@ -660,6 +670,11 @@ export default function MasterplanMaskEditor({
           : "";
 
   const shapePolyline = shapePreviewPoints.map((point) => `${point.x},${point.y}`).join(" ");
+  const shapePreviewWidth = shapeDraft
+    ? shapeDraft.tool === "line"
+      ? Math.max(3, brushSize * 0.34)
+      : decorativeCutSize(shapeDraft.tool)
+    : brushSize;
 
   return (
     <section className={styles.editor}>
@@ -922,10 +937,10 @@ export default function MasterplanMaskEditor({
                 points={shapePolyline}
                 fill="none"
                 stroke="#ff5b00"
-                strokeWidth={Math.max(3, brushSize * 0.34)}
+                strokeWidth={shapePreviewWidth}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
+                vectorEffect={shapeDraft.tool === "line" ? "non-scaling-stroke" : undefined}
               />
               <circle
                 cx={shapeDraft.start.x}

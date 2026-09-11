@@ -32,10 +32,21 @@ test("existing safety guarantees remain intact", () => {
 
 
 test("wave and zigzag amplitudes are reduced for tighter decorative cuts", () => {
-  assert.match(editor, /const WAVE_AMPLITUDE_SCALE = 0\.3;/);
-  assert.match(editor, /const ZIGZAG_AMPLITUDE_SCALE = 0\.3;/);
+  assert.match(editor, /const WAVE_AMPLITUDE_SCALE = 0\.255;/);
+  assert.match(editor, /const ZIGZAG_AMPLITUDE_SCALE = 0\.255;/);
   assert.match(editor, /brushSize \* 0\.9 \* WAVE_AMPLITUDE_SCALE/);
   assert.match(editor, /distance \* 0\.1 \* WAVE_AMPLITUDE_SCALE/);
   assert.match(editor, /brushSize \* 0\.85 \* ZIGZAG_AMPLITUDE_SCALE/);
   assert.match(editor, /distance \* 0\.09 \* ZIGZAG_AMPLITUDE_SCALE/);
+});
+
+
+test("wave and zigzag final cut thickness matches their live preview while straight stays unchanged", () => {
+  assert.match(editor, /const DECORATIVE_CUT_WIDTH_SCALE = 1\.8;/);
+  assert.match(editor, /function decorativeCutSize\(shapeTool: ShapeTool\)/);
+  assert.match(editor, /shapeTool === "line" \? brushSize : brushSize \* DECORATIVE_CUT_WIDTH_SCALE/);
+  assert.match(editor, /drawPointSeries\([\s\S]*decorativeCutSize\(shapeTool\)/);
+  assert.match(editor, /const shapePreviewWidth = shapeDraft/);
+  assert.match(editor, /strokeWidth=\{shapePreviewWidth\}/);
+  assert.match(editor, /vectorEffect=\{shapeDraft\.tool === "line" \? "non-scaling-stroke" : undefined\}/);
 });
