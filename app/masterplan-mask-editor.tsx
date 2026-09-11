@@ -21,8 +21,10 @@ import {
 } from "lucide-react";
 import styles from "./masterplan-mask-editor.module.css";
 
-type Tool = "erase" | "restore" | "keep" | "pan";
+type Tool = "erase" | "restore" | "keep" | "line" | "wave" | "zigzag" | "pan";
+type ShapeTool = "line" | "wave" | "zigzag";
 type Point = { x: number; y: number };
+type ShapeDraft = { tool: ShapeTool; start: Point; current: Point };
 
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 8;
@@ -50,6 +52,14 @@ function safeBaseName(value: string) {
   return clean || "masterplan";
 }
 
+function isShapeTool(tool: Tool): tool is ShapeTool {
+  return tool === "line" || tool === "wave" || tool === "zigzag";
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
 export default function MasterplanMaskEditor({
   sourceUrl,
   disabled,
@@ -66,6 +76,7 @@ export default function MasterplanMaskEditor({
   const historyRef = useRef<ImageData[]>([]);
   const redoRef = useRef<ImageData[]>([]);
   const drawingRef = useRef<{ pointerId: number; last: Point } | null>(null);
+  const shapeRef = useRef<{ pointerId: number; tool: ShapeTool; start: Point } | null>(null);
   const panRef = useRef<{
     pointerId: number;
     startX: number;
@@ -86,6 +97,7 @@ export default function MasterplanMaskEditor({
   const [edited, setEdited] = useState(false);
   const [showBefore, setShowBefore] = useState(false);
   const [keepPoints, setKeepPoints] = useState<Point[]>([]);
+  const [shapeDraft, setShapeDraft] = useState<ShapeDraft | null>(null);
   const [displaySourceUrl, setDisplaySourceUrl] = useState(sourceUrl);
   const [sourceName, setSourceName] = useState("project-masterplan");
 
@@ -107,6 +119,13 @@ export default function MasterplanMaskEditor({
     if (!uploadUrlRef.current) return;
     URL.revokeObjectURL(uploadUrlRef.current);
     uploadUrlRef.current = null;
+  }
+
+  function clearDrafts() {
+    setKeepPoints([]);
+    setShapeDraft(null);
+    drawingRef.current = null;
+    shapeRef.current = null;
   }
 
   useEffect(() => {
@@ -165,7 +184,7 @@ export default function MasterplanMaskEditor({
       setReady(true);
       setEdited(false);
       setShowBefore(false);
-      setKeepPoints([]);
+      clearDrafts();
       setZoom(1);
       setPan({ x: 0, y: 0 });
       historyRef.current = [];
@@ -205,7 +224,7 @@ export default function MasterplanMaskEditor({
     redoRef.current.push(context.getImageData(0, 0, canvas.width, canvas.height));
     context.putImageData(previous, 0, 0);
     setEdited(true);
-    setKeepPoints([]);
+    clearDrafts();
   }
 
   function redo() {
@@ -216,7 +235,7 @@ export default function MasterplanMaskEditor({
     historyRef.current.push(context.getImageData(0, 0, canvas.width, canvas.height));
     context.putImageData(next, 0, 0);
     setEdited(true);
-    setKeepPoints([]);
+    clearDrafts();
   }
 
   function canvasPoint(event: ReactPointerEvent<HTMLCanvasElement>) {
@@ -225,8 +244,8 @@ export default function MasterplanMaskEditor({
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
     return {
-      x: Math.max(0, Math.min(canvas.width, ((event.clientX - rect.left) / rect.width) * canvas.width)),
-      y: Math.max(0, Math.min(canvas.height, ((event.clientY - rect.top) / rect.height) * canvas.height)),
+      x: clamp(((event.clientX - rect.left) / rect.width) * canvas.width, 0, canvas.width),
+      y: clamp(((event.clientY - rect.top) / rect.height) * canvas.height, 0, canvas.height),
     };
   }
 
@@ -272,6 +291,90 @@ export default function MasterplanMaskEditor({
     }
   }
 
+  function drawPointSeries(points: Point[], restore: boolean) {
+    if (!points.length) return;
+    dab(points[0], restore);
+    for (let index = 1; index < points.length; index += 1) {
+      stroke(points[index - 1], points[index], restore);
+    }
+  }
+
+  function buildStraightPoints(start: Point, end: Point) {
+    return [start, end];
+  }
+
+  function buildWavePoints(start: Point, end: Point) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 1) return [start, end];
+
+    const normal = { x: -dy / distance, y: dx / distance };
+    const cycles = Math.max(2, Math.round(distance / Math.max(brushSize * 3.4, 90)));
+    const amplitude = Math.max(brushSize * 0.9, Math.min(distance * 0.1, brushSize * 2.8));
+    const segments = Math.max(32, cycles * 16);
+    const points: Point[] = [];
+
+    for (let index = 0; index <= segments; index += 1) {
+      const t = index / segments;
+      const offset = Math.sin(t * Math.PI * 2 * cycles) * amplitude;
+      points.push({
+        x: start.x + dx * t + normal.x * offset,
+        y: start.y + dy * t + normal.y * offset,
+      });
+    }
+
+    return points;
+  }
+
+  function buildZigzagPoints(start: Point, end: Point) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 1) return [start, end];
+
+    const normal = { x: -dy / distance, y: dx / distance };
+    const teeth = Math.max(4, Math.round(distance / Math.max(brushSize * 1.7, 50)));
+    const amplitude = Math.max(brushSize * 0.85, Math.min(distance * 0.09, brushSize * 2.6));
+    const points: Point[] = [start];
+
+    for (let index = 1; index < teeth * 2; index += 1) {
+      const t = index / (teeth * 2);
+      const direction = index % 2 === 0 ? -1 : 1;
+      points.push({
+        x: start.x + dx * t + normal.x * amplitude * direction,
+        y: start.y + dy * t + normal.y * amplitude * direction,
+      });
+    }
+
+    points.push(end);
+    return points;
+  }
+
+  function buildDecorativePoints(shapeTool: ShapeTool, start: Point, end: Point) {
+    if (shapeTool === "line") return buildStraightPoints(start, end);
+    if (shapeTool === "wave") return buildWavePoints(start, end);
+    return buildZigzagPoints(start, end);
+  }
+
+  function applyDecorativeCut(shapeTool: ShapeTool, start: Point, end: Point) {
+    drawPointSeries(buildDecorativePoints(shapeTool, start, end), false);
+  }
+
+  const shapePreviewPoints = useMemo(() => {
+    if (!shapeDraft) return [] as Point[];
+    return buildDecorativePoints(shapeDraft.tool, shapeDraft.start, shapeDraft.current);
+  }, [shapeDraft, brushSize]);
+
+  function selectTool(next: Tool) {
+    setTool(next);
+    setShapeDraft(null);
+    shapeRef.current = null;
+    drawingRef.current = null;
+    if (next !== "keep") setKeepPoints([]);
+    if (next !== "pan" && zoom <= 1 && tool === "pan") setPan({ x: 0, y: 0 });
+  }
+
   function beginCanvasPointer(event: ReactPointerEvent<HTMLCanvasElement>) {
     if (disabled || busy || showBefore) return;
 
@@ -284,17 +387,36 @@ export default function MasterplanMaskEditor({
     }
 
     if (tool === "pan") return;
+
     const point = canvasPoint(event);
     if (!point) return;
+
     event.preventDefault();
-    snapshot();
     event.currentTarget.setPointerCapture(event.pointerId);
+
+    if (isShapeTool(tool)) {
+      shapeRef.current = { pointerId: event.pointerId, tool, start: point };
+      setShapeDraft({ tool, start: point, current: point });
+      return;
+    }
+
+    snapshot();
     drawingRef.current = { pointerId: event.pointerId, last: point };
     dab(point, tool === "restore");
     setEdited(true);
+    setShapeDraft(null);
   }
 
   function moveCanvasPointer(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const shapeGesture = shapeRef.current;
+    if (shapeGesture && shapeGesture.pointerId === event.pointerId) {
+      const point = canvasPoint(event);
+      if (!point) return;
+      event.preventDefault();
+      setShapeDraft({ tool: shapeGesture.tool, start: shapeGesture.start, current: point });
+      return;
+    }
+
     const gesture = drawingRef.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     const point = canvasPoint(event);
@@ -305,6 +427,27 @@ export default function MasterplanMaskEditor({
   }
 
   function endCanvasPointer(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const shapeGesture = shapeRef.current;
+    if (shapeGesture && shapeGesture.pointerId === event.pointerId) {
+      const point = canvasPoint(event) || shapeGesture.start;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      snapshot();
+      applyDecorativeCut(shapeGesture.tool, shapeGesture.start, point);
+      setEdited(true);
+      setShapeDraft(null);
+      shapeRef.current = null;
+      notify(
+        shapeGesture.tool === "line"
+          ? "Straight cut apply ho gaya"
+          : shapeGesture.tool === "wave"
+            ? "Wave cut apply ho gaya"
+            : "Zigzag cut apply ho gaya",
+      );
+      return;
+    }
+
     const gesture = drawingRef.current;
     if (!gesture || gesture.pointerId !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -370,7 +513,7 @@ export default function MasterplanMaskEditor({
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(original, 0, 0);
     setEdited(false);
-    setKeepPoints([]);
+    clearDrafts();
     releasePreviewUrl();
     onPreviewChange(null);
     notify("Original masterplan restore ho gaya");
@@ -487,6 +630,26 @@ export default function MasterplanMaskEditor({
     }
   }
 
+  const shapeGuideLabel =
+    tool === "line"
+      ? "Straight cut"
+      : tool === "wave"
+        ? "Wave cut"
+        : tool === "zigzag"
+          ? "Zigzag cut"
+          : "";
+
+  const shapeGuideText =
+    tool === "line"
+      ? "Start point touch karein, end point tak drag karein, release par seedhi cut line lagegi."
+      : tool === "wave"
+        ? "Start se end tak drag karein; release par snake / wave style boundary cut lagega."
+        : tool === "zigzag"
+          ? "Start se end tak drag karein; release par sharp zigzag design cut lagega."
+          : "";
+
+  const shapePolyline = shapePreviewPoints.map((point) => `${point.x},${point.y}`).join(" ");
+
   return (
     <section className={styles.editor}>
       <div className={styles.heading}>
@@ -517,7 +680,7 @@ export default function MasterplanMaskEditor({
           <button
             type="button"
             className={tool === "erase" ? styles.activeTool : ""}
-            onClick={() => setTool("erase")}
+            onClick={() => selectTool("erase")}
             disabled={disabled || busy || !ready}
           >
             <Eraser /> Cut brush
@@ -525,7 +688,7 @@ export default function MasterplanMaskEditor({
           <button
             type="button"
             className={tool === "restore" ? styles.activeTool : ""}
-            onClick={() => setTool("restore")}
+            onClick={() => selectTool("restore")}
             disabled={disabled || busy || !ready}
           >
             <RotateCcw /> Restore brush
@@ -533,15 +696,39 @@ export default function MasterplanMaskEditor({
           <button
             type="button"
             className={tool === "keep" ? styles.activeTool : ""}
-            onClick={() => setTool("keep")}
+            onClick={() => selectTool("keep")}
             disabled={disabled || busy || !ready}
           >
             <Scissors /> Keep polygon
           </button>
           <button
             type="button"
+            className={tool === "line" ? styles.activeTool : ""}
+            onClick={() => selectTool("line")}
+            disabled={disabled || busy || !ready}
+          >
+            Straight cut
+          </button>
+          <button
+            type="button"
+            className={tool === "wave" ? styles.activeTool : ""}
+            onClick={() => selectTool("wave")}
+            disabled={disabled || busy || !ready}
+          >
+            Wave cut
+          </button>
+          <button
+            type="button"
+            className={tool === "zigzag" ? styles.activeTool : ""}
+            onClick={() => selectTool("zigzag")}
+            disabled={disabled || busy || !ready}
+          >
+            Zigzag cut
+          </button>
+          <button
+            type="button"
             className={tool === "pan" ? styles.activeTool : ""}
-            onClick={() => setTool("pan")}
+            onClick={() => selectTool("pan")}
             disabled={disabled || busy || !ready || zoom <= 1}
           >
             <Move /> Pan
@@ -579,7 +766,7 @@ export default function MasterplanMaskEditor({
 
         <div className={styles.adjustRow}>
           <label>
-            <span>Brush {brushSize}px</span>
+            <span>Tool size {brushSize}px</span>
             <input
               type="range"
               min="8"
@@ -646,6 +833,13 @@ export default function MasterplanMaskEditor({
         </div>
       ) : null}
 
+      {isShapeTool(tool) ? (
+        <div className={styles.shapeBar}>
+          <strong>{shapeGuideLabel}</strong>
+          <span>{shapeGuideText}</span>
+        </div>
+      ) : null}
+
       <div
         className={`${styles.viewport} ${tool === "pan" ? styles.viewportPan : ""}`}
         onPointerDown={beginPan}
@@ -676,6 +870,7 @@ export default function MasterplanMaskEditor({
               draggable={false}
             />
           ) : null}
+
           {ready && keepPoints.length ? (
             <svg
               className={styles.keepOverlay}
@@ -702,6 +897,43 @@ export default function MasterplanMaskEditor({
                   vectorEffect="non-scaling-stroke"
                 />
               ))}
+            </svg>
+          ) : null}
+
+          {ready && shapeDraft && shapePreviewPoints.length ? (
+            <svg
+              className={styles.shapeOverlay}
+              viewBox={`0 0 ${lockedSize.width} ${lockedSize.height}`}
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <polyline
+                points={shapePolyline}
+                fill="none"
+                stroke="#ff5b00"
+                strokeWidth={Math.max(3, brushSize * 0.34)}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle
+                cx={shapeDraft.start.x}
+                cy={shapeDraft.start.y}
+                r={Math.max(5, brushSize * 0.18)}
+                fill="#ffcb45"
+                stroke="#071221"
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle
+                cx={shapeDraft.current.x}
+                cy={shapeDraft.current.y}
+                r={Math.max(5, brushSize * 0.18)}
+                fill="#8bf0c5"
+                stroke="#071221"
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+              />
             </svg>
           ) : null}
         </div>

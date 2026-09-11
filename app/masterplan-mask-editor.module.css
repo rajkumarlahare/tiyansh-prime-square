@@ -130,7 +130,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: min(280px, 100%);
+  min-width: min(320px, 100%);
   color: #aebbd0;
   font-size: 10px;
   font-weight: 700;
@@ -170,6 +170,23 @@
 }
 .keepBar span {
   color: #cfc6ff;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.shapeBar {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #91510d;
+  border-radius: 10px;
+  background: #2a1b09;
+  padding: 9px 10px;
+}
+.shapeBar strong {
+  color: #ffd08b;
+  font-size: 11px;
+}
+.shapeBar span {
+  color: #ffddb4;
   font-size: 10px;
   line-height: 1.45;
 }
@@ -228,7 +245,8 @@
   inset: 0;
   pointer-events: none;
 }
-.keepOverlay {
+.keepOverlay,
+.shapeOverlay {
   position: absolute;
   inset: 0;
   width: 100%;
