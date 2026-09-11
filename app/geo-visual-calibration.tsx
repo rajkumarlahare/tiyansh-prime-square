@@ -125,6 +125,7 @@ type GoogleOverlayView = {
 type GooglePolygon = {
   addListener(eventName: string, listener: (event: GoogleMapMouseEvent) => void): GoogleListener;
   setMap(map: GoogleMapInstance | null): void;
+  setPath(path: Array<{ lat: number; lng: number }>): void;
 };
 
 type GoogleInfoWindow = {
@@ -353,7 +354,11 @@ const [maskedMasterplanPreviewUrl, setMaskedMasterplanPreviewUrl] = useState<str
   const clickListenerRef = useRef<GoogleListener | null>(null);
   const circlesRef = useRef<GoogleCircle[]>([]);
   const masterplanOverlayRef = useRef<GoogleOverlayView | null>(null);
+  const masterplanOverlayDrawRef = useRef<(() => void) | null>(null);
   const mapPlotPolygonsRef = useRef<GooglePolygon[]>([]);
+  const mapPlotPolygonEntriesRef = useRef<
+    Array<{ polygon: GooglePolygon; rawPath: [number, number][] }>
+  >([]);
   const mapInfoWindowRef = useRef<GoogleInfoWindow | null>(null);
   const suppressNextMapClickRef = useRef(false);
   const activeIdRef = useRef("");
@@ -371,7 +376,24 @@ const fineAlignDragRef = useRef<{
   origin: GeoFineAlignment;
   metersPerPixel: number;
 } | null>(null);
+const fineAlignmentRef = useRef(fineAlignment);
+const previewAlignmentAnchorRef = useRef<[number, number] | null>(null);
+const overlayOpacityRef = useRef(overlayOpacity);
+const notifyRef = useRef(notify);
+const fineAlignDragFrameRef = useRef<number | null>(null);
+const fineAlignDragPendingRef = useRef<GeoFineAlignment | null>(null);
 const knownPointIdsRef = useRef(new Set(controlPoints.map((point) => point.id)));
+
+useEffect(
+  () => () => {
+    if (fineAlignDragFrameRef.current !== null) {
+      window.cancelAnimationFrame(fineAlignDragFrameRef.current);
+      fineAlignDragFrameRef.current = null;
+    }
+    fineAlignDragPendingRef.current = null;
+  },
+  [],
+);
 
   const activeIndex = useMemo(
     () => controlPoints.findIndex((point) => point.id === activeId),
@@ -421,6 +443,10 @@ const knownPointIdsRef = useRef(new Set(controlPoints.map((point) => point.id)))
   () => (previewCalibration ? geoAlignmentAnchor(previewCalibration) : null),
   [previewCalibration],
 );
+fineAlignmentRef.current = fineAlignment;
+previewAlignmentAnchorRef.current = previewAlignmentAnchor;
+overlayOpacityRef.current = overlayOpacity;
+notifyRef.current = notify;
 const previewPlotFeatures = useMemo(
   () => features.filter((feature) => feature.source === "plot_mapper"),
   [features],
@@ -547,8 +573,10 @@ const previewPlotFeatures = useMemo(
       circlesRef.current = [];
       masterplanOverlayRef.current?.setMap(null);
       masterplanOverlayRef.current = null;
+      masterplanOverlayDrawRef.current = null;
       mapPlotPolygonsRef.current.forEach((polygon) => polygon.setMap(null));
       mapPlotPolygonsRef.current = [];
+      mapPlotPolygonEntriesRef.current = [];
       mapInfoWindowRef.current?.close();
       mapInfoWindowRef.current = null;
       mapRef.current = null;
@@ -589,11 +617,13 @@ const previewPlotFeatures = useMemo(
       });
   }, [controlPoints, activeId, mapReady]);
 
+  // REKIXO_GEO_FINE_ALIGN_SMOOTH_V3_1: keep the image node alive while Fine Align changes.
   useEffect(() => {
     const map = mapRef.current;
     const google = browserWindow().google;
     masterplanOverlayRef.current?.setMap(null);
     masterplanOverlayRef.current = null;
+    masterplanOverlayDrawRef.current = null;
 
     if (
       !mapReady ||
@@ -612,16 +642,13 @@ const previewPlotFeatures = useMemo(
       [1, 1],
       [0, 1],
     ];
-    let geoCorners: [number, number][];
+    let baseGeoCorners: [number, number][];
     try {
-  geoCorners = sourceCorners.map((corner) => {
-    const mapped = mapNormalizedPointToGeo(previewCalibration, corner);
-    return previewAlignmentAnchor
-      ? applyGeoFineAlignment(mapped, previewAlignmentAnchor, fineAlignment)
-      : mapped;
-  });
-} catch {
-      notify("Masterplan overlay calibration invalid hai");
+      baseGeoCorners = sourceCorners.map((corner) =>
+        mapNormalizedPointToGeo(previewCalibration, corner),
+      );
+    } catch {
+      notifyRef.current("Masterplan overlay calibration invalid hai");
       return;
     }
 
@@ -632,6 +659,11 @@ const previewPlotFeatures = useMemo(
     const draw = () => {
       if (!host || !image || !image.naturalWidth || !image.naturalHeight) return;
       const projection = overlay.getProjection();
+      const anchor = previewAlignmentAnchorRef.current;
+      const alignment = fineAlignmentRef.current;
+      const geoCorners = baseGeoCorners.map((mapped) =>
+        anchor ? applyGeoFineAlignment(mapped, anchor, alignment) : mapped,
+      );
       const targets = geoCorners.map(([lng, lat]) =>
         projection.fromLatLngToDivPixel(new google.maps.LatLng(lat, lng)),
       );
@@ -643,11 +675,13 @@ const previewPlotFeatures = useMemo(
             target: [targets[index]!.x, targets[index]!.y] as MapperPoint,
           })),
         );
+        host.style.opacity = String(overlayOpacityRef.current);
         host.style.transform = cssProjectiveTransform(
           matrix,
           image.naturalWidth,
           image.naturalHeight,
         );
+        host.style.visibility = "visible";
       } catch {
         host.style.visibility = "hidden";
       }
@@ -656,17 +690,15 @@ const previewPlotFeatures = useMemo(
     overlay.onAdd = () => {
       host = document.createElement("div");
       host.className = styles.geoMasterplanOverlay;
-      host.style.opacity = String(overlayOpacity);
+      host.style.opacity = String(overlayOpacityRef.current);
       image = document.createElement("img");
       image.src = overlayMasterplanUrl;
       image.alt = "Calibrated masterplan overlay";
       image.draggable = false;
       image.decoding = "async";
-      image.onload = () => {
-        if (host) host.style.visibility = "visible";
-        draw();
-      };
-      image.onerror = () => notify("Masterplan overlay image load nahi hui");
+      image.onload = draw;
+      image.onerror = () =>
+        notifyRef.current("Masterplan overlay image load nahi hui");
       host.appendChild(image);
       overlay.getPanes().overlayLayer.appendChild(host);
     };
@@ -679,23 +711,23 @@ const previewPlotFeatures = useMemo(
     };
     overlay.setMap(map);
     masterplanOverlayRef.current = overlay;
+    masterplanOverlayDrawRef.current = draw;
 
     return () => {
       if (masterplanOverlayRef.current === overlay) {
         masterplanOverlayRef.current = null;
+      }
+      if (masterplanOverlayDrawRef.current === draw) {
+        masterplanOverlayDrawRef.current = null;
       }
       overlay.setMap(null);
     };
   }, [
     mapReady,
     overlayMasterplanUrl,
-      notify,
-  fineAlignment,
-  overlayOpacity,
-  previewAlignmentAnchor,
-  previewCalibration,
-  showMasterplanOverlay,
-]);
+    previewCalibration,
+    showMasterplanOverlay,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -703,6 +735,7 @@ const previewPlotFeatures = useMemo(
 
     mapPlotPolygonsRef.current.forEach((polygon) => polygon.setMap(null));
     mapPlotPolygonsRef.current = [];
+    mapPlotPolygonEntriesRef.current = [];
     mapInfoWindowRef.current?.close();
     mapInfoWindowRef.current = null;
 
@@ -720,15 +753,21 @@ const previewPlotFeatures = useMemo(
     const info = new google.maps.InfoWindow();
     mapInfoWindowRef.current = info;
     const rendered: GooglePolygon[] = [];
+    const entries: Array<{
+      polygon: GooglePolygon;
+      rawPath: [number, number][];
+    }> = [];
 
     for (const feature of previewPlotFeatures) {
-  const rawPath = geoPolygonPath(feature);
-  const path = previewAlignmentAnchor
-    ? rawPath.map((point) =>
-        applyGeoFineAlignment(point, previewAlignmentAnchor, fineAlignment),
-      )
-    : rawPath;
-  if (path.length < 3) continue;
+      const rawPath = geoPolygonPath(feature);
+      const anchor = previewAlignmentAnchorRef.current;
+      const alignment = fineAlignmentRef.current;
+      const path = anchor
+        ? rawPath.map((point) =>
+            applyGeoFineAlignment(point, anchor, alignment),
+          )
+        : rawPath;
+      if (path.length < 3) continue;
       const plot = feature.linkedPlotId
         ? previewPlotById.get(feature.linkedPlotId)
         : undefined;
@@ -782,23 +821,38 @@ const previewPlotFeatures = useMemo(
         }
 
         info.setContent(card);
-        const fallback = path[0];
+        const currentAnchor = previewAlignmentAnchorRef.current;
+        const currentAlignment = fineAlignmentRef.current;
+        const rawFallback = rawPath[0];
+        const fallback =
+          currentAnchor && rawFallback
+            ? applyGeoFineAlignment(
+                rawFallback,
+                currentAnchor,
+                currentAlignment,
+              )
+            : rawFallback;
         const latLng = event.latLng;
-        info.setPosition(
-          latLng
-            ? { lat: latLng.lat(), lng: latLng.lng() }
-            : { lat: fallback[1], lng: fallback[0] },
-        );
+        if (latLng) {
+          info.setPosition({ lat: latLng.lat(), lng: latLng.lng() });
+        } else if (fallback) {
+          info.setPosition({ lat: fallback[1], lng: fallback[0] });
+        }
         info.open({ map });
       });
       rendered.push(polygon);
+      entries.push({ polygon, rawPath });
     }
 
     mapPlotPolygonsRef.current = rendered;
+    mapPlotPolygonEntriesRef.current = entries;
     return () => {
       rendered.forEach((polygon) => polygon.setMap(null));
       if (mapPlotPolygonsRef.current === rendered) {
         mapPlotPolygonsRef.current = [];
+      }
+      if (mapPlotPolygonEntriesRef.current === entries) {
+        mapPlotPolygonEntriesRef.current = [];
       }
       if (mapInfoWindowRef.current === info) {
         info.close();
@@ -806,14 +860,36 @@ const previewPlotFeatures = useMemo(
       }
     };
   }, [
-  calibrationDirty,
-  fineAlignment,
-  mapReady,
-  previewAlignmentAnchor,
-  previewPlotById,
-  previewPlotFeatures,
-  showPlotOverlay,
-]);
+    calibrationDirty,
+    mapReady,
+    previewPlotById,
+    previewPlotFeatures,
+    showPlotOverlay,
+  ]);
+
+  // One paint-cycle update: image transform + all existing plot paths move together.
+  useEffect(() => {
+    masterplanOverlayDrawRef.current?.();
+
+    if (!mapReady || calibrationDirty || !showPlotOverlay) return;
+    const anchor = previewAlignmentAnchor;
+    const alignment = fineAlignment;
+    for (const { polygon, rawPath } of mapPlotPolygonEntriesRef.current) {
+      const path = anchor
+        ? rawPath.map((point) =>
+            applyGeoFineAlignment(point, anchor, alignment),
+          )
+        : rawPath;
+      polygon.setPath(path.map(([lng, lat]) => ({ lat, lng })));
+    }
+  }, [
+    calibrationDirty,
+    fineAlignment,
+    mapReady,
+    overlayOpacity,
+    previewAlignmentAnchor,
+    showPlotOverlay,
+  ]);
 
   if (!config?.lab) return null;
 
@@ -930,13 +1006,25 @@ function rotateFineAlignment(delta: number) {
   }));
 }
 
+function clearQueuedFineAlignDrag(flush = false) {
+  if (fineAlignDragFrameRef.current !== null) {
+    window.cancelAnimationFrame(fineAlignDragFrameRef.current);
+    fineAlignDragFrameRef.current = null;
+  }
+  const pending = fineAlignDragPendingRef.current;
+  fineAlignDragPendingRef.current = null;
+  if (flush && pending) onFineAlignmentChange(pending);
+}
+
 function revertFineAlignment() {
   fineAlignDragRef.current = null;
+  clearQueuedFineAlignDrag();
   onFineAlignmentChange(normalizeGeoFineAlignment(savedFineAlignment));
 }
 
 function zeroFineAlignment() {
   fineAlignDragRef.current = null;
+  clearQueuedFineAlignDrag();
   onFineAlignmentChange({ eastMeters: 0, northMeters: 0, rotationDeg: 0 });
 }
 
@@ -950,6 +1038,7 @@ function beginFineAlignDrag(event: ReactPointerEvent<HTMLDivElement>) {
   )
     return;
   if (event.pointerType === "mouse" && event.button !== 0) return;
+  clearQueuedFineAlignDrag();
   const zoom = mapRef.current.getZoom() ?? 20;
   const latitude = previewAlignmentAnchor[1] * (Math.PI / 180);
   const metersPerPixel =
@@ -971,17 +1060,26 @@ function moveFineAlignDrag(event: ReactPointerEvent<HTMLDivElement>) {
   event.preventDefault();
   const dx = event.clientX - gesture.startX;
   const dy = event.clientY - gesture.startY;
+  let nextAlignment: GeoFineAlignment;
   try {
-    onFineAlignmentChange(
-      normalizeGeoFineAlignment({
-        ...gesture.origin,
-        eastMeters: gesture.origin.eastMeters + dx * gesture.metersPerPixel,
-        northMeters: gesture.origin.northMeters - dy * gesture.metersPerPixel,
-      }),
-    );
+    nextAlignment = normalizeGeoFineAlignment({
+      ...gesture.origin,
+      eastMeters: gesture.origin.eastMeters + dx * gesture.metersPerPixel,
+      northMeters: gesture.origin.northMeters - dy * gesture.metersPerPixel,
+    });
   } catch {
     // Hard safety limits intentionally stop further drag movement.
+    return;
   }
+
+  fineAlignDragPendingRef.current = nextAlignment;
+  if (fineAlignDragFrameRef.current !== null) return;
+  fineAlignDragFrameRef.current = window.requestAnimationFrame(() => {
+    fineAlignDragFrameRef.current = null;
+    const pending = fineAlignDragPendingRef.current;
+    fineAlignDragPendingRef.current = null;
+    if (pending) onFineAlignmentChange(pending);
+  });
 }
 
 function endFineAlignDrag(event: ReactPointerEvent<HTMLDivElement>) {
@@ -991,6 +1089,7 @@ function endFineAlignDrag(event: ReactPointerEvent<HTMLDivElement>) {
     event.currentTarget.releasePointerCapture(event.pointerId);
   }
   fineAlignDragRef.current = null;
+  clearQueuedFineAlignDrag(true);
 }
 
 function goToCenter() {
