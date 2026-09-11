@@ -22,6 +22,7 @@ type ControlPoint = {
   id: string;
   source: [number, number];
   target: [number, number];
+  sourceSet?: boolean;
   label?: string;
 };
 
@@ -519,7 +520,7 @@ export default function GeoMapper({
 
       <div className={styles.grid}>
         <div className={styles.block}>
-          <div className={styles.blockHead}><div><h3>Masterplan → WGS84 calibration</h3><p>Source X/Y normalized 0..1; target longitude/latitude real GPS coordinates.</p></div><button onClick={() => setControlPoints((items) => [...items, { id: crypto.randomUUID(), source: [0.5, 0.5], target: [0, 0], label: "" }])} disabled={controlPoints.length >= 12 || busy}><Plus /> Point</button></div>
+          <div className={styles.blockHead}><div><h3>Masterplan → WGS84 calibration</h3><p>Source X/Y normalized 0..1; target longitude/latitude real GPS coordinates.</p></div><button onClick={() => setControlPoints((items) => [...items, { id: crypto.randomUUID(), source: [0.5, 0.5], target: [0, 0], sourceSet: false, label: "" }])} disabled={controlPoints.length >= 12 || busy}><Plus /> Point</button></div>
           <GeoVisualCalibrationGuard
             key={`geo-visual:${projectId}`}
             notify={notify}

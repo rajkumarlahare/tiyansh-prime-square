@@ -4,6 +4,7 @@ import {
   type Dispatch,
   type PointerEvent as ReactPointerEvent,
   type SetStateAction,
+  type WheelEvent as ReactWheelEvent,
   useEffect,
   useMemo,
   useRef,
@@ -16,6 +17,7 @@ type ControlPoint = {
   id: string;
   source: [number, number];
   target: [number, number];
+  sourceSet?: boolean;
   label?: string;
 };
 
@@ -146,6 +148,18 @@ function parseCenter(value: string) {
   return { lat, lng };
 }
 
+const MASTERPLAN_ZOOM_MIN = 1;
+const MASTERPLAN_ZOOM_MAX = 8;
+const MASTERPLAN_ZOOM_STEP = 0.5;
+
+function hasPlacedSource(point: ControlPoint) {
+  return (
+    point.sourceSet !== false ||
+    Math.abs(point.source[0] - 0.5) > 1e-12 ||
+    Math.abs(point.source[1] - 0.5) > 1e-12
+  );
+}
+
 export default function GeoVisualCalibration({
   projectId,
   controlPoints,
@@ -169,11 +183,22 @@ export default function GeoVisualCalibration({
   const [keyInput, setKeyInput] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
   const [satelliteRequested, setSatelliteRequested] = useState(false);
+  const [masterplanZoom, setMasterplanZoom] = useState(MASTERPLAN_ZOOM_MIN);
+  const [masterplanPan, setMasterplanPan] = useState({ x: 0, y: 0 });
+  const [masterplanTool, setMasterplanTool] = useState<"point" | "pan">("point");
   const mapNodeRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
   const clickListenerRef = useRef<GoogleListener | null>(null);
   const circlesRef = useRef<GoogleCircle[]>([]);
   const activeIdRef = useRef("");
+  const masterplanPanRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+  const knownPointIdsRef = useRef(new Set(controlPoints.map((point) => point.id)));
 
   const activeIndex = useMemo(
     () => controlPoints.findIndex((point) => point.id === activeId),
@@ -185,8 +210,18 @@ export default function GeoVisualCalibration({
   }, [activeId]);
 
   useEffect(() => {
+    const currentIds = new Set(controlPoints.map((point) => point.id));
+    const addedPoint = controlPoints.find(
+      (point) => !knownPointIdsRef.current.has(point.id),
+    );
+    knownPointIdsRef.current = currentIds;
     if (!controlPoints.length) {
       setActiveId("");
+      return;
+    }
+    if (addedPoint) {
+      setActiveId(addedPoint.id);
+      setMasterplanTool("point");
       return;
     }
     if (!controlPoints.some((point) => point.id === activeId)) {
@@ -323,6 +358,7 @@ export default function GeoVisualCalibration({
     "&preview=1&v=geo-visual-calibration";
 
   function updateActiveSource(event: ReactPointerEvent<HTMLImageElement>) {
+    if (masterplanTool !== "point") return;
     if (disabled || !activePoint) {
       notify("Pehle + Point add karke control point select karein");
       return;
@@ -337,10 +373,72 @@ export default function GeoVisualCalibration({
           ? {
               ...item,
               source: [Number(x.toFixed(7)), Number(y.toFixed(7))],
+              sourceSet: true,
             }
           : item,
       ),
     );
+  }
+
+  function setMasterplanZoomLevel(value: number) {
+    const next = Math.min(
+      MASTERPLAN_ZOOM_MAX,
+      Math.max(MASTERPLAN_ZOOM_MIN, Number(value.toFixed(2))),
+    );
+    setMasterplanZoom(next);
+    if (next === MASTERPLAN_ZOOM_MIN) {
+      setMasterplanPan({ x: 0, y: 0 });
+      if (masterplanTool === "pan") setMasterplanTool("point");
+    }
+  }
+
+  function zoomMasterplanWithWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    if (disabled || Math.abs(event.deltaY) < 1) return;
+    event.preventDefault();
+    setMasterplanZoomLevel(
+      masterplanZoom +
+        (event.deltaY < 0 ? MASTERPLAN_ZOOM_STEP : -MASTERPLAN_ZOOM_STEP),
+    );
+  }
+
+  function beginMasterplanPan(event: ReactPointerEvent<HTMLDivElement>) {
+    if (disabled || masterplanTool !== "pan" || masterplanZoom <= MASTERPLAN_ZOOM_MIN) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    masterplanPanRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: masterplanPan.x,
+      originY: masterplanPan.y,
+    };
+  }
+
+  function moveMasterplanPan(event: ReactPointerEvent<HTMLDivElement>) {
+    const gesture = masterplanPanRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    setMasterplanPan({
+      x: gesture.originX + event.clientX - gesture.startX,
+      y: gesture.originY + event.clientY - gesture.startY,
+    });
+  }
+
+  function endMasterplanPan(event: ReactPointerEvent<HTMLDivElement>) {
+    const gesture = masterplanPanRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    masterplanPanRef.current = null;
+  }
+
+  function resetMasterplanView() {
+    masterplanPanRef.current = null;
+    setMasterplanZoom(MASTERPLAN_ZOOM_MIN);
+    setMasterplanPan({ x: 0, y: 0 });
+    setMasterplanTool("point");
   }
 
   function goToCenter() {
@@ -497,7 +595,10 @@ export default function GeoVisualCalibration({
               type="button"
               key={point.id}
               className={point.id === activeId ? styles.pointActive : ""}
-              onClick={() => setActiveId(point.id)}
+              onClick={() => {
+                setActiveId(point.id);
+                setMasterplanTool("point");
+              }}
               disabled={disabled}
             >
               P{index + 1}
@@ -520,50 +621,117 @@ export default function GeoVisualCalibration({
               <span>Tap se Source X/Y automatic 0..1 me set hoga.</span>
             </div>
           </div>
-          <div className={styles.imageStage}>
+          <div className={styles.masterplanToolbar}>
+            <div
+              className={styles.masterplanToolGroup}
+              role="group"
+              aria-label="Masterplan interaction mode"
+            >
+              <button
+                type="button"
+                className={masterplanTool === "point" ? styles.masterplanToolActive : ""}
+                onClick={() => setMasterplanTool("point")}
+                disabled={disabled}
+              >
+                Place point
+              </button>
+              <button
+                type="button"
+                className={masterplanTool === "pan" ? styles.masterplanToolActive : ""}
+                onClick={() => setMasterplanTool("pan")}
+                disabled={disabled || masterplanZoom <= MASTERPLAN_ZOOM_MIN}
+              >
+                Pan
+              </button>
+            </div>
+            <div
+              className={styles.masterplanZoomGroup}
+              role="group"
+              aria-label="Masterplan zoom controls"
+            >
+              <button
+                type="button"
+                aria-label="Zoom masterplan out"
+                onClick={() => setMasterplanZoomLevel(masterplanZoom - MASTERPLAN_ZOOM_STEP)}
+                disabled={disabled || masterplanZoom <= MASTERPLAN_ZOOM_MIN}
+              >
+                −
+              </button>
+              <span>{Math.round(masterplanZoom * 100)}%</span>
+              <button
+                type="button"
+                aria-label="Zoom masterplan in"
+                onClick={() => setMasterplanZoomLevel(masterplanZoom + MASTERPLAN_ZOOM_STEP)}
+                disabled={disabled || masterplanZoom >= MASTERPLAN_ZOOM_MAX}
+              >
+                +
+              </button>
+              <button type="button" onClick={resetMasterplanView} disabled={disabled}>
+                Fit
+              </button>
+            </div>
+          </div>
+          <div className={styles.masterplanHint}>
+            Exact corner ke liye zoom karein, `Place point` me tap/click karein. Zoom ke baad
+            `Pan` se image move karein; marker ko drag karna zaroori nahi hai.
+          </div>
+          <div
+            className={`${styles.imageStage} ${
+              masterplanTool === "pan" ? styles.imageStagePan : styles.imageStagePoint
+            }`}
+            onWheel={zoomMasterplanWithWheel}
+            onPointerDown={beginMasterplanPan}
+            onPointerMove={moveMasterplanPan}
+            onPointerUp={endMasterplanPan}
+            onPointerCancel={endMasterplanPan}
+          >
             {!masterplanReady && !masterplanError ? (
               <div className={styles.loading}>Masterplan load ho raha hai…</div>
             ) : null}
             {masterplanError ? (
               <div className={styles.error}>Geo Lab masterplan load nahi hui.</div>
             ) : null}
-            <img
-              src={masterplanUrl}
-              alt="Geo calibration masterplan"
-              draggable={false}
-              onLoad={() => {
-                setMasterplanReady(true);
-                setMasterplanError(false);
+            <div
+              className={styles.masterplanCanvas}
+              style={{
+                transform: `translate3d(${masterplanPan.x}px, ${masterplanPan.y}px, 0) scale(${masterplanZoom})`,
               }}
-              onError={() => {
-                setMasterplanReady(false);
-                setMasterplanError(true);
-              }}
-              onPointerUp={updateActiveSource}
-            />
-            {masterplanReady
-              ? controlPoints.map((point, index) => (
-                  <button
-                    type="button"
-                    key={point.id}
-                    className={`${styles.sourceMarker} ${
-                      point.id === activeId ? styles.sourceMarkerActive : ""
-                    }`}
-                    style={{
-                      left: `${point.source[0] * 100}%`,
-                      top: `${point.source[1] * 100}%`,
-                    }}
-                    onPointerUp={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setActiveId(point.id);
-                    }}
-                    aria-label={`Select control point ${index + 1}`}
-                  >
-                    {index + 1}
-                  </button>
-                ))
-              : null}
+            >
+              <img
+                src={masterplanUrl}
+                alt="Geo calibration masterplan"
+                draggable={false}
+                onLoad={() => {
+                  setMasterplanReady(true);
+                  setMasterplanError(false);
+                }}
+                onError={() => {
+                  setMasterplanReady(false);
+                  setMasterplanError(true);
+                }}
+                onPointerUp={updateActiveSource}
+              />
+              {masterplanReady
+                ? controlPoints.map((point, index) =>
+                    hasPlacedSource(point) ? (
+                      <span
+                        key={point.id}
+                        className={`${styles.sourceMarker} ${
+                          point.id === activeId ? styles.sourceMarkerActive : ""
+                        }`}
+                        style={{
+                          left: `${point.source[0] * 100}%`,
+                          top: `${point.source[1] * 100}%`,
+                          transform: `translate(-50%, -50%) scale(${1 / masterplanZoom})`,
+                        }}
+                        aria-hidden="true"
+                      >
+                        <span className={styles.sourceMarkerLabel}>{index + 1}</span>
+                      </span>
+                    ) : null,
+                  )
+                : null}
+            </div>
           </div>
         </div>
 
@@ -658,7 +826,7 @@ export default function GeoVisualCalibration({
       <div className={styles.status}>
         <span>
           Source:{" "}
-          {activePoint
+          {activePoint && hasPlacedSource(activePoint)
             ? `${activePoint.source[0].toFixed(6)}, ${activePoint.source[1].toFixed(6)}`
             : "—"}
         </span>
