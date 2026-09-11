@@ -303,3 +303,14 @@
     grid-column: 1 / -1;
   }
 }
+
+.googleMapCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.mapStage > .loading,
+.mapStage > .error {
+  z-index: 2;
+}

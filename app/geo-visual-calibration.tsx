@@ -639,7 +639,12 @@ export default function GeoVisualCalibration({
                   <Crosshair /> Point
                 </button>
               </div>
-              <div className={styles.mapStage} ref={mapNodeRef}>
+              <div className={styles.mapStage}>
+                <div
+                  ref={mapNodeRef}
+                  className={styles.googleMapCanvas}
+                  aria-label="Google Satellite map"
+                />
                 {!mapReady && !mapError ? (
                   <div className={styles.loading}>Google Satellite load ho raha hai…</div>
                 ) : null}
