@@ -12,6 +12,12 @@ import {
 } from "react";
 import { Crosshair, KeyRound, LocateFixed, Map as MapIcon, Save, Satellite, Trash2 } from "lucide-react";
 import { mapNormalizedPointToGeo, solveGeoCalibration } from "./geo-calibration";
+import {
+  applyGeoFineAlignment,
+  geoAlignmentAnchor,
+  normalizeGeoFineAlignment,
+  type GeoFineAlignment,
+} from "./geo-fine-alignment";
 import { solveHomography, type MapperPoint } from "./mapper-geometry";
 import MasterplanMaskEditor from "./masterplan-mask-editor";
 // REKIXO_GEO_MASTERPLAN_OVERLAY_V2_7
@@ -90,6 +96,7 @@ type GoogleMapInstance = {
   addListener(eventName: string, listener: (event: GoogleMapMouseEvent) => void): GoogleListener;
   setCenter(center: { lat: number; lng: number }): void;
   setZoom(zoom: number): void;
+  getZoom(): number | undefined;
 };
 
 type GoogleCircle = {
@@ -294,11 +301,16 @@ export default function GeoVisualCalibration({
   features,
   plots,
   diagnostics,
-  calibrationDirty,
-  onChange,
-  onSaveCalibration,
-  disabled,
-  notify,
+calibrationDirty,
+fineAlignment,
+savedFineAlignment,
+fineAlignmentDirty,
+onChange,
+onSaveCalibration,
+onFineAlignmentChange,
+onSaveFineAlignment,
+disabled,
+notify,
 }: {
   projectId: string;
   controlPoints: ControlPoint[];
@@ -306,10 +318,15 @@ export default function GeoVisualCalibration({
   features: GeoPreviewFeature[];
   plots: GeoPreviewPlot[];
   diagnostics: CalibrationDiagnostics | null;
-  calibrationDirty: boolean;
-  onChange: Dispatch<SetStateAction<ControlPoint[]>>;
-  onSaveCalibration: () => void | Promise<void>;
-  disabled: boolean;
+calibrationDirty: boolean;
+fineAlignment: GeoFineAlignment;
+savedFineAlignment: GeoFineAlignment;
+fineAlignmentDirty: boolean;
+onChange: Dispatch<SetStateAction<ControlPoint[]>>;
+onSaveCalibration: () => void | Promise<void>;
+onFineAlignmentChange: Dispatch<SetStateAction<GeoFineAlignment>>;
+onSaveFineAlignment: () => void | Promise<void>;
+disabled: boolean;
   notify: (message: string) => void;
 }) {
   const [config, setConfig] = useState<MapConfig | null>(null);
@@ -326,9 +343,11 @@ export default function GeoVisualCalibration({
   const [masterplanPan, setMasterplanPan] = useState({ x: 0, y: 0 });
   const [masterplanTool, setMasterplanTool] = useState<"point" | "pan">("point");
   const [showMasterplanOverlay, setShowMasterplanOverlay] = useState(false);
-  const [showPlotOverlay, setShowPlotOverlay] = useState(true);
-  const [overlayOpacity, setOverlayOpacity] = useState(0.68);
-  const [maskedMasterplanPreviewUrl, setMaskedMasterplanPreviewUrl] = useState<string | null>(null);
+const [showPlotOverlay, setShowPlotOverlay] = useState(true);
+const [overlayOpacity, setOverlayOpacity] = useState(0.68);
+const [fineAlignMode, setFineAlignMode] = useState(false);
+const [fineAlignPrecision, setFineAlignPrecision] = useState<"fine" | "coarse">("fine");
+const [maskedMasterplanPreviewUrl, setMaskedMasterplanPreviewUrl] = useState<string | null>(null);
   const mapNodeRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
   const clickListenerRef = useRef<GoogleListener | null>(null);
@@ -339,13 +358,20 @@ export default function GeoVisualCalibration({
   const suppressNextMapClickRef = useRef(false);
   const activeIdRef = useRef("");
   const masterplanPanRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    originX: number;
-    originY: number;
-  } | null>(null);
-  const knownPointIdsRef = useRef(new Set(controlPoints.map((point) => point.id)));
+  pointerId: number;
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+} | null>(null);
+const fineAlignDragRef = useRef<{
+  pointerId: number;
+  startX: number;
+  startY: number;
+  origin: GeoFineAlignment;
+  metersPerPixel: number;
+} | null>(null);
+const knownPointIdsRef = useRef(new Set(controlPoints.map((point) => point.id)));
 
   const activeIndex = useMemo(
     () => controlPoints.findIndex((point) => point.id === activeId),
@@ -391,10 +417,14 @@ export default function GeoVisualCalibration({
     }
   }, [controlPoints]);
 
-  const previewPlotFeatures = useMemo(
-    () => features.filter((feature) => feature.source === "plot_mapper"),
-    [features],
-  );
+  const previewAlignmentAnchor = useMemo(
+  () => (previewCalibration ? geoAlignmentAnchor(previewCalibration) : null),
+  [previewCalibration],
+);
+const previewPlotFeatures = useMemo(
+  () => features.filter((feature) => feature.source === "plot_mapper"),
+  [features],
+);
   const previewPlotById = useMemo(
     () => new globalThis.Map(plots.map((plot) => [plot.id, plot])),
     [plots],
@@ -584,10 +614,13 @@ export default function GeoVisualCalibration({
     ];
     let geoCorners: [number, number][];
     try {
-      geoCorners = sourceCorners.map((corner) =>
-        mapNormalizedPointToGeo(previewCalibration, corner),
-      );
-    } catch {
+  geoCorners = sourceCorners.map((corner) => {
+    const mapped = mapNormalizedPointToGeo(previewCalibration, corner);
+    return previewAlignmentAnchor
+      ? applyGeoFineAlignment(mapped, previewAlignmentAnchor, fineAlignment)
+      : mapped;
+  });
+} catch {
       notify("Masterplan overlay calibration invalid hai");
       return;
     }
@@ -656,11 +689,13 @@ export default function GeoVisualCalibration({
   }, [
     mapReady,
     overlayMasterplanUrl,
-    notify,
-    overlayOpacity,
-    previewCalibration,
-    showMasterplanOverlay,
-  ]);
+      notify,
+  fineAlignment,
+  overlayOpacity,
+  previewAlignmentAnchor,
+  previewCalibration,
+  showMasterplanOverlay,
+]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -687,8 +722,13 @@ export default function GeoVisualCalibration({
     const rendered: GooglePolygon[] = [];
 
     for (const feature of previewPlotFeatures) {
-      const path = geoPolygonPath(feature);
-      if (path.length < 3) continue;
+  const rawPath = geoPolygonPath(feature);
+  const path = previewAlignmentAnchor
+    ? rawPath.map((point) =>
+        applyGeoFineAlignment(point, previewAlignmentAnchor, fineAlignment),
+      )
+    : rawPath;
+  if (path.length < 3) continue;
       const plot = feature.linkedPlotId
         ? previewPlotById.get(feature.linkedPlotId)
         : undefined;
@@ -766,12 +806,14 @@ export default function GeoVisualCalibration({
       }
     };
   }, [
-    calibrationDirty,
-    mapReady,
-    previewPlotById,
-    previewPlotFeatures,
-    showPlotOverlay,
-  ]);
+  calibrationDirty,
+  fineAlignment,
+  mapReady,
+  previewAlignmentAnchor,
+  previewPlotById,
+  previewPlotFeatures,
+  showPlotOverlay,
+]);
 
   if (!config?.lab) return null;
 
@@ -856,13 +898,102 @@ export default function GeoVisualCalibration({
   }
 
   function resetMasterplanView() {
-    masterplanPanRef.current = null;
-    setMasterplanZoom(MASTERPLAN_ZOOM_MIN);
-    setMasterplanPan({ x: 0, y: 0 });
-    setMasterplanTool("point");
-  }
+  masterplanPanRef.current = null;
+  setMasterplanZoom(MASTERPLAN_ZOOM_MIN);
+  setMasterplanPan({ x: 0, y: 0 });
+  setMasterplanTool("point");
+}
 
-  function goToCenter() {
+const fineMoveStep = fineAlignPrecision === "fine" ? 0.25 : 1;
+const fineRotationStep = fineAlignPrecision === "fine" ? 0.02 : 0.1;
+
+function updateFineAlignment(
+  updater: (current: GeoFineAlignment) => GeoFineAlignment,
+) {
+  onFineAlignmentChange((current) =>
+    normalizeGeoFineAlignment(updater(current)),
+  );
+}
+
+function nudgeFineAlignment(eastDelta: number, northDelta: number) {
+  updateFineAlignment((current) => ({
+    ...current,
+    eastMeters: current.eastMeters + eastDelta,
+    northMeters: current.northMeters + northDelta,
+  }));
+}
+
+function rotateFineAlignment(delta: number) {
+  updateFineAlignment((current) => ({
+    ...current,
+    rotationDeg: current.rotationDeg + delta,
+  }));
+}
+
+function revertFineAlignment() {
+  fineAlignDragRef.current = null;
+  onFineAlignmentChange(normalizeGeoFineAlignment(savedFineAlignment));
+}
+
+function zeroFineAlignment() {
+  fineAlignDragRef.current = null;
+  onFineAlignmentChange({ eastMeters: 0, northMeters: 0, rotationDeg: 0 });
+}
+
+function beginFineAlignDrag(event: ReactPointerEvent<HTMLDivElement>) {
+  if (
+    disabled ||
+    !fineAlignMode ||
+    !mapReady ||
+    !previewAlignmentAnchor ||
+    !mapRef.current
+  )
+    return;
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  const zoom = mapRef.current.getZoom() ?? 20;
+  const latitude = previewAlignmentAnchor[1] * (Math.PI / 180);
+  const metersPerPixel =
+    (156543.03392 * Math.max(0.05, Math.cos(latitude))) / 2 ** zoom;
+  event.preventDefault();
+  event.currentTarget.setPointerCapture(event.pointerId);
+  fineAlignDragRef.current = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    origin: { ...fineAlignment },
+    metersPerPixel,
+  };
+}
+
+function moveFineAlignDrag(event: ReactPointerEvent<HTMLDivElement>) {
+  const gesture = fineAlignDragRef.current;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  const dx = event.clientX - gesture.startX;
+  const dy = event.clientY - gesture.startY;
+  try {
+    onFineAlignmentChange(
+      normalizeGeoFineAlignment({
+        ...gesture.origin,
+        eastMeters: gesture.origin.eastMeters + dx * gesture.metersPerPixel,
+        northMeters: gesture.origin.northMeters - dy * gesture.metersPerPixel,
+      }),
+    );
+  } catch {
+    // Hard safety limits intentionally stop further drag movement.
+  }
+}
+
+function endFineAlignDrag(event: ReactPointerEvent<HTMLDivElement>) {
+  const gesture = fineAlignDragRef.current;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+  fineAlignDragRef.current = null;
+}
+
+function goToCenter() {
     try {
       const center = parseCenter(centerText);
       if (!mapRef.current) throw new Error("Satellite map abhi ready nahi hai");
@@ -1335,26 +1466,100 @@ export default function GeoVisualCalibration({
                     disabled={disabled || !showMasterplanOverlay}
                   />
                 </label>
-                <label className={styles.mapPreviewToggle}>
-                  <input
-                    type="checkbox"
-                    checked={showPlotOverlay}
-                    onChange={(event) => setShowPlotOverlay(event.target.checked)}
-                    disabled={
-                      disabled ||
-                      !mapReady ||
-                      calibrationDirty ||
-                      previewPlotFeatures.length === 0
-                    }
-                  />
-                  <span>Clickable plots ({previewPlotFeatures.length})</span>
-                </label>
-              </div>
-              <div className={styles.mapPreviewHint}>
-                Masterplan visual layer neeche rahegi; generated Geo plot polygons uske upar
-                click capture karenge. Unsaved calibration me plots intentionally hide rahenge.
-              </div>
-              <div className={styles.centerBar}>
+                  <label className={styles.mapPreviewToggle}>
+    <input
+      type="checkbox"
+      checked={showPlotOverlay}
+      onChange={(event) => setShowPlotOverlay(event.target.checked)}
+      disabled={
+        disabled ||
+        !mapReady ||
+        calibrationDirty ||
+        previewPlotFeatures.length === 0
+      }
+    />
+    <span>Clickable plots ({previewPlotFeatures.length})</span>
+  </label>
+  <label className={styles.mapPreviewToggle}>
+    <input
+      type="checkbox"
+      checked={fineAlignMode}
+      onChange={(event) => setFineAlignMode(event.target.checked)}
+      disabled={disabled || !mapReady || !previewAlignmentAnchor}
+    />
+    <span>Fine Align drag</span>
+  </label>
+</div>
+<div className={styles.mapPreviewHint}>
+  Masterplan visual layer neeche rahegi; generated Geo plot polygons uske upar
+  click capture karenge. Fine Align image + plots ko ek shared geographic transform se move/rotate karta hai.
+</div>
+<div
+  className={`${styles.fineAlignPanel} ${
+    fineAlignmentDirty ? styles.fineAlignDirty : styles.fineAlignSaved
+  }`}
+>
+  <div className={styles.fineAlignHeading}>
+    <div>
+      <b>Final map alignment</b>
+      <span>
+        East {fineAlignment.eastMeters.toFixed(2)} m · North{" "}
+        {fineAlignment.northMeters.toFixed(2)} m · Rotation{" "}
+        {fineAlignment.rotationDeg.toFixed(3)}°
+      </span>
+    </div>
+    <small>{fineAlignmentDirty ? "Unsaved" : "Saved ✓"}</small>
+  </div>
+  <div className={styles.fineAlignControls}>
+    <div className={styles.fineAlignPrecision} role="group" aria-label="Fine Align precision">
+      <button
+        type="button"
+        className={fineAlignPrecision === "fine" ? styles.fineAlignActive : ""}
+        onClick={() => setFineAlignPrecision("fine")}
+        disabled={disabled}
+      >
+        Fine · 25cm / 0.02°
+      </button>
+      <button
+        type="button"
+        className={fineAlignPrecision === "coarse" ? styles.fineAlignActive : ""}
+        onClick={() => setFineAlignPrecision("coarse")}
+        disabled={disabled}
+      >
+        Coarse · 1m / 0.1°
+      </button>
+    </div>
+    <div className={styles.fineAlignPad} role="group" aria-label="Fine Align nudge">
+      <button type="button" onClick={() => nudgeFineAlignment(0, fineMoveStep)} disabled={disabled}>↑</button>
+      <button type="button" onClick={() => nudgeFineAlignment(-fineMoveStep, 0)} disabled={disabled}>←</button>
+      <button type="button" onClick={() => nudgeFineAlignment(fineMoveStep, 0)} disabled={disabled}>→</button>
+      <button type="button" onClick={() => nudgeFineAlignment(0, -fineMoveStep)} disabled={disabled}>↓</button>
+    </div>
+    <div className={styles.fineAlignRotate} role="group" aria-label="Fine Align rotation">
+      <button type="button" onClick={() => rotateFineAlignment(-fineRotationStep)} disabled={disabled}>↶ {fineRotationStep}°</button>
+      <button type="button" onClick={() => rotateFineAlignment(fineRotationStep)} disabled={disabled}>{fineRotationStep}° ↷</button>
+    </div>
+    <div className={styles.fineAlignActions}>
+      <button type="button" onClick={revertFineAlignment} disabled={disabled || !fineAlignmentDirty}>Revert saved</button>
+      <button type="button" onClick={zeroFineAlignment} disabled={disabled}>Zero</button>
+      <button
+        type="button"
+        className={styles.fineAlignSave}
+        onClick={() => void onSaveFineAlignment()}
+        disabled={
+          disabled ||
+          calibrationDirty ||
+          !fineAlignmentDirty ||
+          !previewAlignmentAnchor
+        }
+        title={calibrationDirty ? "Pehle Calibration save karein" : undefined}
+      >
+        <Save /> {fineAlignmentDirty ? "Save Fine Align" : "Saved"}
+      </button>
+    </div>
+  </div>
+</div>
+<div className={styles.centerBar}>
                 <input
                   value={centerText}
                   onChange={(event) => setCenterText(event.target.value)}
@@ -1374,12 +1579,25 @@ export default function GeoVisualCalibration({
                 </button>
               </div>
               <div className={styles.mapStage}>
-                <div
-                  ref={mapNodeRef}
-                  className={styles.googleMapCanvas}
-                  aria-label="Google Satellite map"
-                />
-                {!mapReady && !mapError ? (
+  <div
+    ref={mapNodeRef}
+    className={styles.googleMapCanvas}
+    aria-label="Google Satellite map"
+  />
+  {fineAlignMode && mapReady ? (
+    <div
+      className={styles.fineAlignSurface}
+      onPointerDown={beginFineAlignDrag}
+      onPointerMove={moveFineAlignDrag}
+      onPointerUp={endFineAlignDrag}
+      onPointerCancel={endFineAlignDrag}
+      role="application"
+      aria-label="Drag image and plots together"
+    >
+      <span>Drag image + plots together</span>
+    </div>
+  ) : null}
+  {!mapReady && !mapError ? (
                   <div className={styles.loading}>Google Satellite load ho raha hai…</div>
                 ) : null}
                 {mapError ? <div className={styles.error}>{mapError}</div> : null}
@@ -1404,11 +1622,16 @@ export default function GeoVisualCalibration({
             : "—"}
         </span>
         <span>
-          GPS:{" "}
-          {activePoint && validTarget(activePoint)
-            ? `${activePoint.target[1].toFixed(7)}, ${activePoint.target[0].toFixed(7)}`
-            : "—"}
-        </span>
+  GPS:{" "}
+  {activePoint && validTarget(activePoint)
+    ? `${activePoint.target[1].toFixed(7)}, ${activePoint.target[0].toFixed(7)}`
+    : "—"}
+</span>
+<span>
+  Fine Align: E {fineAlignment.eastMeters.toFixed(2)}m · N{" "}
+  {fineAlignment.northMeters.toFixed(2)}m · R {fineAlignment.rotationDeg.toFixed(3)}°
+  {fineAlignmentDirty ? " · unsaved" : ""}
+</span>
       </div>
     </div>
   );

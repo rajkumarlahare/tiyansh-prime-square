@@ -13,12 +13,19 @@ import {
   type GeoControlPoint,
 } from "../../geo-calibration";
 import type { MapperPoint } from "../../mapper-geometry";
+import {
+  geoGenerationFingerprint,
+  normalizeGeoFineAlignment,
+  sameGeoFineAlignment,
+  type GeoFineAlignment,
+} from "../../geo-fine-alignment";
 
 const denied = () =>
   Response.json({ error: "Super Admin access required" }, { status: 403 });
 
 const migrationPending = (error: unknown) =>
-  error instanceof Error && /no such table:\s*geo_/i.test(error.message);
+  error instanceof Error &&
+  /no such (?:table|column):\s*(?:geo_|fine_)/i.test(error.message);
 
 async function projectExists(projectId: string) {
   return Boolean(
@@ -92,6 +99,19 @@ async function loadControlPoints(projectId: string) {
   }));
 }
 
+async function loadFineAlignment(projectId: string): Promise<GeoFineAlignment> {
+  const row = await env.DB.prepare(
+    "SELECT fine_east_m AS eastMeters,fine_north_m AS northMeters,fine_rotation_deg AS rotationDeg FROM geo_project_settings WHERE project_id=?",
+  )
+    .bind(projectId)
+    .first<{
+      eastMeters: number;
+      northMeters: number;
+      rotationDeg: number;
+    }>();
+  return normalizeGeoFineAlignment(row || {});
+}
+
 function sameControlPoints(a: GeoControlPoint[], b: GeoControlPoint[]) {
   if (a.length !== b.length) return false;
   return a.every((point, index) => {
@@ -108,22 +128,11 @@ function sameControlPoints(a: GeoControlPoint[], b: GeoControlPoint[]) {
   });
 }
 
-function geoCalibrationFingerprint(points: GeoControlPoint[]) {
-  const text = JSON.stringify(
-    points.map((point) => [
-      point.id,
-      Number(point.source[0]),
-      Number(point.source[1]),
-      Number(point.target[0]),
-      Number(point.target[1]),
-    ]),
-  );
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+function geoCalibrationFingerprint(
+  points: GeoControlPoint[],
+  fineAlignment: GeoFineAlignment,
+) {
+  return geoGenerationFingerprint(points, fineAlignment);
 }
 
 async function loadFeatures(projectId: string) {
@@ -150,16 +159,19 @@ async function loadState(projectId: string) {
   await ensureProjectState(projectId);
   const [state, features, controlPoints, plots, sources] = await Promise.all([
     env.DB.prepare(
-      "SELECT draft_revision AS draftRevision,published_revision AS publishedRevision,public_enabled AS publicEnabled,published_at AS publishedAt,updated_at AS updatedAt FROM geo_project_settings WHERE project_id=?",
-    )
-      .bind(projectId)
-      .first<{
-        draftRevision: number;
-        publishedRevision: number;
-        publicEnabled: number;
-        publishedAt: string | null;
-        updatedAt: string;
-      }>(),
+  "SELECT draft_revision AS draftRevision,published_revision AS publishedRevision,public_enabled AS publicEnabled,published_at AS publishedAt,updated_at AS updatedAt,fine_east_m AS fineEastMeters,fine_north_m AS fineNorthMeters,fine_rotation_deg AS fineRotationDeg FROM geo_project_settings WHERE project_id=?",
+)
+  .bind(projectId)
+  .first<{
+    draftRevision: number;
+    publishedRevision: number;
+    publicEnabled: number;
+    publishedAt: string | null;
+    updatedAt: string;
+    fineEastMeters: number;
+    fineNorthMeters: number;
+    fineRotationDeg: number;
+  }>(),
     loadFeatures(projectId),
     loadControlPoints(projectId),
     env.DB.prepare(
@@ -218,9 +230,14 @@ async function loadState(projectId: string) {
       road: plot.road || "",
     })),
     sources: sources.results,
-    calibrationErrorMeters,
-    calibrationDiagnostics,
-    publish: {
+calibrationErrorMeters,
+calibrationDiagnostics,
+fineAlignment: normalizeGeoFineAlignment({
+  eastMeters: state?.fineEastMeters,
+  northMeters: state?.fineNorthMeters,
+  rotationDeg: state?.fineRotationDeg,
+}),
+publish: {
       draftRevision: Number(state?.draftRevision || 0),
       publishedRevision: Number(state?.publishedRevision || 0),
       publicEnabled: Boolean(state?.publicEnabled),
@@ -351,9 +368,12 @@ export async function GET(request: Request) {
   } catch (error) {
     if (migrationPending(error))
       return Response.json(
-        { error: "Geo Mapper migration pending hai. Pehle D1 migration 0009 apply karein." },
-        { status: 503 },
-      );
+  {
+    error:
+      "Geo Mapper migration pending hai. D1 migrations 0009 se 0011 tak apply karein.",
+  },
+  { status: 503 },
+);
     console.error("Geo Mapper load failed", error);
     return Response.json({ error: "Geo Mapper data load nahi hua" }, { status: 500 });
   }
@@ -389,8 +409,9 @@ export async function POST(request: Request) {
     action?: string;
     feature?: unknown;
     features?: unknown[];
-    controlPoints?: unknown[];
-    expectedDraftRevision?: number;
+controlPoints?: unknown[];
+fineAlignment?: unknown;
+expectedDraftRevision?: number;
     id?: string;
   };
   const projectId = String(body.projectId || "").trim();
@@ -426,11 +447,33 @@ export async function POST(request: Request) {
         ),
         revisionStatement(projectId, now),
       ]);
-      await writeAudit(actor, "geo.control_points_saved", projectId, null, { count: points.length });
-      return Response.json(await loadState(projectId));
-    }
+        await writeAudit(actor, "geo.control_points_saved", projectId, null, { count: points.length });
+  return Response.json(await loadState(projectId));
+}
 
-    if (body.action === "upsert_feature") {
+if (body.action === "save_fine_alignment") {
+  const fineAlignment = normalizeGeoFineAlignment(body.fineAlignment);
+  const result = await env.DB.prepare(
+    "UPDATE geo_project_settings SET fine_east_m=?,fine_north_m=?,fine_rotation_deg=?,draft_revision=draft_revision+1,updated_at=? WHERE project_id=?",
+  )
+    .bind(
+      fineAlignment.eastMeters,
+      fineAlignment.northMeters,
+      fineAlignment.rotationDeg,
+      now,
+      projectId,
+    )
+    .run();
+  if (Number(result.meta.changes || 0) !== 1)
+    return Response.json(
+      { error: "Fine Align project state update nahi hui" },
+      { status: 409 },
+    );
+  await writeAudit(actor, "geo.fine_alignment_saved", projectId, null, fineAlignment);
+  return Response.json(await loadState(projectId));
+}
+
+if (body.action === "upsert_feature") {
       await saveFeatureBatch(projectId, [body.feature], actor);
       return Response.json(await loadState(projectId));
     }
@@ -458,13 +501,23 @@ export async function POST(request: Request) {
         ? body.controlPoints.map(cleanControlPoint)
         : [];
       const controlPoints = await loadControlPoints(projectId);
-      if (!sameControlPoints(requestedControlPoints, controlPoints))
-        return Response.json(
-          { error: "Calibration badli hai. Save Calibration/Refresh karke phir Generate karein." },
-          { status: 409 },
-        );
-      const calibration = solveGeoCalibration(controlPoints);
-      const calibrationFingerprint = geoCalibrationFingerprint(controlPoints);
+if (!sameControlPoints(requestedControlPoints, controlPoints))
+  return Response.json(
+    { error: "Calibration badli hai. Save Calibration/Refresh karke phir Generate karein." },
+    { status: 409 },
+  );
+const requestedFineAlignment = normalizeGeoFineAlignment(body.fineAlignment);
+const fineAlignment = await loadFineAlignment(projectId);
+if (!sameGeoFineAlignment(requestedFineAlignment, fineAlignment))
+  return Response.json(
+    { error: "Fine Align badla hai. Pehle Save Fine Align/Refresh karein." },
+    { status: 409 },
+  );
+const calibration = solveGeoCalibration(controlPoints);
+const calibrationFingerprint = geoCalibrationFingerprint(
+  controlPoints,
+  fineAlignment,
+);
       const existingGenerated = await env.DB.prepare(
         "SELECT id FROM geo_features WHERE project_id=? AND source='plot_mapper'",
       )
@@ -537,14 +590,15 @@ export async function POST(request: Request) {
         return Response.json(await loadState(projectId));
 
       const controlPoints = await loadControlPoints(projectId);
-      const generatedPlotFeatures = features.filter((feature) => feature.source === "plot_mapper");
+const fineAlignment = await loadFineAlignment(projectId);
+const generatedPlotFeatures = features.filter((feature) => feature.source === "plot_mapper");
       if (generatedPlotFeatures.length) {
         if (controlPoints.length < 4)
           return Response.json(
             { error: "Generated Geo plots ke liye saved calibration required hai" },
             { status: 409 },
           );
-        const fingerprint = geoCalibrationFingerprint(controlPoints);
+        const fingerprint = geoCalibrationFingerprint(controlPoints, fineAlignment);
         const staleGenerated = generatedPlotFeatures.some(
           (feature) =>
             String(feature.properties?.calibrationFingerprint || "") !== fingerprint,
@@ -573,9 +627,10 @@ export async function POST(request: Request) {
         schemaVersion: 1,
         revision,
         createdAt: now,
-        featureCollection: featuresToFeatureCollection(features),
-        controlPoints,
-      });
+          featureCollection: featuresToFeatureCollection(features),
+  controlPoints,
+  fineAlignment,
+});
       // Published snapshots are append-only. Re-enabling the same revision reuses
       // its original snapshot instead of overwriting historical evidence.
       await env.DB.prepare(

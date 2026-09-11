@@ -14,6 +14,12 @@ import {
   Upload,
 } from "lucide-react";
 import type { GeoGeometry } from "./geo-model";
+import {
+  geoGenerationFingerprint,
+  sameGeoFineAlignment,
+  type GeoFineAlignment,
+  ZERO_GEO_FINE_ALIGNMENT,
+} from "./geo-fine-alignment";
 import GeoVisualCalibration from "./geo-visual-calibration";
 import GeoVisualCalibrationGuard from "./geo-visual-calibration-guard";
 import styles from "./geo-mapper.module.css";
@@ -79,8 +85,9 @@ type GeoState = {
     createdAt: string;
   }[];
   calibrationErrorMeters: number | null;
-  calibrationDiagnostics: CalibrationDiagnostics | null;
-  publish: {
+calibrationDiagnostics: CalibrationDiagnostics | null;
+fineAlignment: GeoFineAlignment;
+publish: {
     draftRevision: number;
     publishedRevision: number;
     publicEnabled: boolean;
@@ -107,8 +114,9 @@ const emptyState = (projectId: string): GeoState => ({
   plots: [],
   sources: [],
   calibrationErrorMeters: null,
-  calibrationDiagnostics: null,
-  publish: {
+calibrationDiagnostics: null,
+fineAlignment: { ...ZERO_GEO_FINE_ALIGNMENT },
+publish: {
     draftRevision: 0,
     publishedRevision: 0,
     publicEnabled: false,
@@ -130,23 +138,7 @@ function controlPointsSignature(points: ControlPoint[]) {
   );
 }
 
-function controlPointsFingerprint(points: ControlPoint[]) {
-  const text = JSON.stringify(
-    points.map((point) => [
-      point.id,
-      Number(point.source[0]),
-      Number(point.source[1]),
-      Number(point.target[0]),
-      Number(point.target[1]),
-    ]),
-  );
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
+
 
 function importIdPart(value: string) {
   return value
@@ -301,24 +293,35 @@ export default function GeoMapper({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [migrationError, setMigrationError] = useState("");
-  const [controlPoints, setControlPoints] = useState<ControlPoint[]>([]);
-  const [manualType, setManualType] = useState<"Point" | "LineString" | "Polygon">("Polygon");
+const [controlPoints, setControlPoints] = useState<ControlPoint[]>([]);
+const [fineAlignment, setFineAlignment] = useState<GeoFineAlignment>({
+  ...ZERO_GEO_FINE_ALIGNMENT,
+});
+const [manualType, setManualType] = useState<"Point" | "LineString" | "Polygon">("Polygon");
   const [manualName, setManualName] = useState("");
   const [manualLayer, setManualLayer] = useState("site");
   const [manualPlot, setManualPlot] = useState("");
   const [manualCoordinates, setManualCoordinates] = useState("");
   const calibrationDirty = useMemo(
-    () => controlPointsSignature(controlPoints) !== controlPointsSignature(state.controlPoints || []),
-    [controlPoints, state.controlPoints],
-  );
-  const plotMapperFeatures = useMemo(
+  () => controlPointsSignature(controlPoints) !== controlPointsSignature(state.controlPoints || []),
+  [controlPoints, state.controlPoints],
+);
+const fineAlignmentDirty = useMemo(
+  () => !sameGeoFineAlignment(fineAlignment, state.fineAlignment),
+  [fineAlignment, state.fineAlignment],
+);
+const plotMapperFeatures = useMemo(
     () => state.features.filter((feature) => feature.source === "plot_mapper"),
     [state.features],
   );
   const savedCalibrationFingerprint = useMemo(
-    () => controlPointsFingerprint(state.controlPoints || []),
-    [state.controlPoints],
-  );
+  () =>
+    geoGenerationFingerprint(
+      state.controlPoints || [],
+      state.fineAlignment || ZERO_GEO_FINE_ALIGNMENT,
+    ),
+  [state.controlPoints, state.fineAlignment],
+);
   const geoPlotGenerationFresh = useMemo(
     () =>
       plotMapperFeatures.length > 0 &&
@@ -346,7 +349,8 @@ export default function GeoMapper({
         throw new Error(data.error || "Geo Mapper load nahi hua");
       }
       setState(data);
-      setControlPoints(data.controlPoints || []);
+setControlPoints(data.controlPoints || []);
+setFineAlignment(data.fineAlignment || { ...ZERO_GEO_FINE_ALIGNMENT });
     } finally {
       setLoading(false);
     }
@@ -365,9 +369,11 @@ export default function GeoMapper({
     const data = (await response.json()) as Partial<GeoState> & { error?: string };
     if (!response.ok) throw new Error(data.error || "Geo Mapper request failed");
     if (refresh && data.features && data.publish) {
-      setState(data as GeoState);
-      setControlPoints((data as GeoState).controlPoints || []);
-    }
+  const next = data as GeoState;
+  setState(next);
+  setControlPoints(next.controlPoints || []);
+  setFineAlignment(next.fineAlignment || { ...ZERO_GEO_FINE_ALIGNMENT });
+}
     return data;
   }
 
@@ -383,14 +389,38 @@ export default function GeoMapper({
     }
   }
 
-  async function generatePlots() {
-    if (calibrationDirty) {
-      notify("Calibration me unsaved changes hain. Pehle Save Calibration karein.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const data = (await action({ action: "generate_plot_features", controlPoints })) as Partial<GeoState> & { generated?: number };
+  async function saveFineAlignment() {
+  if (calibrationDirty) {
+    notify("Fine Align save se pehle Calibration save karein.");
+    return;
+  }
+  setBusy(true);
+  try {
+    await action({ action: "save_fine_alignment", fineAlignment });
+    notify("Fine Align save ho gaya");
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "Fine Align save nahi hua");
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function generatePlots() {
+  if (calibrationDirty) {
+    notify("Calibration me unsaved changes hain. Pehle Save Calibration karein.");
+    return;
+  }
+  if (fineAlignmentDirty) {
+    notify("Fine Align me unsaved changes hain. Pehle Save Fine Align karein.");
+    return;
+  }
+  setBusy(true);
+  try {
+    const data = (await action({
+      action: "generate_plot_features",
+      controlPoints,
+      fineAlignment,
+    })) as Partial<GeoState> & { generated?: number };
       notify(`${Number(data.generated || 0)} Plot Mapper polygons Geo me generate hue`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Geo plots generate nahi hue");
@@ -579,17 +609,19 @@ export default function GeoMapper({
           onClick={publishGeo}
           disabled={
             busy ||
-            (!state.features.length && !state.publish.publicEnabled) ||
-            (!state.publish.publicEnabled &&
-              (calibrationDirty || publishBlockedByStalePlots))
-          }
-          title={
-            !state.publish.publicEnabled && calibrationDirty
-              ? "Pehle Save Calibration karein"
-              : !state.publish.publicEnabled && publishBlockedByStalePlots
-                ? "Saved calibration ke saath Geo plots regenerate karein"
-                : undefined
-          }
+              (!state.features.length && !state.publish.publicEnabled) ||
+  (!state.publish.publicEnabled &&
+    (calibrationDirty || fineAlignmentDirty || publishBlockedByStalePlots))
+}
+title={
+  !state.publish.publicEnabled && calibrationDirty
+    ? "Pehle Save Calibration karein"
+    : !state.publish.publicEnabled && fineAlignmentDirty
+      ? "Pehle Save Fine Align karein"
+      : !state.publish.publicEnabled && publishBlockedByStalePlots
+        ? "Saved calibration/Fine Align ke saath Geo plots regenerate karein"
+        : undefined
+}
         >
           <Rocket /> {state.publish.publicEnabled ? "Disable Geo Publish" : "Publish Geo Snapshot"}
         </button>
@@ -637,10 +669,15 @@ export default function GeoMapper({
               features={state.features}
               plots={state.plots}
               diagnostics={calibrationDirty ? null : state.calibrationDiagnostics}
-              calibrationDirty={calibrationDirty}
-              onChange={setControlPoints}
-              onSaveCalibration={saveControlPoints}
-              disabled={busy}
+calibrationDirty={calibrationDirty}
+fineAlignment={fineAlignment}
+savedFineAlignment={state.fineAlignment || ZERO_GEO_FINE_ALIGNMENT}
+fineAlignmentDirty={fineAlignmentDirty}
+onChange={setControlPoints}
+onSaveCalibration={saveControlPoints}
+onFineAlignmentChange={setFineAlignment}
+onSaveFineAlignment={saveFineAlignment}
+disabled={busy}
               notify={notify}
             />
           </GeoVisualCalibrationGuard>
@@ -658,16 +695,32 @@ export default function GeoMapper({
             {!controlPoints.length ? <p className={styles.empty}>Kam se kam 4 door-door control points add karein.</p> : null}
           </div>
           <div className={styles.actions}>
-            <button className={styles.primary} onClick={saveControlPoints} disabled={busy}><Save /> Save Calibration</button>
-            <button onClick={generatePlots} disabled={busy || calibrationDirty || controlPoints.length < 4 || !state.plots.length}><MapPinned /> Generate Geo Plots</button>
-          </div>
-          {calibrationDirty ? <p className={styles.inlineWarn}>Unsaved calibration changes hain. Generate se pehle Save Calibration karein.</p> : null}
-          {!calibrationDirty && publishBlockedByStalePlots ? (
-            <p className={styles.inlineWarn}>
-              Saved calibration aur generated Plot Mapper Geo polygons match nahi karte. `Generate Geo Plots`
-              dobara chala kar review karein; tabhi Geo Publish enable hoga.
-            </p>
-          ) : null}
+  <button className={styles.primary} onClick={saveControlPoints} disabled={busy}><Save /> Save Calibration</button>
+  <button
+    onClick={generatePlots}
+    disabled={
+      busy ||
+      calibrationDirty ||
+      fineAlignmentDirty ||
+      controlPoints.length < 4 ||
+      !state.plots.length
+    }
+  >
+    <MapPinned /> Generate Geo Plots
+  </button>
+</div>
+{calibrationDirty ? <p className={styles.inlineWarn}>Unsaved calibration changes hain. Generate se pehle Save Calibration karein.</p> : null}
+{!calibrationDirty && fineAlignmentDirty ? (
+  <p className={styles.inlineWarn}>
+    Fine Align unsaved hai. Satellite preview me `Save Fine Align` karein; uske baad Geo plots regenerate karein.
+  </p>
+) : null}
+{!calibrationDirty && !fineAlignmentDirty && publishBlockedByStalePlots ? (
+  <p className={styles.inlineWarn}>
+    Saved calibration/Fine Align aur generated Plot Mapper Geo polygons match nahi karte. `Generate Geo Plots`
+    dobara chala kar review karein; tabhi Geo Publish enable hoga.
+  </p>
+) : null}
         </div>
 
         <div className={styles.block}>

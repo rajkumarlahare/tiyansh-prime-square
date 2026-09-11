@@ -558,3 +558,139 @@
   .mapPreviewOpacity { width: 100%; justify-content: space-between; }
   .mapPreviewOpacity input { flex: 1; width: auto; min-width: 90px; }
 }
+
+/* REKIXO_GEO_FINE_ALIGN_V3_0_1 */
+.fineAlignPanel {
+  display: grid;
+  gap: 9px;
+  margin: 0 0 8px;
+  border: 1px solid #31557f;
+  border-radius: 10px;
+  background: #0a1729;
+  padding: 10px;
+}
+.fineAlignDirty {
+  border-color: #7b5c21;
+  background: #241d12;
+}
+.fineAlignSaved {
+  border-color: #1f6f56;
+}
+.fineAlignHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.fineAlignHeading > div {
+  display: grid;
+  gap: 2px;
+}
+.fineAlignHeading b {
+  color: #eef4ff;
+  font-size: 12px;
+}
+.fineAlignHeading span,
+.fineAlignHeading small {
+  color: #9db0ca;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.fineAlignDirty .fineAlignHeading small { color: #ffd778; }
+.fineAlignSaved .fineAlignHeading small { color: #8bf0c5; }
+.fineAlignControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fineAlignPrecision,
+.fineAlignPad,
+.fineAlignRotate,
+.fineAlignActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fineAlignPanel button {
+  min-height: 32px;
+  border: 1px solid #30415e;
+  border-radius: 8px;
+  background: #101e34;
+  color: #dce5f4;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.fineAlignPanel button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.fineAlignPanel button.fineAlignActive {
+  border-color: #8a73ff;
+  background: #2b245c;
+  color: #fff;
+}
+.fineAlignPad {
+  display: grid;
+  grid-template-columns: repeat(4, 34px);
+}
+.fineAlignPad button {
+  width: 34px;
+  padding: 0;
+  font-size: 16px;
+}
+.fineAlignActions {
+  margin-left: auto;
+}
+.fineAlignPanel button.fineAlignSave {
+  border-color: #238a65;
+  background: #176b4d;
+  color: #fff;
+}
+.fineAlignSave svg {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+}
+.fineAlignSurface {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  touch-action: none;
+  cursor: grab;
+  background: rgba(5, 12, 22, .025);
+}
+.fineAlignSurface:active { cursor: grabbing; }
+.fineAlignSurface > span {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  border: 1px solid #31557f;
+  border-radius: 999px;
+  background: rgba(7, 18, 33, .92);
+  color: #dce9ff;
+  padding: 6px 9px;
+  font-size: 9px;
+  font-weight: 800;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+}
+@media (max-width: 620px) {
+  .fineAlignControls,
+  .fineAlignPrecision,
+  .fineAlignRotate,
+  .fineAlignActions {
+    width: 100%;
+  }
+  .fineAlignPrecision button,
+  .fineAlignRotate button,
+  .fineAlignActions button {
+    flex: 1;
+  }
+  .fineAlignActions { margin-left: 0; }
+}
