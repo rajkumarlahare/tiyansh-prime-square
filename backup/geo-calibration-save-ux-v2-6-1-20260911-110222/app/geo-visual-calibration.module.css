@@ -34,12 +34,6 @@
   font-weight: 800;
 }
 .active svg { width: 15px; height: 15px; }
-.active > span { color: inherit; font-size: inherit; font-weight: inherit; }
-.active small { font-size: 9px; font-weight: 800; }
-.activeSaved { border-color: #1f6f56; background: #0c3028; color: #63e6ad; }
-.activeSaved small { color: #8bf0c5; }
-.activeDirty { border-color: #7b5c21; background: #3a2a12; color: #ffd778; }
-.activeDirty small { color: #ffd778; }
 .pointTabs {
   display: flex;
   gap: 7px;
@@ -75,47 +69,7 @@
   box-shadow: 0 0 0 2px rgba(215,154,43,.18);
 }
 .pointTabs button.pointWorst small { color: #ffd778; }
-.pointTabs button.pointSaved .pointSaveState { color: #63e6ad; }
-.pointTabs button.pointUnsaved { border-color: #7b5c21; }
-.pointTabs button.pointUnsaved .pointSaveState { color: #ffd778; }
 .pointTabs button:disabled { opacity: .5; cursor: not-allowed; }
-.calibrationSaveBar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid #28538a;
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-.calibrationSaveBar > div { display: grid; gap: 3px; }
-.calibrationSaveBar b { color: #eaf3ff; font-size: 12px; }
-.calibrationSaveBar span { color: #9fc1e8; font-size: 10px; line-height: 1.45; }
-.calibrationSaveBarSaved { border-color: #1f6f56; background: #0c3028; }
-.calibrationSaveBarSaved b,
-.calibrationSaveBarSaved span { color: #8bf0c5; }
-.calibrationSaveBarDirty { border-color: #7b5c21; background: #3a2a12; }
-.calibrationSaveBarDirty b,
-.calibrationSaveBarDirty span { color: #ffd778; }
-.calibrationSaveButton {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 36px;
-  border: 1px solid #238a65;
-  border-radius: 8px;
-  background: #176b4d;
-  color: #fff;
-  padding: 8px 11px;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 800;
-  cursor: pointer;
-}
-.calibrationSaveButton svg { width: 15px; height: 15px; }
-.calibrationSaveButton:disabled { opacity: .55; cursor: not-allowed; }
 .diagnostics {
   display: grid;
   gap: 4px;
@@ -377,8 +331,6 @@
 @media (max-width: 620px) {
   .topline { flex-direction: column; }
   .active { align-self: flex-start; }
-  .calibrationSaveBar { align-items: stretch; flex-direction: column; }
-  .calibrationSaveButton { width: 100%; }
   .masterplanToolbar { align-items: stretch; }
   .masterplanToolGroup,
   .masterplanZoomGroup { width: 100%; }
@@ -484,77 +436,4 @@
 .mapStage > .loading,
 .mapStage > .error {
   z-index: 2;
-}
-
-/* REKIXO_GEO_MASTERPLAN_OVERLAY_V2_7 */
-.mapPreviewControls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  margin-bottom: 8px;
-  padding: 9px 10px;
-  border: 1px solid #24436d;
-  border-radius: 9px;
-  background: #0a1729;
-}
-.mapPreviewToggle,
-.mapPreviewOpacity {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #c9dcf7;
-  font-size: 10px;
-  font-weight: 800;
-}
-.mapPreviewToggle input { accent-color: #22c77a; }
-.mapPreviewOpacity input { width: 112px; accent-color: #22c77a; }
-.mapPreviewHint {
-  margin: -1px 0 8px;
-  color: #8299ba;
-  font-size: 9px;
-  line-height: 1.4;
-}
-.geoMasterplanOverlay {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 0;
-  height: 0;
-  transform-origin: 0 0;
-  pointer-events: none;
-  will-change: transform, opacity;
-  visibility: hidden;
-  z-index: 10;
-}
-.geoMasterplanOverlay img {
-  position: absolute;
-  left: 0;
-  top: 0;
-  display: block;
-  max-width: none;
-  max-height: none;
-  pointer-events: none;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-.geoPlotInfo {
-  min-width: 150px;
-  display: grid;
-  gap: 4px;
-  padding: 2px 1px;
-  color: #172033;
-  font: 600 12px/1.35 Arial, sans-serif;
-}
-.geoPlotInfo strong {
-  color: #071221;
-  font-size: 14px;
-}
-.geoPlotInfo span { color: #364258; }
-
-@media (max-width: 620px) {
-  .mapPreviewControls { align-items: stretch; flex-direction: column; }
-  .mapPreviewToggle,
-  .mapPreviewOpacity { width: 100%; justify-content: space-between; }
-  .mapPreviewOpacity input { flex: 1; width: auto; min-width: 90px; }
 }

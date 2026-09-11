@@ -163,10 +163,19 @@ async function loadState(projectId: string) {
     loadFeatures(projectId),
     loadControlPoints(projectId),
     env.DB.prepare(
-      "SELECT id,status,polygon FROM plots WHERE project_id=? AND TRIM(COALESCE(polygon,''))<>'' ORDER BY id",
+      "SELECT id,status,sqft,sqm,sqyd,dimensions,road,polygon FROM plots WHERE project_id=? AND TRIM(COALESCE(polygon,''))<>'' ORDER BY id",
     )
       .bind(projectId)
-      .all<{ id: string; status: string; polygon: string }>(),
+      .all<{
+        id: string;
+        status: string;
+        sqft: number;
+        sqm: number;
+        sqyd: number;
+        dimensions: string;
+        road: string;
+        polygon: string;
+      }>(),
     env.DB.prepare(
       "SELECT id,filename,content_type AS contentType,size_bytes AS sizeBytes,sha256,created_at AS createdAt FROM geo_sources WHERE project_id=? ORDER BY created_at DESC LIMIT 20",
     )
@@ -199,7 +208,15 @@ async function loadState(projectId: string) {
     projectId,
     features,
     controlPoints,
-    plots: plots.results.map((plot) => ({ id: plot.id, status: plot.status })),
+    plots: plots.results.map((plot) => ({
+      id: plot.id,
+      status: plot.status,
+      sqft: Number(plot.sqft || 0),
+      sqm: Number(plot.sqm || 0),
+      sqyd: Number(plot.sqyd || 0),
+      dimensions: plot.dimensions || "",
+      road: plot.road || "",
+    })),
     sources: sources.results,
     calibrationErrorMeters,
     calibrationDiagnostics,

@@ -254,8 +254,11 @@ async function prepareMasterplan(file: File) {
       canvas.width = targetWidth;
       canvas.height = targetHeight;
       try {
-        const context = canvas.getContext("2d", { alpha: false });
+        const context = canvas.getContext("2d", { alpha: true });
         if (!context) throw new Error("Masterplan process nahi ho payi");
+        // Preserve transparent outer masking. Canvas dimensions intentionally stay unchanged
+        // because Plot Mapper polygons and Geo calibration source points are normalized 0..1.
+        context.clearRect(0, 0, targetWidth, targetHeight);
         context.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
         const encode = (quality: number) =>
           new Promise<Blob | null>((resolve) =>

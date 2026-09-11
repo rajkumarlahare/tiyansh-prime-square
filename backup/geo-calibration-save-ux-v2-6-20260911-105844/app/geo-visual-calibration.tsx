@@ -11,9 +11,6 @@ import {
   useState,
 } from "react";
 import { Crosshair, KeyRound, LocateFixed, Map as MapIcon, Save, Satellite, Trash2 } from "lucide-react";
-import { mapNormalizedPointToGeo, solveGeoCalibration } from "./geo-calibration";
-import { solveHomography, type MapperPoint } from "./mapper-geometry";
-// REKIXO_GEO_MASTERPLAN_OVERLAY_V2_7
 import styles from "./geo-visual-calibration.module.css";
 
 type ControlPoint = {
@@ -42,24 +39,6 @@ type CalibrationDiagnostics = {
   validationMaxErrorMeters: number | null;
   worstPointId: string | null;
   points: CalibrationPointDiagnostic[];
-};
-
-type GeoPreviewFeature = {
-  id: string;
-  name: string;
-  linkedPlotId: string | null;
-  source: string;
-  geometry: { type: string; coordinates: unknown };
-};
-
-type GeoPreviewPlot = {
-  id: string;
-  status: string;
-  sqft: number;
-  sqm: number;
-  sqyd: number;
-  dimensions: string;
-  road: string;
 };
 
 type MapConfig = {
@@ -95,37 +74,6 @@ type GoogleCircle = {
   setMap(map: GoogleMapInstance | null): void;
 };
 
-type GooglePixel = { x: number; y: number };
-
-type GoogleMapProjection = {
-  fromLatLngToDivPixel(latLng: GoogleLatLng): GooglePixel | null;
-};
-
-type GoogleMapPanes = {
-  overlayLayer: HTMLElement;
-};
-
-type GoogleOverlayView = {
-  onAdd?: () => void;
-  draw?: () => void;
-  onRemove?: () => void;
-  setMap(map: GoogleMapInstance | null): void;
-  getProjection(): GoogleMapProjection;
-  getPanes(): GoogleMapPanes;
-};
-
-type GooglePolygon = {
-  addListener(eventName: string, listener: (event: GoogleMapMouseEvent) => void): GoogleListener;
-  setMap(map: GoogleMapInstance | null): void;
-};
-
-type GoogleInfoWindow = {
-  setContent(content: Node | string): void;
-  setPosition(position: { lat: number; lng: number }): void;
-  open(options: { map: GoogleMapInstance }): void;
-  close(): void;
-};
-
 type GoogleRoot = {
   maps: {
     Map: new (
@@ -133,10 +81,6 @@ type GoogleRoot = {
       options: Record<string, unknown>,
     ) => GoogleMapInstance;
     Circle: new (options: Record<string, unknown>) => GoogleCircle;
-    LatLng: new (lat: number, lng: number) => GoogleLatLng;
-    OverlayView: new () => GoogleOverlayView;
-    Polygon: new (options: Record<string, unknown>) => GooglePolygon;
-    InfoWindow: new (options?: Record<string, unknown>) => GoogleInfoWindow;
   };
 };
 
@@ -236,78 +180,18 @@ function hasPlacedSource(point: ControlPoint) {
   );
 }
 
-function sameCalibrationPoint(a: ControlPoint, b: ControlPoint) {
-  return (
-    a.id === b.id &&
-    Number(a.source[0]) === Number(b.source[0]) &&
-    Number(a.source[1]) === Number(b.source[1]) &&
-    Number(a.target[0]) === Number(b.target[0]) &&
-    Number(a.target[1]) === Number(b.target[1]) &&
-    String(a.label || "") === String(b.label || "")
-  );
-}
-
-function geoPolygonPath(feature: GeoPreviewFeature) {
-  if (feature.geometry?.type !== "Polygon") return [] as [number, number][];
-  const rings = feature.geometry.coordinates;
-  if (!Array.isArray(rings) || !Array.isArray(rings[0])) return [] as [number, number][];
-  const output: [number, number][] = [];
-  for (const raw of rings[0]) {
-    if (!Array.isArray(raw) || raw.length < 2) continue;
-    const lng = Number(raw[0]);
-    const lat = Number(raw[1]);
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
-    output.push([lng, lat]);
-  }
-  return output;
-}
-
-function geoPlotStyle(status: string) {
-  const normalized = String(status || "available").toLowerCase();
-  if (normalized === "sold") {
-    return { fillColor: "#ef334e", strokeColor: "#ff6b7f" };
-  }
-  if (normalized === "booked" || normalized === "hold") {
-    return { fillColor: "#f4b51f", strokeColor: "#ffd45f" };
-  }
-  return { fillColor: "#18b968", strokeColor: "#63e6ad" };
-}
-
-function cssProjectiveTransform(matrix: number[], width: number, height: number) {
-  if (matrix.length !== 9 || !(width > 0) || !(height > 0)) return "";
-  const a = matrix[0] / width;
-  const b = matrix[1] / height;
-  const c = matrix[2];
-  const d = matrix[3] / width;
-  const e = matrix[4] / height;
-  const f = matrix[5];
-  const g = matrix[6] / width;
-  const h = matrix[7] / height;
-  return `matrix3d(${a},${d},0,${g},${b},${e},0,${h},0,0,1,0,${c},${f},0,1)`;
-}
-
 export default function GeoVisualCalibration({
   projectId,
   controlPoints,
-  savedControlPoints,
-  features,
-  plots,
   diagnostics,
-  calibrationDirty,
   onChange,
-  onSaveCalibration,
   disabled,
   notify,
 }: {
   projectId: string;
   controlPoints: ControlPoint[];
-  savedControlPoints: ControlPoint[];
-  features: GeoPreviewFeature[];
-  plots: GeoPreviewPlot[];
   diagnostics: CalibrationDiagnostics | null;
-  calibrationDirty: boolean;
   onChange: Dispatch<SetStateAction<ControlPoint[]>>;
-  onSaveCalibration: () => void | Promise<void>;
   disabled: boolean;
   notify: (message: string) => void;
 }) {
@@ -324,17 +208,10 @@ export default function GeoVisualCalibration({
   const [masterplanZoom, setMasterplanZoom] = useState(MASTERPLAN_ZOOM_MIN);
   const [masterplanPan, setMasterplanPan] = useState({ x: 0, y: 0 });
   const [masterplanTool, setMasterplanTool] = useState<"point" | "pan">("point");
-  const [showMasterplanOverlay, setShowMasterplanOverlay] = useState(false);
-  const [showPlotOverlay, setShowPlotOverlay] = useState(true);
-  const [overlayOpacity, setOverlayOpacity] = useState(0.68);
   const mapNodeRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
   const clickListenerRef = useRef<GoogleListener | null>(null);
   const circlesRef = useRef<GoogleCircle[]>([]);
-  const masterplanOverlayRef = useRef<GoogleOverlayView | null>(null);
-  const mapPlotPolygonsRef = useRef<GooglePolygon[]>([]);
-  const mapInfoWindowRef = useRef<GoogleInfoWindow | null>(null);
-  const suppressNextMapClickRef = useRef(false);
   const activeIdRef = useRef("");
   const masterplanPanRef = useRef<{
     pointerId: number;
@@ -349,15 +226,6 @@ export default function GeoVisualCalibration({
     () => controlPoints.findIndex((point) => point.id === activeId),
     [controlPoints, activeId],
   );
-  const savedPointById = useMemo(
-    () => new globalThis.Map(savedControlPoints.map((point) => [point.id, point])),
-    [savedControlPoints],
-  );
-  const pointSaveState = (point: ControlPoint): "saved" | "unsaved" | "new" => {
-    const savedPoint = savedPointById.get(point.id);
-    if (!savedPoint) return "new";
-    return sameCalibrationPoint(point, savedPoint) ? "saved" : "unsaved";
-  };
   const diagnosticById = useMemo(
     () => new globalThis.Map((diagnostics?.points || []).map((point) => [point.id, point])),
     [diagnostics],
@@ -369,37 +237,6 @@ export default function GeoVisualCalibration({
         : -1,
     [controlPoints, diagnostics?.worstPointId],
   );
-
-  const previewCalibration = useMemo(() => {
-    const usable = controlPoints.filter(
-      (point) => hasPlacedSource(point) && validTarget(point),
-    );
-    if (usable.length < 4) return null;
-    try {
-      return solveGeoCalibration(
-        usable.map((point) => ({
-          id: point.id,
-          source: point.source,
-          target: point.target,
-          label: point.label,
-        })),
-      );
-    } catch {
-      return null;
-    }
-  }, [controlPoints]);
-
-  const previewPlotFeatures = useMemo(
-    () => features.filter((feature) => feature.source === "plot_mapper"),
-    [features],
-  );
-  const previewPlotById = useMemo(
-    () => new globalThis.Map(plots.map((plot) => [plot.id, plot])),
-    [plots],
-  );
-  const masterplanUrl =
-    `/api/project-asset/masterplan?projectId=${encodeURIComponent(projectId)}` +
-    "&preview=1&v=geo-masterplan-overlay-v2-7";
 
   useEffect(() => {
     activeIdRef.current = activeId;
@@ -480,10 +317,6 @@ export default function GeoVisualCalibration({
         });
         mapRef.current = map;
         clickListenerRef.current = map.addListener("click", (event) => {
-          if (suppressNextMapClickRef.current) {
-            suppressNextMapClickRef.current = false;
-            return;
-          }
           const targetId = activeIdRef.current;
           const latLng = event.latLng;
           if (!targetId || !latLng) {
@@ -512,12 +345,6 @@ export default function GeoVisualCalibration({
       clickListenerRef.current = null;
       circlesRef.current.forEach((circle) => circle.setMap(null));
       circlesRef.current = [];
-      masterplanOverlayRef.current?.setMap(null);
-      masterplanOverlayRef.current = null;
-      mapPlotPolygonsRef.current.forEach((polygon) => polygon.setMap(null));
-      mapPlotPolygonsRef.current = [];
-      mapInfoWindowRef.current?.close();
-      mapInfoWindowRef.current = null;
       mapRef.current = null;
       setMapReady(false);
     };
@@ -556,224 +383,12 @@ export default function GeoVisualCalibration({
       });
   }, [controlPoints, activeId, mapReady]);
 
-  useEffect(() => {
-    const map = mapRef.current;
-    const google = browserWindow().google;
-    masterplanOverlayRef.current?.setMap(null);
-    masterplanOverlayRef.current = null;
-
-    if (
-      !mapReady ||
-      !map ||
-      !google?.maps?.OverlayView ||
-      !google.maps.LatLng ||
-      !showMasterplanOverlay ||
-      !previewCalibration
-    ) {
-      return;
-    }
-
-    const sourceCorners: MapperPoint[] = [
-      [0, 0],
-      [1, 0],
-      [1, 1],
-      [0, 1],
-    ];
-    let geoCorners: [number, number][];
-    try {
-      geoCorners = sourceCorners.map((corner) =>
-        mapNormalizedPointToGeo(previewCalibration, corner),
-      );
-    } catch {
-      notify("Masterplan overlay calibration invalid hai");
-      return;
-    }
-
-    const overlay = new google.maps.OverlayView();
-    let host: HTMLDivElement | null = null;
-    let image: HTMLImageElement | null = null;
-
-    const draw = () => {
-      if (!host || !image || !image.naturalWidth || !image.naturalHeight) return;
-      const projection = overlay.getProjection();
-      const targets = geoCorners.map(([lng, lat]) =>
-        projection.fromLatLngToDivPixel(new google.maps.LatLng(lat, lng)),
-      );
-      if (targets.some((point) => !point)) return;
-      try {
-        const matrix = solveHomography(
-          sourceCorners.map((source, index) => ({
-            source,
-            target: [targets[index]!.x, targets[index]!.y] as MapperPoint,
-          })),
-        );
-        host.style.transform = cssProjectiveTransform(
-          matrix,
-          image.naturalWidth,
-          image.naturalHeight,
-        );
-      } catch {
-        host.style.visibility = "hidden";
-      }
-    };
-
-    overlay.onAdd = () => {
-      host = document.createElement("div");
-      host.className = styles.geoMasterplanOverlay;
-      host.style.opacity = String(overlayOpacity);
-      image = document.createElement("img");
-      image.src = masterplanUrl;
-      image.alt = "Calibrated masterplan overlay";
-      image.draggable = false;
-      image.decoding = "async";
-      image.onload = () => {
-        if (host) host.style.visibility = "visible";
-        draw();
-      };
-      image.onerror = () => notify("Masterplan overlay image load nahi hui");
-      host.appendChild(image);
-      overlay.getPanes().overlayLayer.appendChild(host);
-    };
-    overlay.draw = draw;
-    overlay.onRemove = () => {
-      image?.remove();
-      host?.remove();
-      image = null;
-      host = null;
-    };
-    overlay.setMap(map);
-    masterplanOverlayRef.current = overlay;
-
-    return () => {
-      if (masterplanOverlayRef.current === overlay) {
-        masterplanOverlayRef.current = null;
-      }
-      overlay.setMap(null);
-    };
-  }, [
-    mapReady,
-    masterplanUrl,
-    notify,
-    overlayOpacity,
-    previewCalibration,
-    showMasterplanOverlay,
-  ]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    const google = browserWindow().google;
-
-    mapPlotPolygonsRef.current.forEach((polygon) => polygon.setMap(null));
-    mapPlotPolygonsRef.current = [];
-    mapInfoWindowRef.current?.close();
-    mapInfoWindowRef.current = null;
-
-    if (
-      !mapReady ||
-      !map ||
-      calibrationDirty ||
-      !showPlotOverlay ||
-      !google?.maps?.Polygon ||
-      !google.maps.InfoWindow
-    ) {
-      return;
-    }
-
-    const info = new google.maps.InfoWindow();
-    mapInfoWindowRef.current = info;
-    const rendered: GooglePolygon[] = [];
-
-    for (const feature of previewPlotFeatures) {
-      const path = geoPolygonPath(feature);
-      if (path.length < 3) continue;
-      const plot = feature.linkedPlotId
-        ? previewPlotById.get(feature.linkedPlotId)
-        : undefined;
-      const style = geoPlotStyle(plot?.status || "available");
-      const polygon = new google.maps.Polygon({
-        map,
-        paths: path.map(([lng, lat]) => ({ lat, lng })),
-        clickable: true,
-        fillColor: style.fillColor,
-        fillOpacity: 0.07,
-        strokeColor: style.strokeColor,
-        strokeOpacity: 0.9,
-        strokeWeight: 1.5,
-        zIndex: 30,
-      });
-      polygon.addListener("click", (event) => {
-        suppressNextMapClickRef.current = true;
-        window.setTimeout(() => {
-          suppressNextMapClickRef.current = false;
-        }, 0);
-
-        const card = document.createElement("div");
-        card.className = styles.geoPlotInfo;
-        const title = document.createElement("strong");
-        title.textContent = plot?.id ? `Plot ${plot.id}` : feature.name || "Plot";
-        card.appendChild(title);
-
-        const status = document.createElement("span");
-        status.textContent = `Status: ${plot?.status || "available"}`;
-        card.appendChild(status);
-
-        if (plot) {
-          const area = document.createElement("span");
-          area.textContent = plot.sqft
-            ? `Area: ${Number(plot.sqft).toLocaleString("en-IN")} Sq.Ft`
-            : plot.sqyd
-              ? `Area: ${Number(plot.sqyd).toLocaleString("en-IN")} Sq.Yd`
-              : "";
-          if (area.textContent) card.appendChild(area);
-
-          if (plot.dimensions) {
-            const dimensions = document.createElement("span");
-            dimensions.textContent = `Dimensions: ${plot.dimensions}`;
-            card.appendChild(dimensions);
-          }
-          if (plot.road) {
-            const road = document.createElement("span");
-            road.textContent = `Road: ${plot.road}`;
-            card.appendChild(road);
-          }
-        }
-
-        info.setContent(card);
-        const fallback = path[0];
-        const latLng = event.latLng;
-        info.setPosition(
-          latLng
-            ? { lat: latLng.lat(), lng: latLng.lng() }
-            : { lat: fallback[1], lng: fallback[0] },
-        );
-        info.open({ map });
-      });
-      rendered.push(polygon);
-    }
-
-    mapPlotPolygonsRef.current = rendered;
-    return () => {
-      rendered.forEach((polygon) => polygon.setMap(null));
-      if (mapPlotPolygonsRef.current === rendered) {
-        mapPlotPolygonsRef.current = [];
-      }
-      if (mapInfoWindowRef.current === info) {
-        info.close();
-        mapInfoWindowRef.current = null;
-      }
-    };
-  }, [
-    calibrationDirty,
-    mapReady,
-    previewPlotById,
-    previewPlotFeatures,
-    showPlotOverlay,
-  ]);
-
   if (!config?.lab) return null;
 
   const activePoint = activeIndex >= 0 ? controlPoints[activeIndex] : null;
-  const activeSaveState = activePoint ? pointSaveState(activePoint) : null;
+  const masterplanUrl =
+    `/api/project-asset/masterplan?projectId=${encodeURIComponent(projectId)}` +
+    "&preview=1&v=geo-visual-calibration";
 
   function updateActiveSource(event: ReactPointerEvent<HTMLImageElement>) {
     if (masterplanTool !== "point") return;
@@ -947,26 +562,9 @@ export default function GeoVisualCalibration({
             real landmark tap karein.
           </span>
         </div>
-        <div
-          className={`${styles.active} ${
-            activeSaveState === "saved"
-              ? styles.activeSaved
-              : activeSaveState
-                ? styles.activeDirty
-                : ""
-          }`}
-        >
+        <div className={styles.active}>
           <Crosshair />
-          <span>{activePoint ? `Point ${activeIndex + 1}` : "No point"}</span>
-          {activeSaveState ? (
-            <small>
-              {activeSaveState === "saved"
-                ? "Saved ✓"
-                : activeSaveState === "new"
-                  ? "New · unsaved"
-                  : "Unsaved"}
-            </small>
-          ) : null}
+          {activePoint ? `Point ${activeIndex + 1}` : "No point"}
         </div>
       </div>
 
@@ -1028,11 +626,9 @@ export default function GeoVisualCalibration({
           {controlPoints.map((point, index) => {
             const diagnostic = diagnosticById.get(point.id);
             const validationError = diagnostic?.validationErrorMeters;
-            const saveState = pointSaveState(point);
             const classes = [
               point.id === activeId ? styles.pointActive : "",
               point.id === diagnostics?.worstPointId ? styles.pointWorst : "",
-              saveState === "saved" ? styles.pointSaved : styles.pointUnsaved,
             ]
               .filter(Boolean)
               .join(" ");
@@ -1053,13 +649,6 @@ export default function GeoVisualCalibration({
                 }
               >
                 P{index + 1}
-                <small className={styles.pointSaveState}>
-                  {saveState === "saved"
-                    ? "Saved ✓"
-                    : saveState === "new"
-                      ? "New · unsaved"
-                      : "Unsaved"}
-                </small>
                 <small>
                   {validTarget(point) ? "GPS ✓" : "GPS —"}
                   {validationError != null ? ` · ${validationError.toFixed(1)}m` : ""}
@@ -1071,31 +660,6 @@ export default function GeoVisualCalibration({
       ) : (
         <div className={styles.hint}>Upar `+ Point` se minimum 4 control points add karein.</div>
       )}
-
-      {controlPoints.length ? (
-        <div
-          className={`${styles.calibrationSaveBar} ${
-            calibrationDirty ? styles.calibrationSaveBarDirty : styles.calibrationSaveBarSaved
-          }`}
-        >
-          <div>
-            <b>{calibrationDirty ? "Calibration changes not saved" : "Calibration saved"}</b>
-            <span>
-              {calibrationDirty
-                ? "Existing P1/P2/... ko edit karne ke baad yahin save karein. `+ Point` sirf naya control point banata hai."
-                : "Current P1/P2/... server par saved hain. Save karne ke liye extra `+ Point` banana zaroori nahi hai."}
-            </span>
-          </div>
-          <button
-            type="button"
-            className={styles.calibrationSaveButton}
-            onClick={() => void onSaveCalibration()}
-            disabled={disabled || !calibrationDirty}
-          >
-            <Save /> {calibrationDirty ? "Save Calibration" : "Saved"}
-          </button>
-        </div>
-      ) : null}
 
       {diagnostics ? (
         <div
@@ -1310,47 +874,6 @@ export default function GeoVisualCalibration({
             </div>
           ) : (
             <>
-              <div className={styles.mapPreviewControls}>
-                <label className={styles.mapPreviewToggle}>
-                  <input
-                    type="checkbox"
-                    checked={showMasterplanOverlay}
-                    onChange={(event) => setShowMasterplanOverlay(event.target.checked)}
-                    disabled={disabled || !mapReady || !previewCalibration}
-                  />
-                  <span>Masterplan overlay preview</span>
-                </label>
-                <label className={styles.mapPreviewOpacity}>
-                  <span>Opacity {Math.round(overlayOpacity * 100)}%</span>
-                  <input
-                    type="range"
-                    min="0.15"
-                    max="1"
-                    step="0.05"
-                    value={overlayOpacity}
-                    onChange={(event) => setOverlayOpacity(Number(event.target.value))}
-                    disabled={disabled || !showMasterplanOverlay}
-                  />
-                </label>
-                <label className={styles.mapPreviewToggle}>
-                  <input
-                    type="checkbox"
-                    checked={showPlotOverlay}
-                    onChange={(event) => setShowPlotOverlay(event.target.checked)}
-                    disabled={
-                      disabled ||
-                      !mapReady ||
-                      calibrationDirty ||
-                      previewPlotFeatures.length === 0
-                    }
-                  />
-                  <span>Clickable plots ({previewPlotFeatures.length})</span>
-                </label>
-              </div>
-              <div className={styles.mapPreviewHint}>
-                Masterplan visual layer neeche rahegi; generated Geo plot polygons uske upar
-                click capture karenge. Unsaved calibration me plots intentionally hide rahenge.
-              </div>
               <div className={styles.centerBar}>
                 <input
                   value={centerText}

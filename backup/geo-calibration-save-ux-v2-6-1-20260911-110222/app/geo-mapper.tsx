@@ -62,15 +62,7 @@ type GeoState = {
   projectId: string;
   features: GeoFeature[];
   controlPoints: ControlPoint[];
-  plots: {
-    id: string;
-    status: string;
-    sqft: number;
-    sqm: number;
-    sqyd: number;
-    dimensions: string;
-    road: string;
-  }[];
+  plots: { id: string; status: string }[];
   sources: {
     id: string;
     filename: string;
@@ -633,13 +625,8 @@ export default function GeoMapper({
             <GeoVisualCalibration
               projectId={projectId}
               controlPoints={controlPoints}
-              savedControlPoints={state.controlPoints || []}
-              features={state.features}
-              plots={state.plots}
               diagnostics={calibrationDirty ? null : state.calibrationDiagnostics}
-              calibrationDirty={calibrationDirty}
               onChange={setControlPoints}
-              onSaveCalibration={saveControlPoints}
               disabled={busy}
               notify={notify}
             />
