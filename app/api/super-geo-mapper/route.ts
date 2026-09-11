@@ -101,13 +101,14 @@ async function loadControlPoints(projectId: string) {
 
 async function loadFineAlignment(projectId: string): Promise<GeoFineAlignment> {
   const row = await env.DB.prepare(
-    "SELECT fine_east_m AS eastMeters,fine_north_m AS northMeters,fine_rotation_deg AS rotationDeg FROM geo_project_settings WHERE project_id=?",
+    "SELECT fine_east_m AS eastMeters,fine_north_m AS northMeters,fine_rotation_deg AS rotationDeg,fine_scale AS scale FROM geo_project_settings WHERE project_id=?",
   )
     .bind(projectId)
     .first<{
       eastMeters: number;
       northMeters: number;
       rotationDeg: number;
+      scale: number;
     }>();
   return normalizeGeoFineAlignment(row || {});
 }
@@ -159,7 +160,7 @@ async function loadState(projectId: string) {
   await ensureProjectState(projectId);
   const [state, features, controlPoints, plots, sources] = await Promise.all([
     env.DB.prepare(
-  "SELECT draft_revision AS draftRevision,published_revision AS publishedRevision,public_enabled AS publicEnabled,published_at AS publishedAt,updated_at AS updatedAt,fine_east_m AS fineEastMeters,fine_north_m AS fineNorthMeters,fine_rotation_deg AS fineRotationDeg FROM geo_project_settings WHERE project_id=?",
+  "SELECT draft_revision AS draftRevision,published_revision AS publishedRevision,public_enabled AS publicEnabled,published_at AS publishedAt,updated_at AS updatedAt,fine_east_m AS fineEastMeters,fine_north_m AS fineNorthMeters,fine_rotation_deg AS fineRotationDeg,fine_scale AS fineScale FROM geo_project_settings WHERE project_id=?",
 )
   .bind(projectId)
   .first<{
@@ -171,6 +172,7 @@ async function loadState(projectId: string) {
     fineEastMeters: number;
     fineNorthMeters: number;
     fineRotationDeg: number;
+    fineScale: number;
   }>(),
     loadFeatures(projectId),
     loadControlPoints(projectId),
@@ -236,6 +238,7 @@ fineAlignment: normalizeGeoFineAlignment({
   eastMeters: state?.fineEastMeters,
   northMeters: state?.fineNorthMeters,
   rotationDeg: state?.fineRotationDeg,
+  scale: state?.fineScale,
 }),
 publish: {
       draftRevision: Number(state?.draftRevision || 0),
@@ -454,12 +457,13 @@ expectedDraftRevision?: number;
 if (body.action === "save_fine_alignment") {
   const fineAlignment = normalizeGeoFineAlignment(body.fineAlignment);
   const result = await env.DB.prepare(
-    "UPDATE geo_project_settings SET fine_east_m=?,fine_north_m=?,fine_rotation_deg=?,draft_revision=draft_revision+1,updated_at=? WHERE project_id=?",
+    "UPDATE geo_project_settings SET fine_east_m=?,fine_north_m=?,fine_rotation_deg=?,fine_scale=?,draft_revision=draft_revision+1,updated_at=? WHERE project_id=?",
   )
     .bind(
       fineAlignment.eastMeters,
       fineAlignment.northMeters,
       fineAlignment.rotationDeg,
+      fineAlignment.scale,
       now,
       projectId,
     )

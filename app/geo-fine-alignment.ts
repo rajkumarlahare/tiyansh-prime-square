@@ -4,17 +4,21 @@ export type GeoFineAlignment = {
   eastMeters: number;
   northMeters: number;
   rotationDeg: number;
+  scale: number;
 };
 
 export const ZERO_GEO_FINE_ALIGNMENT: GeoFineAlignment = {
   eastMeters: 0,
   northMeters: 0,
   rotationDeg: 0,
+  scale: 1,
 };
 
 const EARTH_RADIUS_METERS = 6378137;
 const MAX_TRANSLATION_METERS = 5000;
 const MAX_ROTATION_DEGREES = 180;
+const MIN_UNIFORM_SCALE = 0.5;
+const MAX_UNIFORM_SCALE = 1.5;
 
 function round(value: number, digits: number) {
   const factor = 10 ** digits;
@@ -34,6 +38,7 @@ export function normalizeGeoFineAlignment(raw: unknown): GeoFineAlignment {
   const eastMeters = round(numericField(item.eastMeters), 4);
   const northMeters = round(numericField(item.northMeters), 4);
   const rotationDeg = round(numericField(item.rotationDeg), 6);
+  const scale = round(numericField(item.scale, 1), 6);
 
   if (Math.abs(eastMeters) > MAX_TRANSLATION_METERS)
     throw new Error(`Fine Align east offset ±${MAX_TRANSLATION_METERS} m ke andar rakhein`);
@@ -41,8 +46,12 @@ export function normalizeGeoFineAlignment(raw: unknown): GeoFineAlignment {
     throw new Error(`Fine Align north offset ±${MAX_TRANSLATION_METERS} m ke andar rakhein`);
   if (Math.abs(rotationDeg) > MAX_ROTATION_DEGREES)
     throw new Error(`Fine Align rotation ±${MAX_ROTATION_DEGREES}° ke andar rakhein`);
+  if (scale < MIN_UNIFORM_SCALE || scale > MAX_UNIFORM_SCALE)
+    throw new Error(
+      `Fine Align scale ${MIN_UNIFORM_SCALE * 100}% se ${MAX_UNIFORM_SCALE * 100}% ke andar rakhein`,
+    );
 
-  return { eastMeters, northMeters, rotationDeg };
+  return { eastMeters, northMeters, rotationDeg, scale };
 }
 
 export function sameGeoFineAlignment(a: unknown, b: unknown) {
@@ -51,7 +60,8 @@ export function sameGeoFineAlignment(a: unknown, b: unknown) {
   return (
     left.eastMeters === right.eastMeters &&
     left.northMeters === right.northMeters &&
-    left.rotationDeg === right.rotationDeg
+    left.rotationDeg === right.rotationDeg &&
+    left.scale === right.scale
   );
 }
 
@@ -76,7 +86,8 @@ export function applyGeoFineAlignment(
   if (
     alignment.eastMeters === 0 &&
     alignment.northMeters === 0 &&
-    alignment.rotationDeg === 0
+    alignment.rotationDeg === 0 &&
+    alignment.scale === 1
   )
     return [point[0], point[1]];
 
@@ -89,8 +100,10 @@ export function applyGeoFineAlignment(
   const theta = alignment.rotationDeg * radians;
   const cos = Math.cos(theta);
   const sin = Math.sin(theta);
-  const rotatedX = x * cos - y * sin + alignment.eastMeters;
-  const rotatedY = x * sin + y * cos + alignment.northMeters;
+  const scaledX = x * alignment.scale;
+  const scaledY = y * alignment.scale;
+  const rotatedX = scaledX * cos - scaledY * sin + alignment.eastMeters;
+  const rotatedY = scaledX * sin + scaledY * cos + alignment.northMeters;
 
   return [
     anchor[0] +
@@ -120,6 +133,7 @@ export function geoGenerationFingerprint(
       alignment.eastMeters,
       alignment.northMeters,
       alignment.rotationDeg,
+      alignment.scale,
     ],
   });
   let hash = 2166136261;

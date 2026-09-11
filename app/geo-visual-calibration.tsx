@@ -982,6 +982,7 @@ const previewPlotFeatures = useMemo(
 
 const fineMoveStep = fineAlignPrecision === "fine" ? 0.25 : 1;
 const fineRotationStep = fineAlignPrecision === "fine" ? 0.02 : 0.1;
+const fineScaleStep = fineAlignPrecision === "fine" ? 0.001 : 0.005;
 
 function updateFineAlignment(
   updater: (current: GeoFineAlignment) => GeoFineAlignment,
@@ -1006,6 +1007,13 @@ function rotateFineAlignment(delta: number) {
   }));
 }
 
+function scaleFineAlignment(delta: number) {
+  updateFineAlignment((current) => ({
+    ...current,
+    scale: Math.min(1.5, Math.max(0.5, current.scale + delta)),
+  }));
+}
+
 function clearQueuedFineAlignDrag(flush = false) {
   if (fineAlignDragFrameRef.current !== null) {
     window.cancelAnimationFrame(fineAlignDragFrameRef.current);
@@ -1025,7 +1033,12 @@ function revertFineAlignment() {
 function zeroFineAlignment() {
   fineAlignDragRef.current = null;
   clearQueuedFineAlignDrag();
-  onFineAlignmentChange({ eastMeters: 0, northMeters: 0, rotationDeg: 0 });
+  onFineAlignmentChange({
+    eastMeters: 0,
+    northMeters: 0,
+    rotationDeg: 0,
+    scale: 1,
+  });
 }
 
 function beginFineAlignDrag(event: ReactPointerEvent<HTMLDivElement>) {
@@ -1604,7 +1617,8 @@ function goToCenter() {
       <span>
         East {fineAlignment.eastMeters.toFixed(2)} m · North{" "}
         {fineAlignment.northMeters.toFixed(2)} m · Rotation{" "}
-        {fineAlignment.rotationDeg.toFixed(3)}°
+        {fineAlignment.rotationDeg.toFixed(3)}° · Scale{" "}
+        {(fineAlignment.scale * 100).toFixed(1)}%
       </span>
     </div>
     <small>{fineAlignmentDirty ? "Unsaved" : "Saved ✓"}</small>
@@ -1617,7 +1631,7 @@ function goToCenter() {
         onClick={() => setFineAlignPrecision("fine")}
         disabled={disabled}
       >
-        Fine · 25cm / 0.02°
+        Fine · 25cm / 0.02° / 0.1%
       </button>
       <button
         type="button"
@@ -1625,7 +1639,7 @@ function goToCenter() {
         onClick={() => setFineAlignPrecision("coarse")}
         disabled={disabled}
       >
-        Coarse · 1m / 0.1°
+        Coarse · 1m / 0.1° / 0.5%
       </button>
     </div>
     <div className={styles.fineAlignPad} role="group" aria-label="Fine Align nudge">
@@ -1637,6 +1651,22 @@ function goToCenter() {
     <div className={styles.fineAlignRotate} role="group" aria-label="Fine Align rotation">
       <button type="button" onClick={() => rotateFineAlignment(-fineRotationStep)} disabled={disabled}>↶ {fineRotationStep}°</button>
       <button type="button" onClick={() => rotateFineAlignment(fineRotationStep)} disabled={disabled}>{fineRotationStep}° ↷</button>
+    </div>
+    <div className={styles.fineAlignRotate} role="group" aria-label="Fine Align uniform scale">
+      <button
+        type="button"
+        onClick={() => scaleFineAlignment(-fineScaleStep)}
+        disabled={disabled}
+      >
+        Compress −{(fineScaleStep * 100).toFixed(1)}%
+      </button>
+      <button
+        type="button"
+        onClick={() => scaleFineAlignment(fineScaleStep)}
+        disabled={disabled}
+      >
+        Expand +{(fineScaleStep * 100).toFixed(1)}%
+      </button>
     </div>
     <div className={styles.fineAlignActions}>
       <button type="button" onClick={revertFineAlignment} disabled={disabled || !fineAlignmentDirty}>Revert saved</button>
