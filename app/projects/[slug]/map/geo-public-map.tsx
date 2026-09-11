@@ -35,6 +35,7 @@ type LatLng = { lat(): number; lng(): number };
 type MapMouseEvent = { latLng?: LatLng | null };
 type Listener = { remove?: () => void };
 type MapInstance = {
+  addListener(eventName: string, listener: () => void): Listener;
   fitBounds(bounds: unknown, padding?: number): void;
 };
 type Projection = {
@@ -76,6 +77,7 @@ type RekixoWindow = Window &
   typeof globalThis & {
     google?: GoogleRoot;
     __rekixoPublicGeoMapsReady?: () => void;
+    gm_authFailure?: () => void;
   };
 
 let mapsPromise: Promise<GoogleRoot> | null = null;
@@ -136,6 +138,34 @@ function cssProjectiveTransform(matrix: number[], width: number, height: number)
   const g = matrix[6] / width;
   const h = matrix[7] / height;
   return `matrix3d(${a},${d},0,${g},${b},${e},0,${h},0,0,1,0,${c},${f},0,1)`;
+}
+
+function validatePublicGeoData(payload: PublicGeoData) {
+  if (
+    !payload ||
+    !payload.project?.slug ||
+    !payload.maps ||
+    typeof payload.maps.enabled !== "boolean" ||
+    !payload.bounds ||
+    !Array.isArray(payload.masterplanCorners) ||
+    payload.masterplanCorners.length !== 4 ||
+    !Array.isArray(payload.features) ||
+    !payload.counts
+  ) {
+    throw new Error("Satellite map data incomplete hai");
+  }
+
+  for (const value of [
+    payload.bounds.minLng,
+    payload.bounds.minLat,
+    payload.bounds.maxLng,
+    payload.bounds.maxLat,
+  ]) {
+    if (!Number.isFinite(value))
+      throw new Error("Satellite map bounds invalid hain");
+  }
+
+  return payload;
 }
 
 function plotStyle(status: string) {
@@ -245,6 +275,7 @@ export default function GeoPublicMap({
 }) {
   const mapNodeRef = useRef<HTMLDivElement | null>(null);
   const [data, setData] = useState<PublicGeoData | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -256,9 +287,13 @@ export default function GeoPublicMap({
       .then(async (response) => {
         const payload = (await response.json()) as PublicGeoData;
         if (!response.ok) throw new Error(payload.error || "Satellite map load nahi hua");
-        return payload;
+        return validatePublicGeoData(payload);
       })
-      .then(setData)
+      .then((payload) => {
+        setError("");
+        setMapReady(false);
+        setData(payload);
+      })
       .catch((reason) => {
         if (controller.signal.aborted) return;
         setError(reason instanceof Error ? reason.message : "Satellite map load nahi hua");
@@ -277,6 +312,17 @@ export default function GeoPublicMap({
     let overlay: OverlayView | null = null;
     let polygons: Polygon[] = [];
     let info: InfoWindow | null = null;
+    let tilesListener: Listener | null = null;
+    let tileTimer: number | null = null;
+    const previousAuthFailure = win().gm_authFailure;
+
+    setMapReady(false);
+    setError("");
+    win().gm_authFailure = () => {
+      if (cancelled) return;
+      setMapReady(false);
+      setError("Google Maps API key/referrer authorization fail hui");
+    };
 
     loadGoogleMaps(data.maps.apiKey)
       .then((google) => {
@@ -294,6 +340,24 @@ export default function GeoPublicMap({
           { lat: data.bounds.minLat, lng: data.bounds.minLng },
           { lat: data.bounds.maxLat, lng: data.bounds.maxLng },
         );
+
+        tilesListener = map.addListener("tilesloaded", () => {
+          if (cancelled) return;
+          if (tileTimer !== null) {
+            window.clearTimeout(tileTimer);
+            tileTimer = null;
+          }
+          setError("");
+          setMapReady(true);
+        });
+        tileTimer = window.setTimeout(() => {
+          if (cancelled) return;
+          setMapReady(false);
+          setError(
+            "Satellite tiles 20 sec me load nahi hue. Maps key/referrer aur network check karein.",
+          );
+        }, 20_000);
+
         map.fitBounds(bounds, 34);
 
         overlay = addMasterplanOverlay(
@@ -340,9 +404,12 @@ export default function GeoPublicMap({
 
     return () => {
       cancelled = true;
+      if (tileTimer !== null) window.clearTimeout(tileTimer);
+      tilesListener?.remove?.();
       overlay?.setMap(null);
       polygons.forEach((polygon) => polygon.setMap(null));
       info?.close();
+      win().gm_authFailure = previousAuthFailure;
     };
   }, [data]);
 
@@ -368,7 +435,13 @@ export default function GeoPublicMap({
         </section>
       ) : null}
 
-      {!data && !error ? <div className={styles.loading}>Satellite map load ho raha hai…</div> : null}
+      {!error && (!data || !mapReady) ? (
+        <div className={styles.loading}>
+          {data
+            ? "Google Satellite tiles load ho rahe hain…"
+            : "Satellite map data load ho raha hai…"}
+        </div>
+      ) : null}
       {error ? (
         <div className={styles.error}>
           <b>Map load nahi hua</b>
