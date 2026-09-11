@@ -52,6 +52,9 @@ const sharedDomainRoutes = platformHost
       `${platformHost}/projects/*`,
       `${platformHost}/__rekixo/*`,
       `${platformHost}/api/public-data*`,
+      // Customer Satellite Map data + promoted transparent masterplan asset.
+      // Prefix wildcard keeps projectSlug/token query strings on the Client Worker.
+      `${platformHost}/api/public-geo*`,
       `${platformHost}/api/project-asset/*`,
       `${platformHost}/api/admin/*`,
       `${platformHost}/api/data*`,
