@@ -168,6 +168,7 @@ export default function GeoVisualCalibration({
   const [centerText, setCenterText] = useState("");
   const [keyInput, setKeyInput] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
+  const [satelliteRequested, setSatelliteRequested] = useState(false);
   const mapNodeRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
   const clickListenerRef = useRef<GoogleListener | null>(null);
@@ -218,7 +219,13 @@ export default function GeoVisualCalibration({
   }, [projectId, notify]);
 
   useEffect(() => {
-    if (!config?.lab || !config.mapsEnabled || !config.apiKey || !mapNodeRef.current) return;
+    if (
+      !satelliteRequested ||
+      !config?.lab ||
+      !config.mapsEnabled ||
+      !config.apiKey ||
+      !mapNodeRef.current
+    ) return;
     let cancelled = false;
     setMapError("");
     setMapReady(false);
@@ -275,7 +282,15 @@ export default function GeoVisualCalibration({
     };
     // Map initializes once per project/config. Point overlays are maintained separately.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config?.lab, config?.mapsEnabled, config?.apiKey, projectId, notify, onChange]);
+  }, [
+    satelliteRequested,
+    config?.lab,
+    config?.mapsEnabled,
+    config?.apiKey,
+    projectId,
+    notify,
+    onChange,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -366,14 +381,12 @@ export default function GeoVisualCalibration({
       });
       const data = (await response.json()) as MapConfig;
       if (!response.ok) throw new Error(data.error || "Maps key save nahi hui");
-      const replacingLoadedKey = Boolean(config?.mapsEnabled && browserWindow().google?.maps?.Map);
+      setSatelliteRequested(false);
+      setMapError("");
+      setMapReady(false);
       setConfig(data);
       setKeyInput("");
-      notify(
-        replacingLoadedKey
-          ? "Maps key save ho gayi. Nayi key use karne ke liye page reload karein."
-          : "Maps key save ho gayi. Satellite map load ho raha hai.",
-      );
+      notify("Maps key save ho gayi. Ab `Load Google Satellite` dabayein.");
     } catch (error) {
       notify(error instanceof Error ? error.message : "Maps key save nahi hui");
     } finally {
@@ -391,11 +404,14 @@ export default function GeoVisualCalibration({
       });
       const data = (await response.json()) as MapConfig;
       if (!response.ok) throw new Error(data.error || "Saved Maps key clear nahi hui");
+      setSatelliteRequested(false);
+      setMapError("");
+      setMapReady(false);
       setConfig(data);
       setKeyInput("");
       notify(
         data.mapsEnabled
-          ? "Saved key clear ho gayi; Cloudflare environment fallback active hai."
+          ? "Saved key clear ho gayi; Cloudflare environment fallback ready hai."
           : "Saved Maps key clear ho gayi.",
       );
     } catch (error) {
@@ -568,6 +584,39 @@ export default function GeoVisualCalibration({
                 `GOOGLE_MAPS_BROWSER_KEY` environment value fallback ke roop me supported rahegi.
                 Manual longitude/latitude fields neeche bhi available hain.
               </span>
+            </div>
+          ) : !satelliteRequested ? (
+            <div className={styles.mapsSetup}>
+              <b>Google Satellite ready</b>
+              <span>
+                Safety ke liye Maps JavaScript API ab Geo Mapper open hote hi auto-load nahi hogi.
+                Neeche button dabane par hi satellite runtime start hoga.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setMapError("");
+                  setSatelliteRequested(true);
+                }}
+                disabled={disabled || keyBusy}
+                style={{
+                  justifySelf: "start",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  border: "1px solid #238a65",
+                  borderRadius: 8,
+                  background: "#176b4d",
+                  color: "#fff",
+                  padding: "9px 12px",
+                  font: "inherit",
+                  fontWeight: 800,
+                  cursor: disabled || keyBusy ? "not-allowed" : "pointer",
+                  opacity: disabled || keyBusy ? 0.45 : 1,
+                }}
+              >
+                <Satellite style={{ width: 16, height: 16 }} /> Load Google Satellite
+              </button>
             </div>
           ) : (
             <>
