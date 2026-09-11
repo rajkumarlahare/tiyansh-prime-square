@@ -625,8 +625,11 @@ export default function GeoMapper({
             <GeoVisualCalibration
               projectId={projectId}
               controlPoints={controlPoints}
+              savedControlPoints={state.controlPoints || []}
               diagnostics={calibrationDirty ? null : state.calibrationDiagnostics}
+              calibrationDirty={calibrationDirty}
               onChange={setControlPoints}
+              onSaveCalibration={saveControlPoints}
               disabled={busy}
               notify={notify}
             />

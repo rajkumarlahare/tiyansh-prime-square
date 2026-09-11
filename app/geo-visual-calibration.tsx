@@ -180,18 +180,35 @@ function hasPlacedSource(point: ControlPoint) {
   );
 }
 
+function sameCalibrationPoint(a: ControlPoint, b: ControlPoint) {
+  return (
+    a.id === b.id &&
+    Number(a.source[0]) === Number(b.source[0]) &&
+    Number(a.source[1]) === Number(b.source[1]) &&
+    Number(a.target[0]) === Number(b.target[0]) &&
+    Number(a.target[1]) === Number(b.target[1]) &&
+    String(a.label || "") === String(b.label || "")
+  );
+}
+
 export default function GeoVisualCalibration({
   projectId,
   controlPoints,
+  savedControlPoints,
   diagnostics,
+  calibrationDirty,
   onChange,
+  onSaveCalibration,
   disabled,
   notify,
 }: {
   projectId: string;
   controlPoints: ControlPoint[];
+  savedControlPoints: ControlPoint[];
   diagnostics: CalibrationDiagnostics | null;
+  calibrationDirty: boolean;
   onChange: Dispatch<SetStateAction<ControlPoint[]>>;
+  onSaveCalibration: () => void | Promise<void>;
   disabled: boolean;
   notify: (message: string) => void;
 }) {
@@ -226,6 +243,15 @@ export default function GeoVisualCalibration({
     () => controlPoints.findIndex((point) => point.id === activeId),
     [controlPoints, activeId],
   );
+  const savedPointById = useMemo(
+    () => new globalThis.Map(savedControlPoints.map((point) => [point.id, point])),
+    [savedControlPoints],
+  );
+  const pointSaveState = (point: ControlPoint): "saved" | "unsaved" | "new" => {
+    const savedPoint = savedPointById.get(point.id);
+    if (!savedPoint) return "new";
+    return sameCalibrationPoint(point, savedPoint) ? "saved" : "unsaved";
+  };
   const diagnosticById = useMemo(
     () => new globalThis.Map((diagnostics?.points || []).map((point) => [point.id, point])),
     [diagnostics],
@@ -386,6 +412,7 @@ export default function GeoVisualCalibration({
   if (!config?.lab) return null;
 
   const activePoint = activeIndex >= 0 ? controlPoints[activeIndex] : null;
+  const activeSaveState = activePoint ? pointSaveState(activePoint) : null;
   const masterplanUrl =
     `/api/project-asset/masterplan?projectId=${encodeURIComponent(projectId)}` +
     "&preview=1&v=geo-visual-calibration";
@@ -562,9 +589,26 @@ export default function GeoVisualCalibration({
             real landmark tap karein.
           </span>
         </div>
-        <div className={styles.active}>
+        <div
+          className={`${styles.active} ${
+            activeSaveState === "saved"
+              ? styles.activeSaved
+              : activeSaveState
+                ? styles.activeDirty
+                : ""
+          }`}
+        >
           <Crosshair />
-          {activePoint ? `Point ${activeIndex + 1}` : "No point"}
+          <span>{activePoint ? `Point ${activeIndex + 1}` : "No point"}</span>
+          {activeSaveState ? (
+            <small>
+              {activeSaveState === "saved"
+                ? "Saved ✓"
+                : activeSaveState === "new"
+                  ? "New · unsaved"
+                  : "Unsaved"}
+            </small>
+          ) : null}
         </div>
       </div>
 
@@ -626,9 +670,11 @@ export default function GeoVisualCalibration({
           {controlPoints.map((point, index) => {
             const diagnostic = diagnosticById.get(point.id);
             const validationError = diagnostic?.validationErrorMeters;
+            const saveState = pointSaveState(point);
             const classes = [
               point.id === activeId ? styles.pointActive : "",
               point.id === diagnostics?.worstPointId ? styles.pointWorst : "",
+              saveState === "saved" ? styles.pointSaved : styles.pointUnsaved,
             ]
               .filter(Boolean)
               .join(" ");
@@ -649,6 +695,13 @@ export default function GeoVisualCalibration({
                 }
               >
                 P{index + 1}
+                <small className={styles.pointSaveState}>
+                  {saveState === "saved"
+                    ? "Saved ✓"
+                    : saveState === "new"
+                      ? "New · unsaved"
+                      : "Unsaved"}
+                </small>
                 <small>
                   {validTarget(point) ? "GPS ✓" : "GPS —"}
                   {validationError != null ? ` · ${validationError.toFixed(1)}m` : ""}
@@ -660,6 +713,31 @@ export default function GeoVisualCalibration({
       ) : (
         <div className={styles.hint}>Upar `+ Point` se minimum 4 control points add karein.</div>
       )}
+
+      {controlPoints.length ? (
+        <div
+          className={`${styles.calibrationSaveBar} ${
+            calibrationDirty ? styles.calibrationSaveBarDirty : styles.calibrationSaveBarSaved
+          }`}
+        >
+          <div>
+            <b>{calibrationDirty ? "Calibration changes not saved" : "Calibration saved"}</b>
+            <span>
+              {calibrationDirty
+                ? "Existing P1/P2/... ko edit karne ke baad yahin save karein. `+ Point` sirf naya control point banata hai."
+                : "Current P1/P2/... server par saved hain. Save karne ke liye extra `+ Point` banana zaroori nahi hai."}
+            </span>
+          </div>
+          <button
+            type="button"
+            className={styles.calibrationSaveButton}
+            onClick={() => void onSaveCalibration()}
+            disabled={disabled || !calibrationDirty}
+          >
+            <Save /> {calibrationDirty ? "Save Calibration" : "Saved"}
+          </button>
+        </div>
+      ) : null}
 
       {diagnostics ? (
         <div
