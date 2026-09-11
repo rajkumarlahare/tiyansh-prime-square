@@ -64,11 +64,13 @@ function clamp(value: number, min: number, max: number) {
 }
 
 export default function MasterplanMaskEditor({
+  projectId,
   sourceUrl,
   disabled,
   onPreviewChange,
   notify,
 }: {
+  projectId: string;
   sourceUrl: string;
   disabled: boolean;
   onPreviewChange: (url: string | null) => void;
@@ -99,6 +101,8 @@ export default function MasterplanMaskEditor({
   const [lockedSize, setLockedSize] = useState({ width: 0, height: 0 });
   const [edited, setEdited] = useState(false);
   const [showBefore, setShowBefore] = useState(false);
+  const [liveOverlaySaved, setLiveOverlaySaved] = useState(false);
+  const [liveOverlayBusy, setLiveOverlayBusy] = useState(false);
   const [keepPoints, setKeepPoints] = useState<Point[]>([]);
   const [shapeDraft, setShapeDraft] = useState<ShapeDraft | null>(null);
   const [displaySourceUrl, setDisplaySourceUrl] = useState(sourceUrl);
@@ -186,6 +190,7 @@ export default function MasterplanMaskEditor({
       setSourceName(safeBaseName(name));
       setReady(true);
       setEdited(false);
+      setLiveOverlaySaved(false);
       setShowBefore(false);
       clearDrafts();
       setZoom(1);
@@ -211,6 +216,7 @@ export default function MasterplanMaskEditor({
   }, [sourceUrl]);
 
   function snapshot() {
+    setLiveOverlaySaved(false);
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d", { willReadFrequently: true });
     if (!canvas || !context || !canvas.width || !canvas.height) return;
@@ -592,6 +598,32 @@ export default function MasterplanMaskEditor({
       notify(error instanceof Error ? error.message : "Masked preview apply nahi hua");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function saveLiveOverlay() {
+    setLiveOverlayBusy(true);
+    try {
+      const blob = await exportBlob("image/png");
+      const form = new FormData();
+      form.set("projectId", projectId);
+      form.set(
+        "file",
+        new File([blob], "public-overlay.png", { type: "image/png" }),
+      );
+      const response = await fetch("/api/super-geo-overlay", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok)
+        throw new Error(data.error || "Live overlay save nahi hua");
+      setLiveOverlaySaved(true);
+      notify(`Live transparent overlay server par save ho gaya · ${canvasSizeLabel}`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Live overlay save nahi hua");
+    } finally {
+      setLiveOverlayBusy(false);
     }
   }
 
@@ -981,6 +1013,14 @@ export default function MasterplanMaskEditor({
             disabled={disabled || busy || !ready}
           >
             <Check /> Apply masked map preview
+          </button>
+          <button
+            type="button"
+            className={styles.primary}
+            onClick={() => void saveLiveOverlay()}
+            disabled={disabled || busy || liveOverlayBusy || !ready}
+          >
+            <Upload /> {liveOverlayBusy ? "Saving live…" : liveOverlaySaved ? "Live overlay saved ✓" : "Save live overlay"}
           </button>
           <button
             type="button"

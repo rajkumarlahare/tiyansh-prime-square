@@ -1737,6 +1737,7 @@ function goToCenter() {
       </div>
 
       <MasterplanMaskEditor
+        projectId={projectId}
         sourceUrl={masterplanUrl}
         disabled={disabled}
         onPreviewChange={setMaskedMasterplanPreviewUrl}

@@ -96,6 +96,34 @@ publish: {
   };
 };
 
+type GeoLiveInfo = {
+  lab: boolean;
+  source?: {
+    id: string;
+    name: string;
+    slug: string;
+    publicStatus: string;
+  };
+  geo?: {
+    draftRevision: number;
+    publishedRevision: number;
+    publicEnabled: boolean;
+    publishedAt: string | null;
+  };
+  overlaySaved?: boolean;
+  mapsKeyConfigured?: boolean;
+  promotion?: {
+    enabled: boolean;
+    current: boolean;
+    revision: number;
+    promotedAt: string | null;
+    token: string | null;
+  };
+  customerMapUrl?: string;
+  customerReady?: boolean;
+  error?: string;
+};
+
 type ImportFeature = {
   id?: string;
   name?: string;
@@ -293,6 +321,8 @@ export default function GeoMapper({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [migrationError, setMigrationError] = useState("");
+  const [liveInfo, setLiveInfo] = useState<GeoLiveInfo | null>(null);
+  const [liveBusy, setLiveBusy] = useState(false);
 const [controlPoints, setControlPoints] = useState<ControlPoint[]>([]);
 const [fineAlignment, setFineAlignment] = useState<GeoFineAlignment>({
   ...ZERO_GEO_FINE_ALIGNMENT,
@@ -359,6 +389,69 @@ setFineAlignment(data.fineAlignment || { ...ZERO_GEO_FINE_ALIGNMENT });
   useEffect(() => {
     load().catch((error) => notify(error instanceof Error ? error.message : "Geo Mapper load nahi hua"));
   }, [projectId]);
+
+  async function loadLiveInfo() {
+    try {
+      const response = await fetch(
+        `/api/super-geo-live?projectId=${encodeURIComponent(projectId)}`,
+        { cache: "no-store" },
+      );
+      const data = (await response.json()) as GeoLiveInfo;
+      if (!response.ok) {
+        if (response.status === 409) {
+          setLiveInfo(null);
+          return;
+        }
+        throw new Error(data.error || "Customer Geo live status load nahi hua");
+      }
+      setLiveInfo(data);
+    } catch (error) {
+      setLiveInfo(null);
+      notify(
+        error instanceof Error
+          ? error.message
+          : "Customer Geo live status load nahi hua",
+      );
+    }
+  }
+
+  useEffect(() => {
+    void loadLiveInfo();
+  }, [projectId, state.publish.publishedRevision, state.publish.publicEnabled]);
+
+  async function promoteGeoLive() {
+    setLiveBusy(true);
+    try {
+      const response = await fetch("/api/super-geo-live", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectId, action: "promote" }),
+      });
+      const data = (await response.json()) as GeoLiveInfo;
+      if (!response.ok) throw new Error(data.error || "Customer Geo promote nahi hua");
+      setLiveInfo(data);
+      notify(
+        data.customerReady
+          ? "Customer Satellite Map live hai"
+          : "Geo promote ho gaya. Customer source project website ko Review & Publish karein.",
+      );
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Customer Geo promote nahi hua");
+    } finally {
+      setLiveBusy(false);
+    }
+  }
+
+  async function copyCustomerMapLink() {
+    const url = liveInfo?.customerMapUrl;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      notify("Customer Satellite Map link copy ho gaya");
+    } catch {
+      notify(url);
+    }
+  }
 
   async function action(payload: Record<string, unknown>, refresh = true) {
     const response = await fetch("/api/super-geo-mapper", {
@@ -585,8 +678,80 @@ async function generatePlots() {
       </div>
 
       <div className={styles.guardrail}>
-        Public website ka current 2D/3D behaviour is V1 se change nahi hota. “Geo publish” sirf immutable Geo snapshot banata hai; Satellite/Public integration future gated patch me hogi.
+        Existing 2D/3D project site unchanged rahega. Geo snapshot alag immutable revision hai; customer Satellite Map ko niche explicit promotion se live karein.
       </div>
+
+      {liveInfo?.lab ? (
+        <div className={styles.guardrail}>
+          <div>
+            <b>Customer Satellite Live</b>
+            <p>
+              Source: {liveInfo.source?.name || "Customer project"} · Geo revision{" "}
+              {liveInfo.geo?.publishedRevision || 0}
+              {liveInfo.promotion?.current ? " · promoted ✓" : " · promotion pending"}
+            </p>
+            <p>
+              {liveInfo.overlaySaved
+                ? "Saved transparent live overlay ready."
+                : "Tip: exact Mask & Lossless result ke liye `Save live overlay` button ek baar dabayein; warna canonical masterplan fallback promote hoga."}
+            </p>
+            {!liveInfo.mapsKeyConfigured ? (
+              <p>
+                Google Maps browser key configured nahi hai. Public map Google Satellite load nahi karega.
+              </p>
+            ) : null}
+            {liveInfo.source?.publicStatus !== "published" ? (
+              <p>
+                Source website abhi draft hai. Promotion ke baad source project ko normal Review & Publish se website publish karein.
+              </p>
+            ) : null}
+          </div>
+          <div className={styles.toolbar}>
+            <button
+              className={styles.primary}
+              onClick={() => void promoteGeoLive()}
+              disabled={
+                liveBusy ||
+                busy ||
+                !state.publish.publicEnabled ||
+                state.publish.dirty
+              }
+            >
+              <Rocket /> {liveBusy ? "Promoting…" : "Promote Published Geo"}
+            </button>
+            {liveInfo.customerMapUrl && liveInfo.promotion?.current ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void copyCustomerMapLink()}
+                  disabled={!liveInfo.customerReady}
+                >
+                  Copy Customer Map Link
+                </button>
+                {liveInfo.customerReady ? (
+                  <a
+                    href={liveInfo.customerMapUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      padding: "9px 12px",
+                      borderRadius: 9,
+                      border: "1px solid #2c8f6b",
+                      color: "#dfffee",
+                      textDecoration: "none",
+                      fontWeight: 800,
+                    }}
+                  >
+                    Open Customer Satellite Map
+                  </a>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div className={styles.toolbar}>
         <label className={styles.fileButton}>
