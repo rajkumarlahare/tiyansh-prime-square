@@ -86,6 +86,89 @@ function haversineMeters(a: GeoPoint, b: GeoPoint) {
   return 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+export type GeoCalibrationPointDiagnostic = {
+  id: string;
+  label: string;
+  fitErrorMeters: number;
+  validationErrorMeters: number | null;
+};
+
+export type GeoCalibrationDiagnostics = {
+  pointCount: number;
+  validationCoverage: number;
+  fitMeanErrorMeters: number;
+  fitRmsErrorMeters: number;
+  fitMaxErrorMeters: number;
+  validationMeanErrorMeters: number | null;
+  validationRmsErrorMeters: number | null;
+  validationMaxErrorMeters: number | null;
+  worstPointId: string | null;
+  points: GeoCalibrationPointDiagnostic[];
+};
+
+function mean(values: number[]) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+
+function rms(values: number[]) {
+  return values.length
+    ? Math.sqrt(values.reduce((sum, value) => sum + value * value, 0) / values.length)
+    : 0;
+}
+
+export function geoCalibrationDiagnostics(
+  points: GeoControlPoint[],
+  calibration = solveGeoCalibration(points),
+): GeoCalibrationDiagnostics {
+  const fitErrors = points.map((point) =>
+    haversineMeters(mapNormalizedPointToGeo(calibration, point.source), point.target),
+  );
+
+  const validationErrors = points.map((point, index) => {
+    if (points.length < 5) return null;
+    try {
+      const training = points.filter((_, candidateIndex) => candidateIndex !== index);
+      const heldOutCalibration = solveGeoCalibration(training);
+      return haversineMeters(
+        mapNormalizedPointToGeo(heldOutCalibration, point.source),
+        point.target,
+      );
+    } catch {
+      return null;
+    }
+  });
+
+  const availableValidation = validationErrors.filter(
+    (value): value is number => value != null && Number.isFinite(value),
+  );
+
+  let worstPointId: string | null = null;
+  let worstValidationError = -1;
+  validationErrors.forEach((error, index) => {
+    if (error == null || !Number.isFinite(error) || error <= worstValidationError) return;
+    worstValidationError = error;
+    worstPointId = points[index]?.id || null;
+  });
+
+  return {
+    pointCount: points.length,
+    validationCoverage: availableValidation.length,
+    fitMeanErrorMeters: mean(fitErrors),
+    fitRmsErrorMeters: rms(fitErrors),
+    fitMaxErrorMeters: fitErrors.length ? Math.max(...fitErrors) : 0,
+    validationMeanErrorMeters: availableValidation.length ? mean(availableValidation) : null,
+    validationRmsErrorMeters: availableValidation.length ? rms(availableValidation) : null,
+    validationMaxErrorMeters: availableValidation.length ? Math.max(...availableValidation) : null,
+    worstPointId,
+    points: points.map((point, index) => ({
+      id: point.id,
+      label: point.label || "",
+      fitErrorMeters: fitErrors[index] || 0,
+      validationErrorMeters: validationErrors[index],
+    })),
+  };
+}
+
 export function geoCalibrationErrorMeters(
   calibration: GeoCalibration,
   points: GeoControlPoint[],

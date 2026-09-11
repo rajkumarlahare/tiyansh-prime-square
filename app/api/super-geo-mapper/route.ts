@@ -7,7 +7,7 @@ import {
   normalizeGeoFeature,
 } from "../../geo-model";
 import {
-  geoCalibrationErrorMeters,
+  geoCalibrationDiagnostics,
   mapNormalizedPolygonToGeo,
   solveGeoCalibration,
   type GeoControlPoint,
@@ -108,6 +108,24 @@ function sameControlPoints(a: GeoControlPoint[], b: GeoControlPoint[]) {
   });
 }
 
+function geoCalibrationFingerprint(points: GeoControlPoint[]) {
+  const text = JSON.stringify(
+    points.map((point) => [
+      point.id,
+      Number(point.source[0]),
+      Number(point.source[1]),
+      Number(point.target[0]),
+      Number(point.target[1]),
+    ]),
+  );
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 async function loadFeatures(projectId: string) {
   const rows = await env.DB.prepare(
     "SELECT id,project_id AS projectId,name,layer,geometry_type AS geometryType,geometry,linked_plot_id AS linkedPlotId,source,properties,updated_at AS updatedAt FROM geo_features WHERE project_id=? ORDER BY layer,name,id",
@@ -164,14 +182,15 @@ async function loadState(projectId: string) {
   ]);
 
   let calibrationErrorMeters: number | null = null;
+  let calibrationDiagnostics: ReturnType<typeof geoCalibrationDiagnostics> | null = null;
   if (controlPoints.length >= 4) {
     try {
-      calibrationErrorMeters = geoCalibrationErrorMeters(
-        solveGeoCalibration(controlPoints),
-        controlPoints,
-      );
+      const calibration = solveGeoCalibration(controlPoints);
+      calibrationDiagnostics = geoCalibrationDiagnostics(controlPoints, calibration);
+      calibrationErrorMeters = calibrationDiagnostics.fitMeanErrorMeters;
     } catch {
       calibrationErrorMeters = null;
+      calibrationDiagnostics = null;
     }
   }
 
@@ -183,6 +202,7 @@ async function loadState(projectId: string) {
     plots: plots.results.map((plot) => ({ id: plot.id, status: plot.status })),
     sources: sources.results,
     calibrationErrorMeters,
+    calibrationDiagnostics,
     publish: {
       draftRevision: Number(state?.draftRevision || 0),
       publishedRevision: Number(state?.publishedRevision || 0),
@@ -427,6 +447,12 @@ export async function POST(request: Request) {
           { status: 409 },
         );
       const calibration = solveGeoCalibration(controlPoints);
+      const calibrationFingerprint = geoCalibrationFingerprint(controlPoints);
+      const existingGenerated = await env.DB.prepare(
+        "SELECT id FROM geo_features WHERE project_id=? AND source='plot_mapper'",
+      )
+        .bind(projectId)
+        .all<{ id: string }>();
       const plotRows = await env.DB.prepare(
         "SELECT id,status,polygon FROM plots WHERE project_id=? AND TRIM(COALESCE(polygon,''))<>'' ORDER BY id",
       )
@@ -441,7 +467,7 @@ export async function POST(request: Request) {
         layer: "plots",
         linkedPlotId: plot.id,
         source: "plot_mapper",
-        properties: {},
+        properties: { calibrationFingerprint },
         geometry: {
           type: "Polygon" as const,
           coordinates: [mapNormalizedPolygonToGeo(calibration, parsePlotPolygon(plot.polygon))],
@@ -450,10 +476,25 @@ export async function POST(request: Request) {
       for (let index = 0; index < generated.length; index += 80) {
         await saveFeatureBatch(projectId, generated.slice(index, index + 80), actor);
       }
+
+      const generatedIds = new Set(generated.map((feature) => feature.id));
+      const staleGeneratedIds = existingGenerated.results
+        .map((row) => row.id)
+        .filter((id) => !generatedIds.has(id));
+      for (let index = 0; index < staleGeneratedIds.length; index += 80) {
+        await env.DB.batch(
+          staleGeneratedIds.slice(index, index + 80).map((id) =>
+            env.DB.prepare(
+              "DELETE FROM geo_features WHERE project_id=? AND id=? AND source='plot_mapper'",
+            ).bind(projectId, id),
+          ),
+        );
+      }
+
       return Response.json({
         ...(await loadState(projectId)),
         generated: generated.length,
-        calibrationErrorMeters: geoCalibrationErrorMeters(calibration, controlPoints),
+        staleRemoved: staleGeneratedIds.length,
       });
     }
 
@@ -477,7 +518,30 @@ export async function POST(request: Request) {
         return Response.json({ error: "Publish se pehle kam se kam ek Geo feature save karein" }, { status: 400 });
       if (Number(state?.publishedRevision || 0) === revision && Boolean(state?.publicEnabled))
         return Response.json(await loadState(projectId));
+
       const controlPoints = await loadControlPoints(projectId);
+      const generatedPlotFeatures = features.filter((feature) => feature.source === "plot_mapper");
+      if (generatedPlotFeatures.length) {
+        if (controlPoints.length < 4)
+          return Response.json(
+            { error: "Generated Geo plots ke liye saved calibration required hai" },
+            { status: 409 },
+          );
+        const fingerprint = geoCalibrationFingerprint(controlPoints);
+        const staleGenerated = generatedPlotFeatures.some(
+          (feature) =>
+            String(feature.properties?.calibrationFingerprint || "") !== fingerprint,
+        );
+        if (staleGenerated)
+          return Response.json(
+            {
+              error:
+                "Calibration ke baad Geo plots regenerate nahi hue. Generate Geo Plots karke review karein, phir publish karein.",
+            },
+            { status: 409 },
+          );
+      }
+
       const verifiedState = await env.DB.prepare(
         "SELECT draft_revision AS draftRevision FROM geo_project_settings WHERE project_id=?",
       )

@@ -21,6 +21,26 @@ type ControlPoint = {
   label?: string;
 };
 
+type CalibrationPointDiagnostic = {
+  id: string;
+  label: string;
+  fitErrorMeters: number;
+  validationErrorMeters: number | null;
+};
+
+type CalibrationDiagnostics = {
+  pointCount: number;
+  validationCoverage: number;
+  fitMeanErrorMeters: number;
+  fitRmsErrorMeters: number;
+  fitMaxErrorMeters: number;
+  validationMeanErrorMeters: number | null;
+  validationRmsErrorMeters: number | null;
+  validationMaxErrorMeters: number | null;
+  worstPointId: string | null;
+  points: CalibrationPointDiagnostic[];
+};
+
 type MapConfig = {
   lab: boolean;
   mapsEnabled: boolean;
@@ -163,12 +183,14 @@ function hasPlacedSource(point: ControlPoint) {
 export default function GeoVisualCalibration({
   projectId,
   controlPoints,
+  diagnostics,
   onChange,
   disabled,
   notify,
 }: {
   projectId: string;
   controlPoints: ControlPoint[];
+  diagnostics: CalibrationDiagnostics | null;
   onChange: Dispatch<SetStateAction<ControlPoint[]>>;
   disabled: boolean;
   notify: (message: string) => void;
@@ -203,6 +225,17 @@ export default function GeoVisualCalibration({
   const activeIndex = useMemo(
     () => controlPoints.findIndex((point) => point.id === activeId),
     [controlPoints, activeId],
+  );
+  const diagnosticById = useMemo(
+    () => new Map((diagnostics?.points || []).map((point) => [point.id, point])),
+    [diagnostics],
+  );
+  const worstPointIndex = useMemo(
+    () =>
+      diagnostics?.worstPointId
+        ? controlPoints.findIndex((point) => point.id === diagnostics.worstPointId)
+        : -1,
+    [controlPoints, diagnostics?.worstPointId],
   );
 
   useEffect(() => {
@@ -590,27 +623,80 @@ export default function GeoVisualCalibration({
 
       {controlPoints.length ? (
         <div className={styles.pointTabs}>
-          {controlPoints.map((point, index) => (
-            <button
-              type="button"
-              key={point.id}
-              className={point.id === activeId ? styles.pointActive : ""}
-              onClick={() => {
-                setActiveId(point.id);
-                setMasterplanTool("point");
-              }}
-              disabled={disabled}
-            >
-              P{index + 1}
-              <small>
-                {validTarget(point) ? "GPS ✓" : "GPS —"}
-              </small>
-            </button>
-          ))}
+          {controlPoints.map((point, index) => {
+            const diagnostic = diagnosticById.get(point.id);
+            const validationError = diagnostic?.validationErrorMeters;
+            const classes = [
+              point.id === activeId ? styles.pointActive : "",
+              point.id === diagnostics?.worstPointId ? styles.pointWorst : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return (
+              <button
+                type="button"
+                key={point.id}
+                className={classes}
+                onClick={() => {
+                  setActiveId(point.id);
+                  setMasterplanTool("point");
+                }}
+                disabled={disabled}
+                title={
+                  validationError != null
+                    ? `Leave-one-out residual ${validationError.toFixed(2)} m`
+                    : undefined
+                }
+              >
+                P{index + 1}
+                <small>
+                  {validTarget(point) ? "GPS ✓" : "GPS —"}
+                  {validationError != null ? ` · ${validationError.toFixed(1)}m` : ""}
+                </small>
+              </button>
+            );
+          })}
         </div>
       ) : (
         <div className={styles.hint}>Upar `+ Point` se minimum 4 control points add karein.</div>
       )}
+
+      {diagnostics ? (
+        <div
+          className={`${styles.diagnostics} ${
+            diagnostics.validationMeanErrorMeters != null &&
+            diagnostics.validationMeanErrorMeters > 5
+              ? styles.diagnosticsWarn
+              : ""
+          }`}
+        >
+          {diagnostics.validationMeanErrorMeters != null ? (
+            <>
+              <b>
+                LOO validation mean {diagnostics.validationMeanErrorMeters.toFixed(2)} m
+                {diagnostics.validationMaxErrorMeters != null
+                  ? ` · max ${diagnostics.validationMaxErrorMeters.toFixed(2)} m`
+                  : ""}
+              </b>
+              <span>
+                {diagnostics.validationCoverage}/{diagnostics.pointCount} independent checks.
+                {worstPointIndex >= 0 && diagnostics.validationMaxErrorMeters != null
+                  ? ` Worst P${worstPointIndex + 1}: ${diagnostics.validationMaxErrorMeters.toFixed(2)} m.`
+                  : ""}
+                {" "}Highest residual point ko masterplan aur satellite dono par recheck karein.
+              </span>
+            </>
+          ) : (
+            <>
+              <b>4-point exact-fit only</b>
+              <span>
+                Inhi 4 anchors ko fit karne se near-zero error expected hai; ye independent accuracy
+                proof nahi hai. Kam se kam ek aur door ka landmark add karke Save Calibration karein.
+              </span>
+            </>
+          )}
+        </div>
+      ) : null}
 
       <div className={styles.pairGrid}>
         <div className={styles.pane}>

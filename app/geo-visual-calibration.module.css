@@ -64,7 +64,36 @@
   color: #fff;
 }
 .pointTabs button.pointActive small { color: #cfc6ff; }
+.pointTabs button.pointWorst {
+  border-color: #d79a2b;
+  box-shadow: 0 0 0 2px rgba(215,154,43,.18);
+}
+.pointTabs button.pointWorst small { color: #ffd778; }
 .pointTabs button:disabled { opacity: .5; cursor: not-allowed; }
+.diagnostics {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #28538a;
+  border-radius: 10px;
+  background: #0c2443;
+  color: #b9d8ff;
+  padding: 10px 12px;
+}
+.diagnostics b {
+  color: #eaf3ff;
+  font-size: 12px;
+}
+.diagnostics span {
+  color: #9fc1e8;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.diagnosticsWarn {
+  border-color: #7b5c21;
+  background: #3a2a12;
+}
+.diagnosticsWarn b,
+.diagnosticsWarn span { color: #ffd778; }
 .pairGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

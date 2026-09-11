@@ -37,6 +37,26 @@ type GeoFeature = {
   properties: Record<string, unknown>;
 };
 
+type CalibrationPointDiagnostic = {
+  id: string;
+  label: string;
+  fitErrorMeters: number;
+  validationErrorMeters: number | null;
+};
+
+type CalibrationDiagnostics = {
+  pointCount: number;
+  validationCoverage: number;
+  fitMeanErrorMeters: number;
+  fitRmsErrorMeters: number;
+  fitMaxErrorMeters: number;
+  validationMeanErrorMeters: number | null;
+  validationRmsErrorMeters: number | null;
+  validationMaxErrorMeters: number | null;
+  worstPointId: string | null;
+  points: CalibrationPointDiagnostic[];
+};
+
 type GeoState = {
   schemaVersion: number;
   projectId: string;
@@ -51,6 +71,7 @@ type GeoState = {
     createdAt: string;
   }[];
   calibrationErrorMeters: number | null;
+  calibrationDiagnostics: CalibrationDiagnostics | null;
   publish: {
     draftRevision: number;
     publishedRevision: number;
@@ -78,6 +99,7 @@ const emptyState = (projectId: string): GeoState => ({
   plots: [],
   sources: [],
   calibrationErrorMeters: null,
+  calibrationDiagnostics: null,
   publish: {
     draftRevision: 0,
     publishedRevision: 0,
@@ -98,6 +120,24 @@ function controlPointsSignature(points: ControlPoint[]) {
       String(point.label || ""),
     ]),
   );
+}
+
+function controlPointsFingerprint(points: ControlPoint[]) {
+  const text = JSON.stringify(
+    points.map((point) => [
+      point.id,
+      Number(point.source[0]),
+      Number(point.source[1]),
+      Number(point.target[0]),
+      Number(point.target[1]),
+    ]),
+  );
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function importIdPart(value: string) {
@@ -263,6 +303,26 @@ export default function GeoMapper({
     () => controlPointsSignature(controlPoints) !== controlPointsSignature(state.controlPoints || []),
     [controlPoints, state.controlPoints],
   );
+  const plotMapperFeatures = useMemo(
+    () => state.features.filter((feature) => feature.source === "plot_mapper"),
+    [state.features],
+  );
+  const savedCalibrationFingerprint = useMemo(
+    () => controlPointsFingerprint(state.controlPoints || []),
+    [state.controlPoints],
+  );
+  const geoPlotGenerationFresh = useMemo(
+    () =>
+      plotMapperFeatures.length > 0 &&
+      plotMapperFeatures.every(
+        (feature) =>
+          String(feature.properties?.calibrationFingerprint || "") ===
+          savedCalibrationFingerprint,
+      ),
+    [plotMapperFeatures, savedCalibrationFingerprint],
+  );
+  const publishBlockedByStalePlots =
+    plotMapperFeatures.length > 0 && !geoPlotGenerationFresh;
 
   async function load() {
     setLoading(true);
@@ -506,7 +566,23 @@ export default function GeoMapper({
         </label>
         <button onClick={exportGeoJson} disabled={!state.features.length || busy}><Download /> Export GeoJSON</button>
         <button onClick={() => load().catch(() => notify("Refresh fail hua"))} disabled={busy}><RefreshCw /> Refresh</button>
-        <button className={state.publish.publicEnabled ? styles.secondaryDanger : styles.primary} onClick={publishGeo} disabled={busy || (!state.features.length && !state.publish.publicEnabled)}>
+        <button
+          className={state.publish.publicEnabled ? styles.secondaryDanger : styles.primary}
+          onClick={publishGeo}
+          disabled={
+            busy ||
+            (!state.features.length && !state.publish.publicEnabled) ||
+            (!state.publish.publicEnabled &&
+              (calibrationDirty || publishBlockedByStalePlots))
+          }
+          title={
+            !state.publish.publicEnabled && calibrationDirty
+              ? "Pehle Save Calibration karein"
+              : !state.publish.publicEnabled && publishBlockedByStalePlots
+                ? "Saved calibration ke saath Geo plots regenerate karein"
+                : undefined
+          }
+        >
           <Rocket /> {state.publish.publicEnabled ? "Disable Geo Publish" : "Publish Geo Snapshot"}
         </button>
       </div>
@@ -515,7 +591,28 @@ export default function GeoMapper({
         <div><b>{state.features.length}</b><span>Geo features</span></div>
         <div><b>{state.plots.length}</b><span>Mapped plots available</span></div>
         <div><b>{controlPoints.length}</b><span>Control points</span></div>
-        <div><b>{state.calibrationErrorMeters == null ? "—" : `${state.calibrationErrorMeters.toFixed(2)} m`}</b><span>Calibration mean error</span></div>
+        <div>
+          <b>
+            {calibrationDirty
+              ? "Unsaved"
+              : state.calibrationDiagnostics?.validationMeanErrorMeters != null
+                ? `${state.calibrationDiagnostics.validationMeanErrorMeters.toFixed(2)} m`
+                : controlPoints.length === 4 && state.calibrationDiagnostics
+                  ? "Exact-fit"
+                  : state.calibrationErrorMeters == null
+                    ? "—"
+                    : `${state.calibrationErrorMeters.toFixed(2)} m`}
+          </b>
+          <span>
+            {calibrationDirty
+              ? "Save to recalculate"
+              : state.calibrationDiagnostics?.validationMeanErrorMeters != null
+                ? `LOO validation mean · ${state.calibrationDiagnostics.validationCoverage}/${state.calibrationDiagnostics.pointCount}`
+                : controlPoints.length === 4 && state.calibrationDiagnostics
+                  ? "Add 1+ independent point to validate"
+                  : "Calibration fit mean error"}
+          </span>
+        </div>
       </div>
 
       <div className={styles.grid}>
@@ -528,6 +625,7 @@ export default function GeoMapper({
             <GeoVisualCalibration
               projectId={projectId}
               controlPoints={controlPoints}
+              diagnostics={calibrationDirty ? null : state.calibrationDiagnostics}
               onChange={setControlPoints}
               disabled={busy}
               notify={notify}
@@ -551,6 +649,12 @@ export default function GeoMapper({
             <button onClick={generatePlots} disabled={busy || calibrationDirty || controlPoints.length < 4 || !state.plots.length}><MapPinned /> Generate Geo Plots</button>
           </div>
           {calibrationDirty ? <p className={styles.inlineWarn}>Unsaved calibration changes hain. Generate se pehle Save Calibration karein.</p> : null}
+          {!calibrationDirty && publishBlockedByStalePlots ? (
+            <p className={styles.inlineWarn}>
+              Saved calibration aur generated Plot Mapper Geo polygons match nahi karte. `Generate Geo Plots`
+              dobara chala kar review karein; tabhi Geo Publish enable hoga.
+            </p>
+          ) : null}
         </div>
 
         <div className={styles.block}>
