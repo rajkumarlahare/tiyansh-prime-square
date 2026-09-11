@@ -13,6 +13,7 @@ import {
 import { Crosshair, KeyRound, LocateFixed, Map as MapIcon, Save, Satellite, Trash2 } from "lucide-react";
 import { mapNormalizedPointToGeo, solveGeoCalibration } from "./geo-calibration";
 import { solveHomography, type MapperPoint } from "./mapper-geometry";
+import MasterplanMaskEditor from "./masterplan-mask-editor";
 // REKIXO_GEO_MASTERPLAN_OVERLAY_V2_7
 import styles from "./geo-visual-calibration.module.css";
 
@@ -327,6 +328,7 @@ export default function GeoVisualCalibration({
   const [showMasterplanOverlay, setShowMasterplanOverlay] = useState(false);
   const [showPlotOverlay, setShowPlotOverlay] = useState(true);
   const [overlayOpacity, setOverlayOpacity] = useState(0.68);
+  const [maskedMasterplanPreviewUrl, setMaskedMasterplanPreviewUrl] = useState<string | null>(null);
   const mapNodeRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
   const clickListenerRef = useRef<GoogleListener | null>(null);
@@ -400,6 +402,7 @@ export default function GeoVisualCalibration({
   const masterplanUrl =
     `/api/project-asset/masterplan?projectId=${encodeURIComponent(projectId)}` +
     "&preview=1&v=geo-masterplan-overlay-v2-7";
+  const overlayMasterplanUrl = maskedMasterplanPreviewUrl || masterplanUrl;
 
   useEffect(() => {
     activeIdRef.current = activeId;
@@ -622,7 +625,7 @@ export default function GeoVisualCalibration({
       host.className = styles.geoMasterplanOverlay;
       host.style.opacity = String(overlayOpacity);
       image = document.createElement("img");
-      image.src = masterplanUrl;
+      image.src = overlayMasterplanUrl;
       image.alt = "Calibrated masterplan overlay";
       image.draggable = false;
       image.decoding = "async";
@@ -652,7 +655,7 @@ export default function GeoVisualCalibration({
     };
   }, [
     mapReady,
-    masterplanUrl,
+    overlayMasterplanUrl,
     notify,
     overlayOpacity,
     previewCalibration,
@@ -1385,6 +1388,13 @@ export default function GeoVisualCalibration({
           )}
         </div>
       </div>
+
+      <MasterplanMaskEditor
+        sourceUrl={masterplanUrl}
+        disabled={disabled}
+        onPreviewChange={setMaskedMasterplanPreviewUrl}
+        notify={notify}
+      />
 
       <div className={styles.status}>
         <span>

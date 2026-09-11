@@ -1,0 +1,309 @@
+.editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+  border: 1px solid #284266;
+  border-radius: 13px;
+  background: #081626;
+  padding: 12px;
+  color: #eef4ff;
+}
+.heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.heading > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+.heading b {
+  color: #f7f9ff;
+  font-size: 13px;
+}
+.heading span {
+  color: #8f9db4;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.lockBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  border: 1px solid #1f6f56;
+  border-radius: 999px;
+  background: #0c3028;
+  color: #8bf0c5;
+  padding: 7px 10px;
+  font-size: 10px;
+  font-weight: 800;
+}
+.lockBadge svg {
+  width: 14px;
+  height: 14px;
+}
+.safety {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #28538a;
+  border-radius: 10px;
+  background: #0c2443;
+  padding: 10px 12px;
+}
+.safety b {
+  color: #eaf3ff;
+  font-size: 11px;
+}
+.safety span {
+  color: #9fc1e8;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.toolbar {
+  display: grid;
+  gap: 8px;
+}
+.toolRow,
+.adjustRow,
+.exportActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.toolRow button,
+.adjustRow button,
+.exportActions button,
+.keepBar button,
+.uploadButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid #30415e;
+  border-radius: 8px;
+  background: #101e34;
+  color: #dce5f4;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.toolRow button svg,
+.exportActions button svg,
+.uploadButton svg {
+  width: 14px;
+  height: 14px;
+}
+.toolRow button:disabled,
+.adjustRow button:disabled,
+.exportActions button:disabled,
+.keepBar button:disabled,
+.uploadButton:has(input:disabled) {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.toolRow .activeTool {
+  border-color: #8a73ff;
+  background: #2b245c;
+  color: #fff;
+}
+.uploadButton {
+  position: relative;
+  overflow: hidden;
+}
+.uploadButton input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.adjustRow {
+  justify-content: space-between;
+}
+.adjustRow > label:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(280px, 100%);
+  color: #aebbd0;
+  font-size: 10px;
+  font-weight: 700;
+}
+.adjustRow input[type="range"] {
+  accent-color: #63e6ad;
+}
+.zoomControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.zoomControls span {
+  min-width: 48px;
+  color: #dce5f4;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 800;
+}
+.beforeToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #c8d2e2;
+  font-size: 10px;
+  font-weight: 800;
+}
+.keepBar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #6c59c7;
+  border-radius: 10px;
+  background: #17143a;
+  padding: 9px 10px;
+}
+.keepBar span {
+  color: #cfc6ff;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.primary {
+  border-color: #238a65 !important;
+  background: #176b4d !important;
+  color: #fff !important;
+}
+.viewport {
+  position: relative;
+  min-height: 430px;
+  overflow: hidden;
+  border: 1px solid #21304a;
+  border-radius: 11px;
+  background-color: #0b1420;
+  background-image:
+    linear-gradient(45deg, #152235 25%, transparent 25%),
+    linear-gradient(-45deg, #152235 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #152235 75%),
+    linear-gradient(-45deg, transparent 75%, #152235 75%);
+  background-size: 24px 24px;
+  background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+  touch-action: manipulation;
+}
+.viewportPan {
+  cursor: grab;
+  touch-action: none;
+}
+.viewportPan:active {
+  cursor: grabbing;
+}
+.surface {
+  position: relative;
+  width: 100%;
+  transform-origin: center center;
+  will-change: transform;
+  line-height: 0;
+}
+.canvas,
+.beforeImage {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.canvas {
+  cursor: crosshair;
+  touch-action: none;
+}
+.canvasHidden {
+  visibility: hidden;
+}
+.beforeImage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.keepOverlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.loading {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  background: #071221;
+  color: #8f9db4;
+  font-size: 11px;
+}
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dimensionCheck {
+  display: grid;
+  gap: 3px;
+}
+.dimensionCheck b {
+  color: #eaf3ff;
+  font-size: 11px;
+}
+.dimensionCheck span {
+  color: #8bf0c5;
+  font-size: 10px;
+  line-height: 1.45;
+}
+@media (max-width: 760px) {
+  .heading,
+  .footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .lockBadge {
+    align-self: flex-start;
+  }
+  .viewport {
+    min-height: 320px;
+  }
+  .keepBar {
+    grid-template-columns: 1fr;
+  }
+  .keepBar button {
+    width: 100%;
+  }
+  .exportActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .exportActions button {
+    width: 100%;
+  }
+}
+@media (max-width: 480px) {
+  .viewport {
+    min-height: 260px;
+  }
+  .toolRow,
+  .adjustRow {
+    align-items: stretch;
+  }
+  .toolRow button,
+  .uploadButton {
+    flex: 1 1 44%;
+  }
+  .adjustRow > label:first-child {
+    width: 100%;
+  }
+}
