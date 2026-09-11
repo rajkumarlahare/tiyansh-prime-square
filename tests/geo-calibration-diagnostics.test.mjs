@@ -53,7 +53,7 @@ test("generated Plot Mapper Geo polygons are tied to the saved calibration", () 
   assert.match(route, /function geoCalibrationFingerprint/);
   assert.match(route, /properties: \{ calibrationFingerprint \}/);
   assert.match(mapper, /geoPlotGenerationFresh/);
-  assert.match(mapper, /Saved calibration aur generated Plot Mapper Geo polygons match nahi karte/);
+  assert.match(mapper, /Saved calibration\/Fine Align aur generated Plot Mapper Geo polygons match nahi karte/);
 });
 
 test("Geo publish rejects stale generated polygons server-side", () => {

@@ -31,9 +31,9 @@ test("Geo UI is a separate Super Admin workspace", () => {
   assert.match(dashboard, /<GeoMapper key=\{projectId\}/);
 });
 
-test("Geo generation requires the exact saved calibration", () => {
+test("Geo generation requires the exact saved calibration and Fine Align", () => {
   assert.match(geoUi, /calibrationDirty/);
-  assert.match(geoUi, /generate_plot_features", controlPoints/);
+  assert.match(geoUi, /action:\s*"generate_plot_features",[\s\S]*controlPoints,[\s\S]*fineAlignment,/);
   assert.match(route, /sameControlPoints\(requestedControlPoints, controlPoints\)/);
   assert.match(route, /Calibration badli hai/);
 });
