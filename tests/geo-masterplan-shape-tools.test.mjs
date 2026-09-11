@@ -29,3 +29,13 @@ test("existing safety guarantees remain intact", () => {
   assert.match(css, /\.shapeBar/);
   assert.match(css, /\.shapeOverlay/);
 });
+
+
+test("wave and zigzag amplitudes are reduced for tighter decorative cuts", () => {
+  assert.match(editor, /const WAVE_AMPLITUDE_SCALE = 0\.3;/);
+  assert.match(editor, /const ZIGZAG_AMPLITUDE_SCALE = 0\.3;/);
+  assert.match(editor, /brushSize \* 0\.9 \* WAVE_AMPLITUDE_SCALE/);
+  assert.match(editor, /distance \* 0\.1 \* WAVE_AMPLITUDE_SCALE/);
+  assert.match(editor, /brushSize \* 0\.85 \* ZIGZAG_AMPLITUDE_SCALE/);
+  assert.match(editor, /distance \* 0\.09 \* ZIGZAG_AMPLITUDE_SCALE/);
+});

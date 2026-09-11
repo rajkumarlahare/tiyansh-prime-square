@@ -31,6 +31,8 @@ const ZOOM_MAX = 8;
 const ZOOM_STEP = 0.5;
 const HISTORY_LIMIT = 6;
 const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
+const WAVE_AMPLITUDE_SCALE = 0.3;
+const ZIGZAG_AMPLITUDE_SCALE = 0.3;
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -311,7 +313,10 @@ export default function MasterplanMaskEditor({
 
     const normal = { x: -dy / distance, y: dx / distance };
     const cycles = Math.max(2, Math.round(distance / Math.max(brushSize * 3.4, 90)));
-    const amplitude = Math.max(brushSize * 0.9, Math.min(distance * 0.1, brushSize * 2.8));
+    const amplitude = Math.max(
+      brushSize * 0.9 * WAVE_AMPLITUDE_SCALE,
+      Math.min(distance * 0.1 * WAVE_AMPLITUDE_SCALE, brushSize * 2.8 * WAVE_AMPLITUDE_SCALE),
+    );
     const segments = Math.max(32, cycles * 16);
     const points: Point[] = [];
 
@@ -335,7 +340,13 @@ export default function MasterplanMaskEditor({
 
     const normal = { x: -dy / distance, y: dx / distance };
     const teeth = Math.max(4, Math.round(distance / Math.max(brushSize * 1.7, 50)));
-    const amplitude = Math.max(brushSize * 0.85, Math.min(distance * 0.09, brushSize * 2.6));
+    const amplitude = Math.max(
+      brushSize * 0.85 * ZIGZAG_AMPLITUDE_SCALE,
+      Math.min(
+        distance * 0.09 * ZIGZAG_AMPLITUDE_SCALE,
+        brushSize * 2.6 * ZIGZAG_AMPLITUDE_SCALE,
+      ),
+    );
     const points: Point[] = [start];
 
     for (let index = 1; index < teeth * 2; index += 1) {
