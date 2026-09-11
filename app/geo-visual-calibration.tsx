@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Crosshair, KeyRound, LocateFixed, Map, Save, Satellite, Trash2 } from "lucide-react";
+import { Crosshair, KeyRound, LocateFixed, Map as MapIcon, Save, Satellite, Trash2 } from "lucide-react";
 import styles from "./geo-visual-calibration.module.css";
 
 type ControlPoint = {
@@ -227,7 +227,7 @@ export default function GeoVisualCalibration({
     [controlPoints, activeId],
   );
   const diagnosticById = useMemo(
-    () => new Map((diagnostics?.points || []).map((point) => [point.id, point])),
+    () => new globalThis.Map((diagnostics?.points || []).map((point) => [point.id, point])),
     [diagnostics],
   );
   const worstPointIndex = useMemo(
@@ -701,7 +701,7 @@ export default function GeoVisualCalibration({
       <div className={styles.pairGrid}>
         <div className={styles.pane}>
           <div className={styles.paneTitle}>
-            <Map />
+            <MapIcon />
             <div>
               <b>1 · Masterplan source</b>
               <span>Tap se Source X/Y automatic 0..1 me set hoga.</span>
