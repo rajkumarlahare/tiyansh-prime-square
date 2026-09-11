@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Crosshair, LocateFixed, Map, Satellite } from "lucide-react";
+import { Crosshair, KeyRound, LocateFixed, Map, Save, Satellite, Trash2 } from "lucide-react";
 import styles from "./geo-visual-calibration.module.css";
 
 type ControlPoint = {
@@ -23,6 +23,9 @@ type MapConfig = {
   lab: boolean;
   mapsEnabled: boolean;
   apiKey?: string | null;
+  configured?: boolean;
+  maskedKey?: string | null;
+  keySource?: "saved" | "env" | null;
   error?: string;
 };
 
@@ -163,6 +166,8 @@ export default function GeoVisualCalibration({
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState("");
   const [centerText, setCenterText] = useState("");
+  const [keyInput, setKeyInput] = useState("");
+  const [keyBusy, setKeyBusy] = useState(false);
   const mapNodeRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<GoogleMapInstance | null>(null);
   const clickListenerRef = useRef<GoogleListener | null>(null);
@@ -346,6 +351,60 @@ export default function GeoVisualCalibration({
     );
   }
 
+  async function saveMapsKey() {
+    const apiKey = keyInput.trim();
+    if (!apiKey) {
+      notify("Google Maps browser API key paste karein");
+      return;
+    }
+    setKeyBusy(true);
+    try {
+      const response = await fetch("/api/super-geo-map-config", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectId, action: "save_key", apiKey }),
+      });
+      const data = (await response.json()) as MapConfig;
+      if (!response.ok) throw new Error(data.error || "Maps key save nahi hui");
+      const replacingLoadedKey = Boolean(config?.mapsEnabled && browserWindow().google?.maps?.Map);
+      setConfig(data);
+      setKeyInput("");
+      notify(
+        replacingLoadedKey
+          ? "Maps key save ho gayi. Nayi key use karne ke liye page reload karein."
+          : "Maps key save ho gayi. Satellite map load ho raha hai.",
+      );
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Maps key save nahi hui");
+    } finally {
+      setKeyBusy(false);
+    }
+  }
+
+  async function clearSavedMapsKey() {
+    setKeyBusy(true);
+    try {
+      const response = await fetch("/api/super-geo-map-config", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectId, action: "clear_saved_key" }),
+      });
+      const data = (await response.json()) as MapConfig;
+      if (!response.ok) throw new Error(data.error || "Saved Maps key clear nahi hui");
+      setConfig(data);
+      setKeyInput("");
+      notify(
+        data.mapsEnabled
+          ? "Saved key clear ho gayi; Cloudflare environment fallback active hai."
+          : "Saved Maps key clear ho gayi.",
+      );
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Saved Maps key clear nahi hui");
+    } finally {
+      setKeyBusy(false);
+    }
+  }
+
   return (
     <div className={styles.visual}>
       <div className={styles.topline}>
@@ -360,6 +419,59 @@ export default function GeoVisualCalibration({
           <Crosshair />
           {activePoint ? `Point ${activeIndex + 1}` : "No point"}
         </div>
+      </div>
+
+      <div className={styles.keyPanel}>
+        <div className={styles.keyHeading}>
+          <KeyRound />
+          <div>
+            <b>Google Satellite key</b>
+            <span>
+              {config.configured
+                ? `${config.maskedKey || "Configured"} · ${
+                    config.keySource === "saved" ? "saved in Super Admin" : "Cloudflare env fallback"
+                  }`
+                : "Not configured"}
+            </span>
+          </div>
+        </div>
+        <div className={styles.keyControls}>
+          <input
+            type="password"
+            value={keyInput}
+            onChange={(event) => setKeyInput(event.target.value)}
+            placeholder={
+              config.configured
+                ? "Replacement Google Maps browser key paste karein"
+                : "Google Maps browser key paste karein"
+            }
+            autoComplete="off"
+            spellCheck={false}
+            disabled={disabled || keyBusy}
+          />
+          <button
+            type="button"
+            onClick={saveMapsKey}
+            disabled={disabled || keyBusy || !keyInput.trim()}
+          >
+            <Save /> {keyBusy ? "Saving…" : "Save Maps Key"}
+          </button>
+          {config.keySource === "saved" ? (
+            <button
+              type="button"
+              className={styles.keyDanger}
+              onClick={clearSavedMapsKey}
+              disabled={disabled || keyBusy}
+            >
+              <Trash2 /> Remove Saved
+            </button>
+          ) : null}
+        </div>
+        <small>
+          Ye browser key authenticated Super Admin Geo Lab ke liye global setting hai; kisi client
+          project me save nahi hoti. Google Cloud me `https://admin.rekixo.com/*` aur Maps
+          JavaScript API restriction enabled rakhein. Browser key browser me visible hona expected hai.
+        </small>
       </div>
 
       {controlPoints.length ? (
@@ -452,8 +564,9 @@ export default function GeoVisualCalibration({
             <div className={styles.mapsSetup}>
               <b>Satellite key setup pending</b>
               <span>
-                Super Admin Worker me `GOOGLE_MAPS_BROWSER_KEY` configure karein. Manual
-                longitude/latitude fields neeche fallback ke roop me available rahenge.
+                Upar Google Maps browser key paste karke Save Maps Key karein. Cloudflare
+                `GOOGLE_MAPS_BROWSER_KEY` environment value fallback ke roop me supported rahegi.
+                Manual longitude/latitude fields neeche bhi available hain.
               </span>
             </div>
           ) : (

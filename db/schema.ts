@@ -67,3 +67,14 @@ export const geoSources = sqliteTable("geo_sources", {
 export const geoVersions = sqliteTable("geo_versions", {
   projectId:text("project_id").notNull(), version:integer("version").notNull(), snapshot:text("snapshot").notNull(), createdAt:text("created_at").notNull()
 },table=>({pk:primaryKey({columns:[table.projectId,table.version]}),projectCreatedIndex:index("idx_geo_versions_project_created").on(table.projectId,table.createdAt)}));
+
+
+// Global platform configuration, isolated from per-project settings.
+// The Google Maps browser key is intentionally platform-scoped because one restricted
+// browser key powers Super Admin Geo Labs across current and future client projects.
+export const platformSettings = sqliteTable("platform_settings", {
+  key:text("key").primaryKey(),
+  value:text("value").notNull(),
+  updatedAt:text("updated_at").notNull(),
+  updatedBy:text("updated_by").notNull().default("")
+});
