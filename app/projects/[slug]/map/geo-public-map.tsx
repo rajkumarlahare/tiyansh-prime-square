@@ -364,12 +364,15 @@ export default function GeoPublicMap({
       .then((google) => {
         if (cancelled || !mapNodeRef.current) return;
         const map = new google.maps.Map(mapNodeRef.current, {
-          mapTypeId: "satellite",
+          // Hybrid preserves satellite imagery while allowing Google's
+          // road/highway/locality/place labels to render around the project.
+          mapTypeId: "hybrid",
           disableDefaultUI: false,
           streetViewControl: false,
           mapTypeControl: true,
           fullscreenControl: true,
-          clickableIcons: false,
+          // Keep Google's available POI icons/labels interactive.
+          clickableIcons: true,
           gestureHandling: "greedy",
         });
         const bounds = new google.maps.LatLngBounds(

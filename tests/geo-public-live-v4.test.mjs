@@ -84,10 +84,11 @@ test("Public masterplan route accepts only promoted R2 key under the owned Geo L
   assert.match(publicAsset, /requestedToken !== token/);
 });
 
-test("Customer map page uses Google Satellite plus projective masterplan and clickable polygons", () => {
+test("Customer map page uses Google Hybrid labels plus projective masterplan and clickable polygons", () => {
   assert.match(page, /isPlatformAccessHost/);
   assert.match(page, /projectBySlug/);
-  assert.match(client, /mapTypeId: "satellite"/);
+  assert.match(client, /mapTypeId: "hybrid"/);
+  assert.match(client, /clickableIcons: true/);
   assert.match(client, /new google\.maps\.OverlayView/);
   assert.match(client, /solveHomography/);
   assert.match(client, /new google\.maps\.Polygon/);
