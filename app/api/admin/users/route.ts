@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { hashAdminPassword,requireSuperAdmin,sameOrigin } from "../../../admin-auth";
 import { writeAudit } from "../../../audit";
 import { upsertPrimaryProjectDomain } from "../../../project-domains";
+import { provisionClientAccess } from "../../../project-provisioning";
 import { clientFallbackHost } from "../../../project-context";
 import { currentProjectLinks } from "../../../project-links";
 import { validClientPassword } from "../../../client-password-policy";
@@ -13,7 +14,6 @@ type UserRow={id:string;email:string;name:string;role:string;status:string;mustC
 const cleanHost=(value:unknown)=>{const host=String(value||"").trim().toLowerCase().replace(/^https?:\/\//,"").replace(/\/.*/,"").replace(/\.$/,"");return host||null};
 const validHost=(host:string|null)=>!host||hostPattern.test(host);
 const slugify=(value:string)=>value.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"project";
-const projectBrand=(value:string)=>{const clean=value.replace(/[—–-].*$/g,"").trim()||value.trim(),words=clean.split(/\s+/).filter(Boolean),short=(words.length>1?words.map(word=>word[0]).join(""):clean.slice(0,3)).replace(/[^a-z0-9]/gi,"").toUpperCase().slice(0,4)||"PRJ";return {brandName:clean.toUpperCase().slice(0,50),brandShort:short}};
 const clientAdminUrl=(slug="",adminHost?:string|null)=>slug?currentProjectLinks(slug,null,adminHost).adminUrl:`https://${clientFallbackHost()}/admin/login`;
 const deleteGeoProjectData=async(projectId:string)=>{try{await env.DB.batch([env.DB.prepare("DELETE FROM geo_versions WHERE project_id=?").bind(projectId),env.DB.prepare("DELETE FROM geo_sources WHERE project_id=?").bind(projectId),env.DB.prepare("DELETE FROM geo_features WHERE project_id=?").bind(projectId),env.DB.prepare("DELETE FROM geo_control_points WHERE project_id=?").bind(projectId),env.DB.prepare("DELETE FROM geo_project_settings WHERE project_id=?").bind(projectId)])}catch(error){if(error instanceof Error&&/no such table:\\s*geo_/i.test(error.message))return;throw error}};
 const isGeoLab=async(projectId:string)=>Boolean(await env.DB.prepare("SELECT 1 FROM settings WHERE project_id=? AND key='geoLabMode' AND value='1' LIMIT 1").bind(projectId).first());
@@ -39,8 +39,26 @@ export async function POST(request:Request){
   if(projectId){const project=await env.DB.prepare("SELECT id,name,slug,status FROM projects WHERE id=? AND status!='deleted' LIMIT 1").bind(projectId).first<{id:string;name:string;slug:string;status:string}>();if(!project)return Response.json({error:"Existing project nahi mila"},{status:404});resolvedName=project.name;resolvedSlug=project.slug}
   else {if(projectName.length<2||projectName.length>100)return Response.json({error:"Project name required"},{status:400});projectId=crypto.randomUUID()}
   const id=crypto.randomUUID(),now=new Date().toISOString(),hash=await hashAdminPassword(password),slug=resolvedSlug||`${slugify(resolvedName)}-${projectId.slice(0,6)}`;
-  try{const statements=[];if(!body.projectId){statements.push(env.DB.prepare("INSERT INTO projects (id,name,slug,public_host,admin_host,status,created_at,updated_at) VALUES (?,?,?,?,?,'active',?,?)").bind(projectId,resolvedName,slug,publicHost,adminHost,now,now));const brand=projectBrand(resolvedName),defaults={projectName:resolvedName,brandName:brand.brandName,brandShort:brand.brandShort,template:"plots",accentColor:"#f0b323",location:"",address:"",phone1:"",phone2:"",whatsapp:"",mapUrl:"",brochureUrl:"",shareTitle:resolvedName,shareDescription:`Explore ${resolvedName} with AR 3D interactive plot visualization.`,shareTemplate:"original-image-v1"};for(const [key,value] of Object.entries(defaults))statements.push(env.DB.prepare("INSERT INTO settings (project_id,key,value,updated_at) VALUES (?,?,?,?)").bind(projectId,key,value,now))}else if(publicHost||adminHost)statements.push(env.DB.prepare("UPDATE projects SET public_host=COALESCE(?,public_host),admin_host=COALESCE(?,admin_host),updated_at=? WHERE id=?").bind(publicHost,adminHost,now,projectId));statements.push(env.DB.prepare("INSERT INTO admin_users (id,email,name,project_id,role,password_hash,password_salt,status,must_change_password,session_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,email,name,projectId,"client_admin",hash.passwordHash,hash.passwordSalt,"active",1,1,now,now));await env.DB.batch(statements);if(publicHost)await upsertPrimaryProjectDomain(projectId,"public",publicHost,now);if(adminHost)await upsertPrimaryProjectDomain(projectId,"admin",adminHost,now)}catch(error){console.error("Client project create failed",error);return Response.json({error:"Email ya domain pehle se use ho raha hai"},{status:409})}
-  await writeAudit(actor,"client.created",projectId,id,{email,projectName:resolvedName,publicHost,adminHost});
+  try{
+    await provisionClientAccess({
+      createProject: !body.projectId,
+      projectId,
+      projectName: resolvedName,
+      projectSlug: slug,
+      adminId: id,
+      email,
+      name,
+      password: hash,
+      actor,
+      auditDetails: {email,projectName: resolvedName,publicHost,adminHost},
+      publicHost,
+      adminHost,
+      now,
+    });
+  }catch(error){
+    console.error("Client project create failed",error);
+    return Response.json({error:"Email, project slug ya domain pehle se use ho raha hai"},{status:409});
+  }
   return Response.json({user:{id,email,name,projectId,projectName:resolvedName,projectSlug:slug,publicHost,adminHost,role:"client_admin",status:"active",mustChangePassword:true,createdAt:now,updatedAt:now,lastLoginAt:null,adminUrl:clientAdminUrl(slug,adminHost)},clientAdminUrl:clientAdminUrl(slug,adminHost)},{status:201});
 }
 
