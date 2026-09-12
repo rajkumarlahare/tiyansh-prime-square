@@ -44,6 +44,16 @@ export default function PublicGeoMapError({
         <span style={{ color: "#b9cbe0", fontSize: 13, lineHeight: 1.5 }}>
           Map safely stop hua hai; project data ya saved Geo alignment change nahi hua.
         </span>
+        <span
+          style={{
+            color: "#8fa8c1",
+            fontSize: 11,
+            lineHeight: 1.45,
+            overflowWrap: "anywhere",
+          }}
+        >
+          Technical detail: {error.message || "Unknown client runtime error"}
+        </span>
         <button
           type="button"
           onClick={() => reset()}

@@ -186,30 +186,37 @@ function addMasterplanOverlay(
 
   const draw = () => {
     if (!host || !image || !image.naturalWidth || !image.naturalHeight) return;
-    const projection = overlay.getProjection();
-    const target = corners.map(([lng, lat]) =>
-      projection.fromLatLngToDivPixel(new google.maps.LatLng(lat, lng)),
-    );
-    if (target.length !== 4 || target.some((point) => !point)) return;
 
-    const source: MapperPoint[] = [
-      [0, 0],
-      [1, 0],
-      [1, 1],
-      [0, 1],
-    ];
-    const matrix = solveHomography(
-      source.map((sourcePoint, index) => ({
-        source: sourcePoint,
-        target: [target[index]!.x, target[index]!.y] as MapperPoint,
-      })),
-    );
-    host.style.transform = cssProjectiveTransform(
-      matrix,
-      image.naturalWidth,
-      image.naturalHeight,
-    );
-    host.style.visibility = "visible";
+    try {
+      const projection = overlay.getProjection();
+      if (!projection) return;
+      const target = corners.map(([lng, lat]) =>
+        projection.fromLatLngToDivPixel(new google.maps.LatLng(lat, lng)),
+      );
+      if (target.length !== 4 || target.some((point) => !point)) return;
+
+      const source: MapperPoint[] = [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ];
+      const matrix = solveHomography(
+        source.map((sourcePoint, index) => ({
+          source: sourcePoint,
+          target: [target[index]!.x, target[index]!.y] as MapperPoint,
+        })),
+      );
+      host.style.transform = cssProjectiveTransform(
+        matrix,
+        image.naturalWidth,
+        image.naturalHeight,
+      );
+      host.style.visibility = "visible";
+    } catch (error) {
+      host.style.visibility = "hidden";
+      console.warn("Public masterplan overlay draw skipped", error);
+    }
   };
 
   overlay.onAdd = () => {
@@ -221,8 +228,18 @@ function addMasterplanOverlay(
     image.draggable = false;
     image.decoding = "async";
     image.onload = draw;
+    image.onerror = () => {
+      if (host) host.style.visibility = "hidden";
+      console.warn("Public masterplan overlay image load failed");
+    };
     host.appendChild(image);
-    overlay.getPanes().overlayLayer.appendChild(host);
+    const panes = overlay.getPanes();
+    if (!panes?.overlayLayer) {
+      host.style.visibility = "hidden";
+      console.warn("Public masterplan overlay pane unavailable");
+      return;
+    }
+    panes.overlayLayer.appendChild(host);
   };
   overlay.draw = draw;
   overlay.onRemove = () => {
