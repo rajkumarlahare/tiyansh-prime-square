@@ -57,6 +57,14 @@ html.rekixo-project-error .rekixo-boot-error{display:grid}
 .map.gesture-active .world{will-change:transform}
 .plot{fill:rgba(32,225,125,.001);stroke:transparent;stroke-width:1.1;vector-effect:non-scaling-stroke;cursor:pointer;transition:fill .12s,stroke .12s,filter .12s}
 .plot.selected{fill:rgba(18,197,104,.22);stroke:#20e47e;stroke-width:1.45;filter:drop-shadow(0 0 3px rgba(37,236,132,.75))}
+/* REKIXO_PUBLIC_2D_SELECTED_STATUS_CONTRAST_V1
+   Presentation only. Selected 2D polygons keep canonical geometry untouched;
+   only the visible status tint/glow is strengthened for readability. */
+.plot.selected[data-status="available"]{fill:rgba(18,197,104,.36);filter:drop-shadow(0 0 4px rgba(37,236,132,.82))}
+.plot.selected[data-status="booked"]{fill:rgba(245,181,22,.38);filter:drop-shadow(0 0 4px rgba(255,203,44,.82))}
+.plot.selected[data-status="sold"]{fill:rgba(240,49,76,.38);filter:drop-shadow(0 0 4px rgba(255,70,94,.84))}
+.map.dragging .plot.selected[data-status]{filter:none}
+
 .show-all .plot{stroke-width:.95}.show-all .plot[data-status="available"]{fill:rgba(27,188,103,.16);stroke:rgba(29,230,126,.68)}.show-all .plot[data-status="booked"]{fill:rgba(245,181,22,.27);stroke:rgba(255,203,44,.9)}.show-all .plot[data-status="sold"]{fill:rgba(240,49,76,.29);stroke:rgba(255,70,94,.92)}
 .map-badge{position:absolute;z-index:7;display:grid;place-items:center;border:1px solid #202b42;background:#09101ee8;box-shadow:0 9px 28px #0007;backdrop-filter:blur(7px)}
 .compass{left:24px;top:24px;width:68px;height:68px;border-radius:50%}.compass svg{width:48px;height:48px}.view-mode{left:24px;top:108px;width:66px;height:66px;border-radius:50%;color:#fff;font-weight:950;font-size:16px;cursor:pointer}
