@@ -168,6 +168,25 @@ function validatePublicGeoData(payload: PublicGeoData) {
   return payload;
 }
 
+function googleMapsLinks(data: PublicGeoData) {
+  const corners = data.masterplanCorners;
+  const lng =
+    corners.reduce((sum, [lng]) => sum + lng, 0) / corners.length;
+  const lat =
+    corners.reduce((sum, [, lat]) => sum + lat, 0) / corners.length;
+  const destination = encodeURIComponent(
+    `${lat.toFixed(7)},${lng.toFixed(7)}`,
+  );
+
+  return {
+    open:
+      `https://www.google.com/maps/search/?api=1&query=${destination}`,
+    directions:
+      `https://www.google.com/maps/dir/?api=1&destination=${destination}` +
+      "&travelmode=driving&dir_action=navigate",
+  };
+}
+
 function plotStyle(status: string) {
   if (status === "sold") return { fillColor: "#ef334e", strokeColor: "#ff6b7f" };
   if (status === "booked") return { fillColor: "#f4b51f", strokeColor: "#ffd45f" };
@@ -430,6 +449,8 @@ export default function GeoPublicMap({
     };
   }, [data]);
 
+  const googleLinks = data ? googleMapsLinks(data) : null;
+
   return (
     <main className={styles.shell}>
       <div ref={mapNodeRef} className={styles.map} aria-label={`${projectName} satellite map`} />
@@ -442,6 +463,27 @@ export default function GeoPublicMap({
         </div>
         <a href={`/projects/${encodeURIComponent(projectSlug)}`}>Project site</a>
       </header>
+
+      {googleLinks && mapReady ? (
+        <nav className={styles.mapActions} aria-label="External map actions">
+          <a
+            href={googleLinks.open}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Open project location in Google Maps"
+          >
+            Open in Google Maps
+          </a>
+          <a
+            href={googleLinks.directions}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Get driving directions to project"
+          >
+            Directions
+          </a>
+        </nav>
+      ) : null}
 
       {data ? (
         <section className={styles.legend} aria-label="Plot availability">
