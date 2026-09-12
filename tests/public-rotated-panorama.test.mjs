@@ -10,16 +10,24 @@ const source = await readFile(
 function sliceBetween(start, end) {
   const a = source.indexOf(start);
   const b = source.indexOf(end, a + start.length);
-  assert.ok(a >= 0, `missing start anchor: ${start}`);
-  assert.ok(b > a, `missing end anchor after ${start}: ${end}`);
+  assert.ok(a >= 0, "missing start anchor: " + start);
+  assert.ok(b > a, "missing end anchor after " + start + ": " + end);
   return source.slice(a, b);
 }
 
-test("quarter-turn mobile presentation becomes a left-anchored horizontal panorama", () => {
-  assert.match(source, /function isMobilePanorama\(\)/);
-  assert.match(source, /publicRotation%2===1/);
-  assert.match(source, /fit = panorama \? fh : \(mobile \? fw : Math\.min\(fw,fh\)\)/);
+test("mobile panorama is decided by displayed aspect, not quarter-turn alone", () => {
+  const helper = sliceBetween("function isMobilePanorama()", "function calcFit()");
+  assert.match(helper, /const size=displaySize\(\)/);
+  assert.match(helper, /const vw=viewportWidth\|\|viewport\.clientWidth/);
+  assert.match(helper, /const vh=viewportHeight\|\|viewport\.clientHeight/);
+  assert.match(helper, /size\.w\/Math\.max\(1,size\.h\)>vw\/Math\.max\(1,vh\)/);
+  assert.doesNotMatch(helper, /publicRotation%2===1/);
+});
+
+test("mobile cover-fit removes side letterbox while desktop remains contain-fit", () => {
+  assert.match(source, /fit = mobile \? Math\.max\(fw,fh\) : Math\.min\(fw,fh\)/);
   assert.match(source, /function initialPanForPresentation\(\)/);
+  assert.match(source, /if\(!isMobilePanorama\(\)\)return\{x:0,y:0\}/);
   assert.match(source, /return\{x:l\.x,y:0\}/);
   assert.match(source, /pan=initialPanForPresentation\(\)/);
 });
@@ -35,23 +43,14 @@ test("panorama still transforms image and clickable SVG as one immutable world",
   assert.match(source, /matrixTransform\(ctm\.inverse\(\)\)/);
 });
 
-test("panorama helpers are presentation-only and never touch canonical plot geometry", () => {
+test("framing helpers never mutate canonical polygon geometry", () => {
   const fitHelpers = sliceBetween("function isMobilePanorama()", "function limits()");
   const resetHelpers = sliceBetween("function initialPanForPresentation()", "function reset()");
-  const presentationCode = `${fitHelpers}\n${resetHelpers}`;
+  const presentationCode = fitHelpers + "\n" + resetHelpers;
 
-  // Guard only the panorama helpers themselves. Do not scan the whole HTML from
-  // publicRotation to the next unrelated polygon token; that creates false positives.
   assert.doesNotMatch(
     presentationCode,
     /polygon|polyPoints|hotspots|getScreenCTM|matrixTransform|normalized|mapped\s*=|plot\.polygon/i,
   );
-
-  // Existing canonical conversion remains present elsewhere and untouched.
   assert.match(source, /const mapped=normalized\.map\(\(\[x,y\]\)=>\[x\*W,y\*H\]\)/);
-});
-
-test("even rotations preserve the existing mobile width-fit behavior", () => {
-  assert.match(source, /fit = panorama \? fh : \(mobile \? fw : Math\.min\(fw,fh\)\)/);
-  assert.match(source, /if\(!isMobilePanorama\(\)\)return\{x:0,y:0\}/);
 });

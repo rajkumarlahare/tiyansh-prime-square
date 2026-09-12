@@ -48,6 +48,14 @@ test("button heights, ids, order and icons remain stable", () => {
   assert.match(page, /document\.getElementById\('amenitiesBtn'\)[\s\S]*document\.getElementById\('galleryBtn'\)[\s\S]*document\.getElementById\('locationBtn'\)/);
 });
 
+test("mobile HUD keeps a safe screen-edge gutter and a real column gap", () => {
+  assert.match(page, /--rekixo-hud-right:max\(14px,env\(safe-area-inset-right,0px\)\)/);
+  assert.match(page, /--rekixo-hud-bottom:max\(14px,env\(safe-area-inset-bottom,0px\)\)/);
+  assert.match(page, /--rekixo-hud-control-size:38px/);
+  assert.match(page, /--rekixo-hud-column-gap:10px/);
+  assert.match(page, /right:calc\(var\(--rekixo-hud-right\) \+ var\(--rekixo-hud-control-size\) \+ var\(--rekixo-hud-column-gap\)\)/);
+});
+
 test("trim remains presentation-only and preserves map interaction anchors", () => {
   assert.match(page, /function pointInPolygon/);
   assert.match(page, /svg\.getScreenCTM\?\.\(\)/);

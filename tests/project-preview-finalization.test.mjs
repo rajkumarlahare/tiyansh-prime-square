@@ -43,12 +43,16 @@ test("generic preview cannot flash or bootstrap Tiyansh tenant data", () => {
 test("generic public map contains the full natural masterplan and keeps rotated hit testing aligned", () => {
   assert.match(publicPage, /function displaySize/);
 
-  // Future-proof presentation contract:
-  // normal mobile keeps width-fit; 90/270 degree presentation uses height-fit
-  // to create the horizontal panorama. This is presentation-only.
+  // Mobile framing is derived from final displayed geometry. Rotation parity alone
+  // never decides panorama mode; image + SVG remain one immutable world.
   assert.match(publicPage, /function isMobilePanorama\(\)/);
-  assert.match(publicPage, /const panorama=isMobilePanorama\(\)/);
+  assert.match(publicPage, /const size=displaySize\(\)/);
+  assert.match(publicPage, /return size\.w\/Math\.max\(1,size\.h\)>vw\/Math\.max\(1,vh\)/);
   assert.match(
+    publicPage,
+    /fit = mobile \? Math\.max\(fw,fh\) : Math\.min\(fw,fh\)/,
+  );
+  assert.doesNotMatch(
     publicPage,
     /fit = panorama \? fh : \(mobile \? fw : Math\.min\(fw,fh\)\)/,
   );
@@ -62,7 +66,6 @@ test("generic public map contains the full natural masterplan and keeps rotated 
   assert.match(publicPage, /u=rotateOffset\(dx,dy,\(4-publicRotation\)%4\)/);
   assert.match(publicPage, /rotate\(\$\{publicRotation\*90\}deg\)/);
 });
-
 test("publish readiness refreshes immediately after mapper metadata repair", () => {
   assert.match(publishPanel, /rekixo:mapper-settings-updated/);
   assert.match(publishPanel, /Publish status refresh nahi hua/);

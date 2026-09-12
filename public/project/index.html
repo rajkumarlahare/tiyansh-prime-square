@@ -358,6 +358,21 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
   .status-body .status-line.total b{font-size:15px}
 }
 
+/* REKIXO_PUBLIC_MOBILE_COVER_SAFEHUD_V1
+   Shared customer-site mobile framing. Presentation only: plot coordinates,
+   normalized polygons, SVG viewBox and hit-testing stay untouched. */
+:root{
+  --rekixo-hud-right:max(14px,env(safe-area-inset-right,0px));
+  --rekixo-hud-bottom:max(14px,env(safe-area-inset-bottom,0px));
+  --rekixo-hud-control-size:38px;
+  --rekixo-hud-column-gap:10px;
+}
+@media(max-width:700px){
+  .mini-logo{right:var(--rekixo-hud-right)}
+  .controls{right:var(--rekixo-hud-right);bottom:var(--rekixo-hud-bottom)}
+  .bottom-links{right:calc(var(--rekixo-hud-right) + var(--rekixo-hud-control-size) + var(--rekixo-hud-column-gap));bottom:var(--rekixo-hud-bottom)}
+}
+
 </style>
 
 </head>
@@ -691,20 +706,24 @@ rekixoStartPublicBoot();
 
   function displaySize(){return publicRotation%2?{w:H,h:W}:{w:W,h:H}}
   function isMobilePanorama(){
-    return window.matchMedia('(max-width:700px)').matches && publicRotation%2===1
+    if(!window.matchMedia('(max-width:700px)').matches)return false;
+    const size=displaySize();
+    const vw=viewportWidth||viewport.clientWidth;
+    const vh=viewportHeight||viewport.clientHeight;
+    // Detect horizontal overflow from the FINAL displayed geometry. Rotation
+    // alone never decides panorama mode, so portrait projects stay portrait.
+    return size.w/Math.max(1,size.h)>vw/Math.max(1,vh)
   }
   function calcFit(){
     const mobile = window.matchMedia('(max-width:700px)').matches;
-    const panorama=isMobilePanorama();
     const size=displaySize();
     viewportWidth=viewport.clientWidth;
     viewportHeight=viewport.clientHeight;
     const fw = viewportWidth / size.w;
     const fh = viewportHeight / size.h;
-    // Normal mobile keeps the proven width-fit behavior. A 90°/270° public
-    // presentation becomes a horizontal panorama: height fills the viewport,
-    // width intentionally extends off-screen, and the SAME image+SVG world pans.
-    fit = panorama ? fh : (mobile ? fw : Math.min(fw,fh));
+    // Mobile is cover-fit: no left/right letterbox. Image and clickable SVG
+    // remain one immutable world, so any overflow is handled only by pan.
+    fit = mobile ? Math.max(fw,fh) : Math.min(fw,fh);
     if(!Number.isFinite(fit) || fit <= 0) fit = .3;
   }
   function limits(){

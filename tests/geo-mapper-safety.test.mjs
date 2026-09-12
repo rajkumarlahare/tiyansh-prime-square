@@ -57,12 +57,18 @@ test("Linked Geo plot references must belong to the selected project", () => {
   assert.doesNotMatch(route, /properties:\s*\{\s*plotStatus:/);
 });
 
-test("Deleting the last project admin also cleans isolated Geo rows", () => {
+test("Archiving the last project admin preserves isolated Geo rows for recovery", () => {
   for (const table of ["geo_versions", "geo_sources", "geo_features", "geo_control_points", "geo_project_settings"]) {
-    assert.match(adminUsers, new RegExp(`DELETE FROM ${table} WHERE project_id=\\?`));
+    assert.doesNotMatch(adminUsers, new RegExp(`DELETE FROM ${table} WHERE project_id=\\?`));
   }
+  assert.match(adminUsers, /UPDATE projects SET status='deleted',deleted_at=\?/);
+  assert.match(adminUsers, /UPDATE admin_users SET status='disabled'/);
+  assert.match(adminUsers, /UPDATE project_memberships SET status='disabled'/);
+  assert.match(adminUsers, /UPDATE project_domains SET status='disabled'/);
+  assert.match(adminUsers, /client\.project_archived/);
+  assert.match(adminUsers, /recoverable:true/);
+  assert.doesNotMatch(adminUsers, /BUCKET\.delete\(/);
 });
-
 test("Drizzle schema mirrors the existing Geo tables", () => {
   for (const symbol of ["geoProjectSettings", "geoControlPoints", "geoFeatures", "geoSources", "geoVersions"]) {
     assert.match(schema, new RegExp(`export const ${symbol} = sqliteTable`));
