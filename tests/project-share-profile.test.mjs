@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 test("share builder uses the final customer poster as-is", async () => {
-  const [dashboard, manager, route, css, users] = await Promise.all([
+  const [dashboard, manager, route, css, provisioning] = await Promise.all([
     readFile(new URL("../app/super-admin-dashboard.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/project-share-manager.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/project-share/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/super-mapper.css", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/admin/users/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/project-provisioning.ts", import.meta.url), "utf8"),
   ]);
 
   // Workspace membership is intentionally tested without freezing the exact tab
@@ -29,7 +29,7 @@ test("share builder uses the final customer poster as-is", async () => {
   assert.ok(!css.includes("aspect-ratio:1200/630"));
   assert.ok(route.includes("detectShareImageMime"));
   assert.ok(route.includes('contentType: detectedMime'));
-  assert.ok(users.includes('shareTemplate:"original-image-v1"'));
+  assert.match(provisioning, /shareTemplate:\s*"original-image-v1"/);
 });
 
 test("metadata-only edits still rotate the share URL cache version", async () => {
