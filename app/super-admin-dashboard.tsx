@@ -23,6 +23,7 @@ import ProjectShareManager from "./project-share-manager";
 type Project = {
   id: string;
   name: string;
+  kind: string;
   status: string;
   adminCount: number;
 };

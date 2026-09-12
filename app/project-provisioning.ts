@@ -192,7 +192,7 @@ export async function provisionClientAccess(input: ProvisionClientAccessInput) {
   if (input.createProject) {
     statements.push(
       env.DB.prepare(
-        "INSERT INTO projects (id,name,slug,public_host,admin_host,status,created_at,updated_at) VALUES (?,?,?,NULL,NULL,'active',?,?)",
+        "INSERT INTO projects (id,name,slug,public_host,admin_host,kind,status,deleted_at,created_at,updated_at) VALUES (?,?,?,NULL,NULL,'customer','active',NULL,?,?)",
       ).bind(
         input.projectId,
         input.projectName,
@@ -236,6 +236,18 @@ export async function provisionClientAccess(input: ProvisionClientAccessInput) {
       "active",
       1,
       1,
+      input.now,
+      input.now,
+    ),
+  );
+
+  statements.push(
+    env.DB.prepare(
+      "INSERT INTO project_memberships (user_id,project_id,role,status,is_primary,created_at,updated_at) VALUES (?,?,?,'active',1,?,?)",
+    ).bind(
+      input.adminId,
+      input.projectId,
+      "client_admin",
       input.now,
       input.now,
     ),

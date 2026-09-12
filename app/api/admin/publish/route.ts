@@ -35,13 +35,14 @@ function validPolygon(raw: string) {
 
 async function publishState(projectId: string) {
   const project = await env.DB.prepare(
-    "SELECT id,name,slug,status,public_status AS publicStatus,published_at AS publishedAt,publish_version AS publishVersion,public_host AS publicHost,admin_host AS adminHost FROM projects WHERE id=? AND status!='deleted' LIMIT 1",
+    "SELECT id,name,slug,kind,status,public_status AS publicStatus,published_at AS publishedAt,publish_version AS publishVersion,public_host AS publicHost,admin_host AS adminHost FROM projects WHERE id=? AND status!='deleted' LIMIT 1",
   )
     .bind(projectId)
     .first<{
       id: string;
       name: string;
       slug: string;
+      kind: string;
       status: string;
       publicStatus: string;
       publishedAt: string | null;
@@ -56,7 +57,7 @@ async function publishState(projectId: string) {
       .bind(projectId)
       .all<{ id: string; polygon: string }>(),
     env.DB.prepare(
-      "SELECT key,value FROM settings WHERE project_id=? AND key IN ('masterplanName','mapWidth','mapHeight','shareTitle','shareDescription','shareImage','location','address','phone1','geoLabMode')",
+      "SELECT key,value FROM settings WHERE project_id=? AND key IN ('masterplanName','mapWidth','mapHeight','shareTitle','shareDescription','shareImage','location','address','phone1')",
     )
       .bind(projectId)
       .all<{ key: string; value: string }>(),
@@ -71,7 +72,7 @@ async function publishState(projectId: string) {
     (plot) => Boolean(plot.polygon) && !validPolygon(plot.polygon),
   ).length;
   const legacy = projectId === LEGACY_PROJECT;
-  const geoLab = settings.geoLabMode === "1";
+  const geoLab = project.kind === "geo_lab";
   const reasons: string[] = [];
 
   if (!legacy) {

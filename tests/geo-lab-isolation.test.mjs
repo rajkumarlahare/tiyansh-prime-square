@@ -25,7 +25,8 @@ test("stable source project is read-only inside clone route", () => {
 
 test("clone destination has explicit empty-lab safety gates", () => {
   assert.match(route, /sourceProjectId === destinationProjectId/);
-  assert.match(route, /LAB_NAME\.test\(destination\.name\)/);
+  assert.doesNotMatch(route, /LAB_NAME/);
+  assert.match(route, /UPDATE projects SET kind='geo_lab'/);
   assert.match(route, /destination\.publicStatus !== "draft"/);
   assert.match(route, /destination\.publicHost \|\| destination\.adminHost/);
   assert.match(route, /Geo Lab plot inventory empty hona chahiye/);
@@ -56,7 +57,7 @@ test("R2 clone writes destination keys and rolls them back on DB failure", () =>
 });
 
 test("marked Geo Labs cannot be publicly published or assigned domains", () => {
-  assert.match(publish, /geoLabMode/);
+  assert.match(publish, /project\.kind === "geo_lab"/);
   assert.match(publish, /Geo Lab project ko public publish nahi kiya ja sakta/);
   assert.match(domains, /Geo Lab project par domain attach disabled hai/);
   assert.match(domains, /Geo Lab project par primary domain disabled hai/);

@@ -25,7 +25,7 @@ const denied = () => Response.json({ error: "Super Admin access required" }, { s
 async function isGeoLab(projectId: string) {
   return Boolean(
     await env.DB.prepare(
-      "SELECT 1 FROM settings WHERE project_id=? AND key='geoLabMode' AND value='1' LIMIT 1",
+      "SELECT 1 FROM projects WHERE id=? AND kind='geo_lab' AND status!='deleted' LIMIT 1",
     )
       .bind(projectId)
       .first(),
@@ -51,11 +51,12 @@ export async function GET() {
 
   const [projectsResult, domainsResult] = await Promise.all([
     env.DB.prepare(
-      "SELECT id,name,slug,status,public_status AS publicStatus,publish_version AS publishVersion,public_host AS publicHost,admin_host AS adminHost,created_at AS createdAt,updated_at AS updatedAt FROM projects WHERE status!='deleted' ORDER BY created_at DESC",
+      "SELECT id,name,slug,kind,status,public_status AS publicStatus,publish_version AS publishVersion,public_host AS publicHost,admin_host AS adminHost,created_at AS createdAt,updated_at AS updatedAt FROM projects WHERE status!='deleted' ORDER BY created_at DESC",
     ).all<{
       id: string;
       name: string;
       slug: string;
+      kind: string;
       status: string;
       publicStatus: string;
       publishVersion: number;

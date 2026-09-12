@@ -53,10 +53,10 @@ test("same public and admin hostname becomes one both-kind primary domain", () =
   );
 });
 
-test("new project starts with null legacy hosts until atomic domain statements run", () => {
+test("new customer project starts with null legacy hosts until atomic domain statements run", () => {
   assert.match(
     provisioning,
-    /VALUES \(\?,\?,\?,NULL,NULL,'active',\?,\?\)/,
+    /VALUES \(\?,\?,\?,NULL,NULL,'customer','active',NULL,\?,\?\)/,
   );
   assert.match(
     provisioning,

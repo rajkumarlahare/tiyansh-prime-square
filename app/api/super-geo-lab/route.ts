@@ -3,7 +3,6 @@ import { requireSuperAdmin, sameOrigin } from "../../admin-auth";
 import { writeAudit } from "../../audit";
 
 const denied = () => Response.json({ error: "Super Admin access required" }, { status: 403 });
-const LAB_NAME = /\bGEO[\s_-]*LAB\b/i;
 const CONFIRMATION = "CLONE TO GEO LAB";
 const MAPPER_ASSETS = [
   "masterplan",
@@ -34,6 +33,7 @@ const MAPPER_SETTINGS = [
 type ProjectRow = {
   id: string;
   name: string;
+  kind: string;
   status: string;
   publicStatus: string;
   publicHost: string | null;
@@ -67,7 +67,7 @@ function validNormalizedPolygon(raw: string) {
 
 async function project(projectId: string) {
   return env.DB.prepare(
-    "SELECT id,name,status,public_status AS publicStatus,public_host AS publicHost,admin_host AS adminHost FROM projects WHERE id=? AND status!='deleted' LIMIT 1",
+    "SELECT id,name,kind,status,public_status AS publicStatus,public_host AS publicHost,admin_host AS adminHost FROM projects WHERE id=? AND status!='deleted' LIMIT 1",
   )
     .bind(projectId)
     .first<ProjectRow>();
@@ -113,9 +113,7 @@ export async function POST(request: Request) {
   if (!source) return Response.json({ error: "Source project nahi mila" }, { status: 404 });
   if (!destination) return Response.json({ error: "Destination project nahi mila" }, { status: 404 });
 
-  // Explicit destination guard: a stable customer project can never be a clone target.
-  if (!LAB_NAME.test(destination.name))
-    return Response.json({ error: "Destination project name me GEO LAB hona required hai" }, { status: 409 });
+  // Explicit destination guard: only an empty, draft and domainless project can become a Geo Lab.
   if (destination.publicStatus !== "draft" || destination.publicHost || destination.adminHost)
     return Response.json({ error: "Geo Lab draft aur domainless hona chahiye" }, { status: 409 });
 
@@ -124,7 +122,6 @@ export async function POST(request: Request) {
     destinationPlotCount,
     sourcePlots,
     sourceSettings,
-    sourceLab,
     geoState,
     geoCounts,
     destinationObjects,
@@ -143,9 +140,6 @@ export async function POST(request: Request) {
     )
       .bind(sourceProjectId, ...MAPPER_SETTINGS)
       .all<{ key: string; value: string }>(),
-    env.DB.prepare("SELECT value FROM settings WHERE project_id=? AND key='geoLabMode' LIMIT 1")
-      .bind(sourceProjectId)
-      .first<{ value: string }>(),
     env.DB.prepare(
       "SELECT draft_revision AS draftRevision,published_revision AS publishedRevision,public_enabled AS publicEnabled FROM geo_project_settings WHERE project_id=?",
     )
@@ -168,7 +162,7 @@ export async function POST(request: Request) {
     env.BUCKET.list({ prefix: `projects/${destinationProjectId}/mapper/`, limit: 1 }),
   ]);
 
-  if (sourceLab?.value === "1")
+  if (source.kind === "geo_lab")
     return Response.json({ error: "Geo Lab ko source project nahi bana sakte" }, { status: 409 });
   if (Number(domainCount?.total || 0) > 0)
     return Response.json({ error: "Geo Lab me active domain nahi hona chahiye" }, { status: 409 });
@@ -210,6 +204,9 @@ export async function POST(request: Request) {
     }
 
     const statements = [
+      env.DB.prepare(
+        "UPDATE projects SET kind='geo_lab',updated_at=? WHERE id=? AND status!='deleted'",
+      ).bind(now, destinationProjectId),
       env.DB.prepare(
         "INSERT INTO plots (project_id,id,sqft,sqm,sqyd,dimensions,road,polygon,status,notes,featured,updated_at) SELECT ?,id,sqft,sqm,sqyd,dimensions,road,polygon,'available','',0,? FROM plots WHERE project_id=?",
       ).bind(destinationProjectId, now, sourceProjectId),
@@ -257,7 +254,7 @@ export async function POST(request: Request) {
   return Response.json({
     ok: true,
     source: { id: source.id, name: source.name },
-    destination: { id: destination.id, name: destination.name },
+    destination: { id: destination.id, name: destination.name, kind: "geo_lab" },
     plots: sourcePlots.results.length,
     assets: copiedKeys.length,
     publicLocked: true,

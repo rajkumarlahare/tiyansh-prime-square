@@ -2,7 +2,7 @@ import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from
 
 export const projects = sqliteTable("projects", {
   id:text("id").primaryKey(), name:text("name").notNull(), slug:text("slug").notNull().unique(),
-  publicHost:text("public_host"), adminHost:text("admin_host"), status:text("status").notNull().default("active"),
+  publicHost:text("public_host"), adminHost:text("admin_host"), kind:text("kind").notNull().default("customer"), status:text("status").notNull().default("active"), deletedAt:text("deleted_at"),
   publicStatus:text("public_status").notNull().default("draft"), publishedAt:text("published_at"),
   publishVersion:integer("publish_version").notNull().default(0),
   createdAt:text("created_at").notNull(), updatedAt:text("updated_at").notNull()
@@ -32,6 +32,14 @@ export const adminUsers = sqliteTable("admin_users", {
   sessionVersion:integer("session_version").notNull().default(1), passwordChangedAt:text("password_changed_at"),
   createdAt:text("created_at").notNull(), updatedAt:text("updated_at").notNull(), lastLoginAt:text("last_login_at")
 });
+export const projectMemberships = sqliteTable("project_memberships", {
+  userId:text("user_id").notNull().references(()=>adminUsers.id),
+  projectId:text("project_id").notNull().references(()=>projects.id),
+  role:text("role").notNull().default("client_admin"),
+  status:text("status").notNull().default("active"),
+  isPrimary:integer("is_primary",{mode:"boolean"}).notNull().default(false),
+  createdAt:text("created_at").notNull(), updatedAt:text("updated_at").notNull()
+},table=>({pk:primaryKey({columns:[table.userId,table.projectId]}),projectStatusIndex:index("idx_project_memberships_project_status").on(table.projectId,table.status)}));
 export const auditLogs = sqliteTable("audit_logs", {
   id:text("id").primaryKey(), actorId:text("actor_id").notNull(), actorEmail:text("actor_email").notNull(),
   action:text("action").notNull(), projectId:text("project_id"), targetId:text("target_id"), details:text("details").notNull().default("{}"), createdAt:text("created_at").notNull()

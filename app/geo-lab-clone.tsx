@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Copy, ShieldCheck } from "lucide-react";
 import styles from "./geo-lab-clone.module.css";
 
-type Project = { id: string; name: string; status: string; adminCount: number };
+type Project = { id: string; name: string; kind: string; status: string; adminCount: number };
 
 export default function GeoLabClone({
   projectId,
@@ -22,14 +22,11 @@ export default function GeoLabClone({
   const [sourceProjectId, setSourceProjectId] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
-  const isNamedLab = Boolean(destination && /\bGEO[\s_-]*LAB\b/i.test(destination.name));
-  const sourceProjects = projects.filter((project) => project.id !== projectId);
+  const sourceProjects = projects.filter(
+    (project) => project.id !== projectId && project.kind !== "geo_lab",
+  );
 
   async function clone() {
-    if (!isNamedLab) {
-      notify("Destination project name me GEO LAB hona required hai");
-      return;
-    }
     setBusy(true);
     try {
       const response = await fetch("/api/super-geo-lab", {
@@ -64,17 +61,17 @@ export default function GeoLabClone({
             <ShieldCheck /> Clone stable Plot Mapper source safely
           </h2>
           <span>
-            Source project read-only rahega. Clone sirf selected empty GEO LAB project me write hota hai.
+            Source project read-only rahega. Selected empty draft project successful clone par explicit Geo Lab banega.
           </span>
         </div>
       </div>
 
-      <div className={isNamedLab ? styles.safe : styles.blocked}>
+      <div className={destination ? styles.safe : styles.blocked}>
         <b>Destination:</b> {destination?.name || "Unknown project"}
         <span>
-          {isNamedLab
-            ? "GEO LAB naming guard passed."
-            : "Clone disabled: destination name me GEO LAB likhna zaroori hai."}
+          {destination?.kind === "geo_lab"
+            ? "Explicit Geo Lab project selected."
+            : "Server empty/draft/domainless checks pass hone par ye project Geo Lab mark hoga."}
         </span>
       </div>
 
@@ -115,7 +112,7 @@ export default function GeoLabClone({
       <button
         className={styles.cloneButton}
         onClick={clone}
-        disabled={busy || !isNamedLab || !sourceProjectId || confirmation !== "CLONE TO GEO LAB"}
+        disabled={busy || !destination || !sourceProjectId || confirmation !== "CLONE TO GEO LAB"}
       >
         <Copy /> {busy ? "Creating isolated clone…" : "Clone Into This Geo Lab"}
       </button>
