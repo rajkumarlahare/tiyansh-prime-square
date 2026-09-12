@@ -4,12 +4,18 @@ import { readFile } from "node:fs/promises";
 
 const page = await readFile(new URL("../public/project/index.html", import.meta.url), "utf8");
 
-test("2D selected plot uses noticeable status-specific tint without changing geometry", () => {
-  assert.match(page, /REKIXO_PUBLIC_2D_SELECTED_STATUS_CONTRAST_V1/);
-  assert.match(page, /\.plot\.selected\[data-status="available"\]\{fill:rgba\(18,197,104,\.36\)/);
-  assert.match(page, /\.plot\.selected\[data-status="booked"\]\{fill:rgba\(245,181,22,\.38\)/);
-  assert.match(page, /\.plot\.selected\[data-status="sold"\]\{fill:rgba\(240,49,76,\.38\)/);
+test("2D selected plot uses noticeable status-specific project tint without changing geometry", () => {
+  assert.match(page, /REKIXO_PUBLIC_2D_SELECTED_STATUS_CONTRAST_V2/);
+  assert.match(page, /\.plot\.selected\[data-status="available"\]\{fill:rgba\(var\(--plot-available-rgb\),\.36\)/);
+  assert.match(page, /\.plot\.selected\[data-status="booked"\]\{fill:rgba\(var\(--plot-booked-rgb\),\.38\)/);
+  assert.match(page, /\.plot\.selected\[data-status="sold"\]\{fill:rgba\(var\(--plot-sold-rgb\),\.38\)/);
   assert.match(page, /\.map\.dragging \.plot\.selected\[data-status\]\{filter:none\}/);
+});
+
+test("STATUS toggle cannot wash out the selected 2D plot", () => {
+  assert.match(page, /\.show-all \.plot\.selected\[data-status="available"\][\s\S]*fill:rgba\(var\(--plot-available-rgb\),\.36\)/);
+  assert.match(page, /\.show-all \.plot\.selected\[data-status="booked"\][\s\S]*fill:rgba\(var\(--plot-booked-rgb\),\.38\)/);
+  assert.match(page, /\.show-all \.plot\.selected\[data-status="sold"\][\s\S]*fill:rgba\(var\(--plot-sold-rgb\),\.38\)/);
 });
 
 test("selected status contrast remains presentation-only", () => {

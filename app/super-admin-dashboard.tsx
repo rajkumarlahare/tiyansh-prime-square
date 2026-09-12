@@ -19,6 +19,7 @@ import ProjectDomainManager from "./project-domain-manager";
 import ProjectPublishPanel from "./project-publish-panel";
 import ProjectProfileManager from "./project-profile-manager";
 import ProjectShareManager from "./project-share-manager";
+import ProjectStatusThemeManager from "./project-status-theme-manager";
 
 type Project = {
   id: string;
@@ -206,6 +207,11 @@ export default function SuperAdminDashboard({
             ) : tab === "mapper" ? (
               <>
                 <PlotMapper key={projectId} projectId={projectId} notify={notify} />
+                <ProjectStatusThemeManager
+                  key={`status-theme:${projectId}`}
+                  projectId={projectId}
+                  notify={notify}
+                />
                 <ProjectPublishPanel projectId={projectId} notify={notify} />
               </>
             ) : tab === "geo" ? (
