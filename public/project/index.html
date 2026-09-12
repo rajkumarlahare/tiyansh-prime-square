@@ -21,10 +21,14 @@
   --text:#f7f9ff;--muted:#6f7e9d;--muted2:#8897b8;
   --green:#18b968;--green2:#22de7d;--red:#ef334e;--amber:#f4b51f;
   --blue:#88a5ff;--safe:env(safe-area-inset-bottom,0px);
+  --safe-top:env(safe-area-inset-top,0px);--safe-right:env(safe-area-inset-right,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);
   --plot-available-rgb:18,197,104;--plot-booked-rgb:245,181,22;--plot-sold-rgb:240,49,76;
   --action-pill-width:80.15px;--action-pill-mobile-width:101.15px
 }
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif;overflow:hidden}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;min-height:100%;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif;overflow:hidden}
+@supports(height:100svh){html,body{height:100svh}}
+@supports(height:100dvh){html,body{height:100dvh}}
 button,input{font:inherit}
 html.rekixo-project-loading .app,html.rekixo-project-error .app{visibility:hidden}
 html.rekixo-project-loading body::after{content:"Loading project…";position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:28px;background:#050914;color:#aab7d2;font-size:15px;font-weight:800;text-align:center}
@@ -36,7 +40,8 @@ html.rekixo-project-error .rekixo-boot-error{display:grid}
 .rekixo-boot-retry{min-width:128px;height:44px;padding:0 18px;border:1px solid #31456b;border-radius:13px;background:#101d35;color:#f7f9ff;font-size:14px;font-weight:900;cursor:pointer}
 .rekixo-boot-retry:active{transform:scale(.98)}
 .rekixo-boot-retry:focus-visible{outline:2px solid #7aa7ff;outline-offset:2px}
-.app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}
+.app{height:100%;min-height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}
+@supports(height:100dvh){.app{height:100dvh;min-height:100dvh}}
 .header{z-index:20;background:#060b17;border-bottom:1px solid #1c2840;padding:11px 17px 12px;box-shadow:0 8px 28px #0007}
 .brandrow{display:flex;align-items:center;gap:14px}.brandmark{width:60px;height:60px;flex:none;border-radius:13px;background:#fff;border:1px solid #e7e7e7;display:grid;place-items:center;color:#111;box-shadow:0 0 0 2px #ffffff12}
 .brandmark .monogram{width:48px;height:48px;border:2px solid #141414;border-radius:8px;display:grid;place-items:center;font-weight:950;font-size:17px;line-height:1;text-align:center}
@@ -388,19 +393,41 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sa
   .status-body .status-line.total b{font-size:15px}
 }
 
-/* REKIXO_PUBLIC_MOBILE_COVER_SAFEHUD_V1
-   Shared customer-site mobile framing. Presentation only: plot coordinates,
-   normalized polygons, SVG viewBox and hit-testing stay untouched. */
+/* REKIXO_PUBLIC_IOS_SAFE_AREA_V2
+   Shared Android + iPhone customer-site framing.
+   Presentation only: masterplan pixels, canonical polygons, SVG viewBox,
+   hit-testing, 2D/3D selection and project data remain untouched. */
 :root{
+  --rekixo-hud-left:max(14px,env(safe-area-inset-left,0px));
   --rekixo-hud-right:max(14px,env(safe-area-inset-right,0px));
   --rekixo-hud-bottom:max(14px,env(safe-area-inset-bottom,0px));
   --rekixo-hud-control-size:38px;
   --rekixo-hud-column-gap:10px;
 }
 @media(max-width:700px){
+  .header{
+    padding-top:calc(8px + var(--safe-top));
+    padding-left:max(10px,var(--safe-left));
+    padding-right:max(10px,var(--safe-right));
+  }
+  .compass,.view-mode{left:var(--rekixo-hud-left)}
   .mini-logo{right:var(--rekixo-hud-right)}
+  .status{left:var(--rekixo-hud-left);bottom:var(--rekixo-hud-bottom)}
   .controls{right:var(--rekixo-hud-right);bottom:var(--rekixo-hud-bottom)}
   .bottom-links{right:calc(var(--rekixo-hud-right) + var(--rekixo-hud-control-size) + var(--rekixo-hud-column-gap));bottom:var(--rekixo-hud-bottom)}
+  .drawer{
+    height:100dvh;
+    min-height:100svh;
+    padding-left:max(22px,calc(14px + var(--safe-left)));
+    padding-right:max(22px,calc(14px + var(--safe-right)));
+    padding-bottom:calc(22px + var(--safe-bottom));
+  }
+  .gallery-panel{max-height:calc(100dvh - var(--safe-top) - var(--safe-bottom) - 24px)}
+}
+@media(max-width:380px){
+  :root{--rekixo-hud-control-size:36px;--rekixo-hud-column-gap:8px}
+  .bottom-links{gap:5px}
+  .pill{font-size:8px;padding-left:8px}
 }
 
 </style>

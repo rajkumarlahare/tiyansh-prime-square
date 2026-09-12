@@ -1,7 +1,14 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./super-mapper.css";
 import { panelMode } from "./admin-auth";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#050914",
+};
 
 export function generateMetadata(): Metadata {
   const superPanel = panelMode() === "super";
