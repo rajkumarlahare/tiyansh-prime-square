@@ -178,9 +178,11 @@ const worker = {
     // The boss/Vercel root site never enters this Worker because no broad /* route exists.
     if (
       sharedPlatform &&
-      !directPrefixedAsset &&
       (externalUrl.pathname.startsWith("/projects/") || isolatedAssetRequest)
     ) {
+      // Direct /__rekixo/assets JS/CSS can contain nested root-relative
+      // /assets, /_next or /_vinext references. Rewrite those too so the
+      // browser never escapes to the boss/Vercel asset namespace.
       response = await rewriteSharedAssets(response);
     }
 
