@@ -82,6 +82,23 @@ html.rekixo-project-error .rekixo-boot-error{display:grid}
 .show-all .plot.selected[data-status="available"]{fill:rgba(var(--plot-available-rgb),.36);filter:drop-shadow(0 0 4px rgba(var(--plot-available-rgb),.82))}
 .show-all .plot.selected[data-status="booked"]{fill:rgba(var(--plot-booked-rgb),.38);filter:drop-shadow(0 0 4px rgba(var(--plot-booked-rgb),.82))}
 .show-all .plot.selected[data-status="sold"]{fill:rgba(var(--plot-sold-rgb),.38);filter:drop-shadow(0 0 4px rgba(var(--plot-sold-rgb),.84))}
+/* REKIXO_SELECTED_PLOT_FOCUS_FX_V1
+   Visual-only selected plot focus: moving edge + soft breathing glow.
+   No canonical polygon, hit-area or status data mutation. */
+.plot.selected[data-status]{--rekixo-focus-rgb:var(--plot-available-rgb);stroke:#fff;stroke-linecap:round;stroke-dasharray:15 8;animation:rekixo-selected-edge 1.45s linear infinite,rekixo-selected-pulse 2.1s ease-in-out infinite}
+.plot.selected[data-status="available"]{--rekixo-focus-rgb:var(--plot-available-rgb)}
+.plot.selected[data-status="booked"]{--rekixo-focus-rgb:var(--plot-booked-rgb)}
+.plot.selected[data-status="sold"]{--rekixo-focus-rgb:var(--plot-sold-rgb)}
+@keyframes rekixo-selected-edge{to{stroke-dashoffset:-46}}
+@keyframes rekixo-selected-pulse{
+  0%,100%{filter:drop-shadow(0 0 3px rgba(var(--rekixo-focus-rgb),.66)) brightness(1.02)}
+  50%{filter:drop-shadow(0 0 7px rgba(var(--rekixo-focus-rgb),.95)) brightness(1.18)}
+}
+.map.dragging .plot.selected[data-status],.map.gesture-active .plot.selected[data-status]{animation:none;stroke-dasharray:none;filter:none}
+@media (prefers-reduced-motion:reduce){
+  .plot.selected[data-status]{animation:none;stroke-dasharray:none;filter:drop-shadow(0 0 4px rgba(var(--rekixo-focus-rgb),.82))}
+}
+
 .controls{position:absolute;right:9px;bottom:11px;z-index:7;display:flex;flex-direction:column;gap:8px}.ctrl,.percent{width:49px;border-radius:13px;border:1px solid #263654;background:#0a1428ee;color:#91b4fb;box-shadow:0 8px 24px #0007}
 .ctrl{height:49px;font-size:20px;font-weight:800}.ctrl.text{font-size:12px;color:#8592ad}.percent{height:43px;display:grid;place-items:center;font-size:12px;font-weight:950;color:#73a6ff}
 .bottom-links{position:absolute;right:9px;bottom:234px;z-index:7;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
