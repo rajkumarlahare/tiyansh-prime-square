@@ -44,6 +44,10 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    // Vite owns dynamic-import/module-preload URLs such as route CSS chunks.
+    // Keep those build-time references inside the same isolated namespace as
+    // Next/Vinext so shared boss-domain pages never escape to root /assets.
+    base: "/__rekixo/",
     server: {
       host: "0.0.0.0",
       allowedHosts: ["terminal.local"],

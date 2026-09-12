@@ -24,3 +24,6 @@ timeout \
   --kill-after="${SITES_BUILD_KILL_AFTER:-10s}" \
   "${SITES_BUILD_TIMEOUT:-3m}" \
   "${vinext}" build
+
+echo "Verifying Rekixo shared asset namespace..."
+node "${script_dir}/verify-shared-asset-build.mjs"
