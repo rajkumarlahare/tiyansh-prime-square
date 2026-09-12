@@ -86,6 +86,23 @@ function win() {
   return window as RekixoWindow;
 }
 
+function ensureGoogleMapsConnectionHints() {
+  const hints = [
+    ["rekixo-maps-api-preconnect", "https://maps.googleapis.com"],
+    ["rekixo-maps-static-preconnect", "https://maps.gstatic.com"],
+  ] as const;
+
+  for (const [id, href] of hints) {
+    if (document.getElementById(id)) continue;
+    const link = document.createElement("link");
+    link.id = id;
+    link.rel = "preconnect";
+    link.href = href;
+    link.crossOrigin = "";
+    document.head.appendChild(link);
+  }
+}
+
 function loadGoogleMaps(apiKey: string) {
   if (win().google?.maps?.Map) return Promise.resolve(win().google!);
   if (mapsPromise) return mapsPromise;
@@ -193,6 +210,9 @@ function plotStyle(status: string) {
   return { fillColor: "#18b968", strokeColor: "#63e6ad" };
 }
 
+const MOBILE_OVERLAY_MAX_DIMENSION = 2304;
+const DESKTOP_OVERLAY_MAX_DIMENSION = 3072;
+
 function addMasterplanOverlay(
   google: GoogleRoot,
   map: MapInstance,
@@ -201,77 +221,155 @@ function addMasterplanOverlay(
 ) {
   const overlay = new google.maps.OverlayView();
   let host: HTMLDivElement | null = null;
-  let image: HTMLImageElement | null = null;
+  let sourceImage: HTMLImageElement | null = null;
+  let surface: HTMLImageElement | HTMLCanvasElement | null = null;
+  let surfaceWidth = 0;
+  let surfaceHeight = 0;
+  let drawFrame: number | null = null;
 
   const draw = () => {
-    if (!host || !image || !image.naturalWidth || !image.naturalHeight) return;
+    if (drawFrame !== null) return;
+    drawFrame = window.requestAnimationFrame(() => {
+      drawFrame = null;
+      if (!host || !surface || !surfaceWidth || !surfaceHeight) return;
 
-    try {
-      const projection = overlay.getProjection();
-      if (!projection) return;
-      const target = corners.map(([lng, lat]) =>
-        projection.fromLatLngToDivPixel(new google.maps.LatLng(lat, lng)),
-      );
-      if (target.length !== 4 || target.some((point) => !point)) return;
+      try {
+        const projection = overlay.getProjection();
+        if (!projection) return;
+        const target = corners.map(([lng, lat]) =>
+          projection.fromLatLngToDivPixel(new google.maps.LatLng(lat, lng)),
+        );
+        if (target.length !== 4 || target.some((point) => !point)) return;
 
-      const source: MapperPoint[] = [
-        [0, 0],
-        [1, 0],
-        [1, 1],
-        [0, 1],
-      ];
-      const matrix = solveHomography(
-        source.map((sourcePoint, index) => ({
-          source: sourcePoint,
-          target: [target[index]!.x, target[index]!.y] as MapperPoint,
-        })),
-      );
-      host.style.transform = cssProjectiveTransform(
-        matrix,
-        image.naturalWidth,
-        image.naturalHeight,
-      );
-      host.style.visibility = "visible";
-    } catch (error) {
-      host.style.visibility = "hidden";
-      console.warn("Public masterplan overlay draw skipped", error);
+        const source: MapperPoint[] = [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 1],
+        ];
+        const matrix = solveHomography(
+          source.map((sourcePoint, index) => ({
+            source: sourcePoint,
+            target: [target[index]!.x, target[index]!.y] as MapperPoint,
+          })),
+        );
+        host.style.transform = cssProjectiveTransform(
+          matrix,
+          surfaceWidth,
+          surfaceHeight,
+        );
+        host.style.visibility = "visible";
+      } catch (error) {
+        host.style.visibility = "hidden";
+        console.warn("Public masterplan overlay draw skipped", error);
+      }
+    });
+  };
+
+  const useOriginalImage = (image: HTMLImageElement) => {
+    if (!host) return;
+    surface = image;
+    surfaceWidth = image.naturalWidth;
+    surfaceHeight = image.naturalHeight;
+    host.replaceChildren(image);
+    draw();
+  };
+
+  const prepareCompositorSurface = (image: HTMLImageElement) => {
+    if (!host || !image.naturalWidth || !image.naturalHeight) return;
+
+    const largestDimension = Math.max(
+      image.naturalWidth,
+      image.naturalHeight,
+    );
+    const maxDimension =
+      window.innerWidth <= 900
+        ? MOBILE_OVERLAY_MAX_DIMENSION
+        : DESKTOP_OVERLAY_MAX_DIMENSION;
+
+    if (largestDimension <= maxDimension) {
+      useOriginalImage(image);
+      return;
     }
+
+    const scale = maxDimension / largestDimension;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+    const context = canvas.getContext("2d", { alpha: true });
+    if (!context) {
+      useOriginalImage(image);
+      return;
+    }
+
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    surface = canvas;
+    surfaceWidth = canvas.width;
+    surfaceHeight = canvas.height;
+    host.replaceChildren(canvas);
+
+    // Promoted PNG remains the immutable source of truth. This smaller canvas
+    // is browser-only and only reduces GPU/compositor work during pan/zoom.
+    sourceImage = null;
+    draw();
   };
 
   overlay.onAdd = () => {
     host = document.createElement("div");
     host.className = styles.masterplanOverlay;
-    image = document.createElement("img");
-    image.src = url;
+
+    const image = document.createElement("img");
+    sourceImage = image;
     image.alt = "Project masterplan";
     image.draggable = false;
     image.decoding = "async";
-    image.onload = draw;
+    // Let Google Hybrid tiles/labels win the first-load network race.
+    image.fetchPriority = "low";
+    image.onload = () => prepareCompositorSurface(image);
     image.onerror = () => {
       if (host) host.style.visibility = "hidden";
       console.warn("Public masterplan overlay image load failed");
     };
-    host.appendChild(image);
+
     const panes = overlay.getPanes();
     if (!panes?.overlayLayer) {
       host.style.visibility = "hidden";
       console.warn("Public masterplan overlay pane unavailable");
       return;
     }
+
     panes.overlayLayer.appendChild(host);
+    image.src = url;
   };
+
   overlay.draw = draw;
   overlay.onRemove = () => {
-    image?.remove();
+    if (drawFrame !== null) {
+      window.cancelAnimationFrame(drawFrame);
+      drawFrame = null;
+    }
+    if (sourceImage) {
+      sourceImage.onload = null;
+      sourceImage.onerror = null;
+    }
+    surface?.remove();
     host?.remove();
-    image = null;
+    sourceImage = null;
+    surface = null;
+    surfaceWidth = 0;
+    surfaceHeight = 0;
     host = null;
   };
   overlay.setMap(map);
   return overlay;
 }
 
-function plotInfoCard(feature: PublicFeature) {
+function plotInfoCardfunction plotInfoCard(feature: PublicFeature) {
   const card = document.createElement("div");
   card.className = styles.infoCard;
   const title = document.createElement("strong");
@@ -315,6 +413,7 @@ export default function GeoPublicMap({
   const [error, setError] = useState("");
 
   useEffect(() => {
+    ensureGoogleMapsConnectionHints();
     const controller = new AbortController();
     fetch(
       `/api/public-geo?projectSlug=${encodeURIComponent(projectSlug)}`,

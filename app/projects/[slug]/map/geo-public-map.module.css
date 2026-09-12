@@ -185,7 +185,8 @@
   will-change: transform;
 }
 
-.masterplanOverlay img {
+.masterplanOverlay img,
+.masterplanOverlay canvas {
   display: block;
   max-width: none;
   pointer-events: none;
