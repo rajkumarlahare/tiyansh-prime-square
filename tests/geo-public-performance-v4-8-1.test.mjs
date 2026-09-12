@@ -43,6 +43,11 @@ test("masterplan download yields priority to Google hybrid tiles on first load",
   assert.match(client, /clickableIcons: true/);
 });
 
+test("plot info-card helper keeps one valid function declaration", () => {
+  assert.match(client, /function plotInfoCard\(feature: PublicFeature\) \{/);
+  assert.doesNotMatch(client, /plotInfoCardfunction/);
+});
+
 test("canvas overlay keeps the same non-interactive styling as image overlay", () => {
   assert.match(css, /\.masterplanOverlay img,\s*\.masterplanOverlay canvas\s*\{/);
   assert.match(css, /pointer-events:\s*none/);

@@ -18,6 +18,9 @@ if [[ ! -x "${vinext}" ]]; then
   exit 69
 fi
 
+echo "Verifying first-party TypeScript/TSX syntax..."
+node "${script_dir}/verify-source-syntax.mjs"
+
 echo "Running bounded vinext build..."
 timeout \
   --signal=TERM \

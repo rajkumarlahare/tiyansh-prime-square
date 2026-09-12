@@ -369,7 +369,7 @@ function addMasterplanOverlay(
   return overlay;
 }
 
-function plotInfoCardfunction plotInfoCard(feature: PublicFeature) {
+function plotInfoCard(feature: PublicFeature) {
   const card = document.createElement("div");
   card.className = styles.infoCard;
   const title = document.createElement("strong");
